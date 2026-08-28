@@ -4,6 +4,7 @@
   "globalEnv": [
     "NODE_ENV",
     "CI",
+    "NEXT_DIST_DIR",
     "SITE_URL",
     "SUPABASE_URL",
     "SUPABASE_SECRET_KEY",
