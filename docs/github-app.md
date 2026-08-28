@@ -3,6 +3,13 @@
 Sodium uses a GitHub App (never personal access tokens). One app serves every
 customer; installations grant per-repository access.
 
+Note the split: **sign-in** uses GitHub OAuth through Supabase (identity
+only — see README → "GitHub sign-in"), while the **GitHub App** below grants
+repository access. You can reuse this app's client id/secret as the sign-in
+OAuth credentials (enable "Request user authorization (OAuth) during
+installation" is not required; the client credentials work for the standard
+web flow), or keep a separate plain OAuth App for sign-in.
+
 ## 1. Register the app
 
 GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**:

@@ -12,8 +12,7 @@
 - [ ] Dedicated production project; separate project (or branch) for previews. `supabase link` + `pnpm db:push` per environment; never edit schema through the dashboard.
 - [ ] Run `supabase db advisors` (CLI ≥ 2.81) after every migration and resolve findings.
 - [ ] `pnpm db:test` (RLS suite) green against the production schema before first launch.
-- [ ] Do NOT run `pnpm db:seed` in production (it creates demo users with known passwords).
-- [ ] Auth: enable email confirmation + configure SMTP; set site URL and redirect allowlists; consider MFA for org owners.
+- [ ] Auth: GitHub OAuth is the only sign-in. Point the production `site_url` and `additional_redirect_urls` (`/auth/callback`, `/auth/confirm`) at the public origin in `supabase/config.toml` and `supabase config push`; use production GitHub OAuth credentials, not the local ones.
 - [ ] Storage: confirm the `artifacts` bucket stays private; set retention for crawl artifacts.
 - [ ] Queues: monitor `pgmq.q_sodium_jobs` depth and the archive table (poison messages land there) — alert on growth.
 - [ ] Backups/PITR enabled; test a restore.

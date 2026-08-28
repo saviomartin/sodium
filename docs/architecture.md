@@ -232,11 +232,18 @@ candidate is marked ready for review.
 By explicit project decision, local development, previews and production all
 run against hosted Supabase projects rather than the Dockerized local stack:
 `supabase link` + `supabase db push` applies migrations over the IPv4 session
-pooler, `scripts/db-seed.mjs` seeds over the same connection, and the
-database security suite (`pnpm db:test`) runs against the live project inside
-always-rolled-back transactions. Consequences: `supabase start`/`db reset`
-are not used; type generation uses `--linked`; and the seed (demo users with
-known passwords) must never be applied to the production project.
+pooler, and the database security suite (`pnpm db:test`) runs against the
+live project inside always-rolled-back transactions. Consequences:
+`supabase start`/`db reset` are not used and type generation uses `--linked`.
+
+Also by explicit decision, **sign-in is GitHub OAuth only** (Supabase's
+GitHub provider; PKCE via `/auth/callback`, token-hash verification via
+`/auth/confirm`) and **no data is seeded** — there are no demo accounts.
+Sign-in identity is deliberately distinct from GitHub App repository access.
+Test suites provision their own state: the database tests create tenants
+inside rolled-back transactions; the browser tests create ephemeral users
+through the auth admin API (signed in with admin-issued magic-link tokens
+through the app's own confirm route) and delete them in teardown.
 
 ### D8 — Supabase schema in five domains, RLS everywhere
 

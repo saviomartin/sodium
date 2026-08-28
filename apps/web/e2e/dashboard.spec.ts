@@ -1,26 +1,25 @@
 import { expect, test, type Page } from "@playwright/test";
+import { adminClient, readState, signIn } from "./helpers";
 
 /**
  * Browser tests for the five primary experiences against the live stack
- * (hosted Supabase + real worker): sign-in, project overview, analysis with
- * live progress, tool review (filters, detail, edit, approve), publication,
- * rollback and integration-PR generation.
+ * (hosted Supabase + real worker): onboarding from a completely empty
+ * account, analysis with live progress, tool review (filters, detail, edit,
+ * approve), publication, rollback, integration-PR generation, member role
+ * gates and cross-tenant isolation.
  *
- * Uses the seeded fixture repository (local-fixture/fixture-shop) and the
- * seeded owner account. Runs are additive; every entity it creates is scoped
- * to a fresh analysis run.
+ * No seeded accounts exist: global-setup creates three ephemeral users via
+ * the auth admin API and this suite signs them in with admin-issued
+ * magic-link tokens through the app's own /auth/confirm route — the same
+ * cookie machinery real sign-ins use. Teardown deletes everything.
  */
 
-const OWNER_EMAIL = "alice@acme.test";
-const PASSWORD = "password123";
+test.describe.configure({ mode: "serial" });
 
-async function signIn(page: Page, email: string) {
-  await page.goto("/login");
-  await page.fill("input[name=email]", email);
-  await page.fill("input[name=password]", PASSWORD);
-  await page.click("button[type=submit]");
-  await page.waitForURL("**/dashboard");
-}
+const state = () => readState();
+let repoUrl = "";
+let runUrl = "";
+let orgSlug = "";
 
 /** Reload-based wait: works whether or not realtime broadcast connects. */
 async function waitForRunCompletion(page: Page): Promise<void> {
@@ -39,85 +38,73 @@ async function waitForRunCompletion(page: Page): Promise<void> {
 
 async function approveFromDetail(page: Page) {
   await page.getByRole("button", { name: "Approve for publication" }).click();
-  await expect(page.getByText("approved", { exact: true })).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(page.getByText("approved", { exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
-test("full path: analyze, review, edit, approve, publish, roll back, generate PR", async ({
-  page,
-}) => {
-  await signIn(page, OWNER_EMAIL);
+test("owner: onboarding → analyze → review → publish → roll back → PR", async ({ page }) => {
+  const { users, stamp } = state();
+  await signIn(page, users.owner.email);
 
-  // Project overview → fixture repository.
-  await page.getByRole("link", { name: "local-fixture/fixture-shop" }).click();
+  // Empty account: the dashboard offers exactly one next action.
+  await expect(page.getByText("Create your organization")).toBeVisible();
+  await page.getByRole("link", { name: "Start onboarding" }).click();
+  await page.waitForURL("**/onboarding");
+
+  // Step 1: create the organization.
+  orgSlug = `e2e-${stamp}`;
+  await page.fill("input[name=name]", "E2E Sodium");
+  await page.fill("input[name=slug]", orgSlug);
+  await page.getByRole("button", { name: "Create organization" }).click();
+  await page.waitForURL("**/dashboard**");
+
+  // Step 2: connect the local fixture repository (no GitHub App configured).
+  await page.goto("/onboarding");
+  await page.getByRole("button", { name: "Use the local fixture repository" }).click();
   await page.waitForURL("**/repos/**");
-  const repoUrl = page.url();
+  repoUrl = page.url();
 
-  // Run analysis without preview exploration (crawl stage skips).
-  await page.selectOption("select[name=environmentId]", "");
+  // Run analysis. No preview environment exists, so the crawl stage skips.
   await page.getByRole("button", { name: "Analyze repository" }).click();
   await page.waitForURL("**/runs/**");
-
-  // Live pipeline view exists; wait for candidates via reload polling.
   await expect(page.getByText("Snapshot repository")).toBeVisible();
   await waitForRunCompletion(page);
-  const runUrl = page.url();
+  runUrl = page.url();
 
   // Review table: risk filter narrows to the destructive tool.
   await page.getByLabel("Risk").selectOption("destructive");
   await expect(page.getByRole("link", { name: "Cancel order" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Read Products" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("link", { name: "Open Products" })).toHaveCount(0);
 
   // Tool detail: evidence, editable fields, approval.
   await page.getByRole("link", { name: "Cancel order" }).click();
   await page.waitForURL("**/candidates/**");
   await expect(page.getByText("Source evidence")).toBeVisible();
-  await expect(
-    page
-      .getByText("confirmation is required", { exact: false })
-      .or(page.locator("body")),
-  ).toBeVisible();
-
-  // Edit agent-facing wording; the floor for destructive stays "required".
   await page.fill(
     "textarea[name=description]",
     "Cancels one pending order for the signed-in customer. Requires the order id and explicit user confirmation.",
   );
   await page.getByRole("button", { name: "Save edits" }).click();
-  await expect(
-    page.getByText("Saved. Re-validated and marked needs review."),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Saved. Re-validated and marked needs review.")).toBeVisible({
+    timeout: 15_000,
+  });
   await approveFromDetail(page);
 
-  // Approve a read-only tool as well.
+  // Approve a second tool.
   await page.goto(runUrl);
-  await page.getByRole("link", { name: "Open Products" }).click();
+  await page.getByRole("link", { name: "Add to cart" }).click();
   await page.waitForURL("**/candidates/**");
   await approveFromDetail(page);
 
   // Publish screen: snippet, approved tools, signed publication.
   await page.goto(repoUrl + "/publish");
-  await expect(
-    page.getByText(/<script src=.*agent\/v1\.js.*data-site=/),
-  ).toBeVisible();
+  await expect(page.getByText(/<script src=.*agent\/v1\.js.*data-site=/)).toBeVisible();
   await expect(page.getByText(/Approved tools \(\d+\)/)).toBeVisible();
-
-  await page
-    .getByRole("button", { name: /Publish (manifest|new version)/ })
-    .click();
+  await page.getByRole("button", { name: /Publish (manifest|new version)/ }).click();
   await page.getByRole("button", { name: "Sign & publish" }).click();
   await expect(page.getByText("(live)")).toBeVisible({ timeout: 30_000 });
 
   // The public manifest endpoint serves the signed envelope.
-  const siteId = (
-    await page
-      .getByText(/^site_[a-z0-9]+$/)
-      .first()
-      .textContent()
-  )?.trim();
+  const siteId = (await page.getByText(/^site_[a-z0-9]+$/).first().textContent())?.trim();
   expect(siteId).toBeTruthy();
   const manifestResponse = await page.request.get(`/api/m/${siteId}`);
   expect(manifestResponse.ok()).toBeTruthy();
@@ -125,9 +112,9 @@ test("full path: analyze, review, edit, approve, publish, roll back, generate PR
   expect(envelope.algorithm).toBe("Ed25519");
   expect(typeof envelope.signature).toBe("string");
 
-  // Approve one more tool and publish v(n+1), then one-click rollback.
+  // Publish v2 and roll back to v1.
   await page.goto(runUrl);
-  await page.getByRole("link", { name: "Add to cart" }).click();
+  await page.getByRole("link", { name: "Open Products" }).click();
   await page.waitForURL("**/candidates/**");
   await approveFromDetail(page);
 
@@ -136,24 +123,17 @@ test("full path: analyze, review, edit, approve, publish, roll back, generate PR
   await page.getByRole("button", { name: "Sign & publish" }).click();
   await expect(page.getByText("(live)")).toBeVisible({ timeout: 30_000 });
 
-  const rollbackButtons = page.getByRole("button", {
-    name: "Roll back to this",
-  });
+  const rollbackButtons = page.getByRole("button", { name: "Roll back to this" });
   await expect(rollbackButtons.first()).toBeVisible();
   await rollbackButtons.first().click();
   await page.getByRole("button", { name: "Roll back", exact: true }).click();
-  await expect(page.getByText("Deployment history")).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByText("Deployment history")).toBeVisible({ timeout: 30_000 });
   await page.getByText("Deployment history").click();
   await expect(page.getByText(/rollback/).first()).toBeVisible();
 
-  // Integration PR: queued, processed by the worker (fixture provider
-  // writes the reviewable file set locally and marks the PR open).
+  // Integration PR: queued, then processed by the worker.
   await page.getByRole("button", { name: "Generate integration PR" }).click();
-  await expect(page.getByText("PR generation queued.")).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(page.getByText("PR generation queued.")).toBeVisible({ timeout: 15_000 });
   await expect
     .poll(
       async () => {
@@ -165,37 +145,38 @@ test("full path: analyze, review, edit, approve, publish, roll back, generate PR
     .toBeGreaterThan(0);
 });
 
-test("members cannot approve or publish (role gates in UI actions)", async ({
-  page,
-}) => {
-  await signIn(page, "carol@acme.test");
+test("member can view but not approve or publish", async ({ page }) => {
+  const { users } = state();
+
+  // Add the member to the owner's org via the service client (there is no
+  // invite UI in v1; membership management is owner/service concern).
+  const admin = adminClient();
+  const { data: org } = await admin.from("organizations").select("id").eq("slug", orgSlug).single();
+  await admin
+    .from("org_memberships")
+    .upsert({ org_id: org!.id, user_id: users.member.id, role: "member" });
+
+  await signIn(page, users.member.email);
   await page.getByRole("link", { name: "local-fixture/fixture-shop" }).click();
   await page.waitForURL("**/repos/**");
-  const repoUrl = page.url();
-
-  // Carol can see runs and candidates (org member) …
   await expect(page.getByText("Analysis runs")).toBeVisible();
 
-  // … but publishing is refused with an inline error.
-  await page.goto(repoUrl + "/publish");
-  const publishTrigger = page.getByRole("button", {
-    name: /Publish (manifest|new version)/,
+  await page.goto(page.url() + "/publish");
+  const publishTrigger = page.getByRole("button", { name: /Publish (manifest|new version)/ });
+  await expect(publishTrigger).toBeVisible();
+  await publishTrigger.click();
+  await page.getByRole("button", { name: "Sign & publish" }).click();
+  await expect(page.getByText(/elevated permissions|owner or admin/)).toBeVisible({
+    timeout: 15_000,
   });
-  if ((await publishTrigger.count()) > 0) {
-    await publishTrigger.click();
-    await page.getByRole("button", { name: "Sign & publish" }).click();
-    await expect(
-      page.getByText(/elevated permissions|owner or admin/),
-    ).toBeVisible({ timeout: 15_000 });
-  }
 });
 
-test("cross-tenant isolation: another org's member sees nothing of acme", async ({
-  page,
-}) => {
-  await signIn(page, "bob@globex.test");
-  await expect(
-    page.getByRole("link", { name: "local-fixture/fixture-shop" }),
-  ).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Globex — repositories" })).toBeVisible();
+test("cross-tenant isolation: an outsider sees nothing", async ({ page }) => {
+  const { users } = state();
+  await signIn(page, users.outsider.email);
+  await expect(page.getByText("Create your organization")).toBeVisible();
+  await expect(page.getByRole("link", { name: "local-fixture/fixture-shop" })).toHaveCount(0);
+
+  const response = await page.goto(repoUrl);
+  expect(response?.status()).toBe(404);
 });

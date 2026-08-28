@@ -47,3 +47,4 @@ supabase/.branches/
 
 # Worker scratch
 /tmp/
+.state.json

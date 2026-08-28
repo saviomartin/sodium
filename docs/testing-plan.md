@@ -26,13 +26,14 @@ Environment files must exist (already configured in this checkout; see
 `.env.example` to recreate): `.env` (root, DB URL), `apps/web/.env.local`,
 `apps/worker/.env`.
 
-Seeded accounts, password `password123`:
-
-| Account | Role | Use it to test |
-| --- | --- | --- |
-| `alice@acme.test` | Acme **owner** | the full happy path |
-| `carol@acme.test` | Acme **member** | permission gates |
-| `bob@globex.test` | Globex owner | cross-tenant isolation |
+**Accounts:** sign-in is GitHub-only; there are no demo accounts and no seed
+data. One-time setup (README → "GitHub sign-in"): create a GitHub OAuth App
+with callback `https://<project-ref>.supabase.co/auth/v1/callback`, put
+`SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` / `_SECRET` in the root `.env`, run
+`supabase config push`. For the visual parts you use your own GitHub account
+(you become the org owner you create in onboarding). The automated suites
+need no accounts at all — they provision ephemeral users through the auth
+admin API and delete them afterwards.
 
 ---
 
@@ -44,8 +45,8 @@ Run these before any visual testing; everything must be green.
 | --- | --- | --- |
 | 1 | `corepack pnpm lint` | 6/6 tasks pass |
 | 2 | `corepack pnpm check-types` | 6/6 tasks pass |
-| 3 | `corepack pnpm test` | 107 tests: contracts 28, analyzer 13, runtime 33, worker 27, web 6 |
-| 4 | `corepack pnpm db:test` | 9 RLS/security tests vs the live DB (rolled-back transactions) |
+| 3 | `corepack pnpm test` | 109 tests: contracts 28, analyzer 13, runtime 33, worker 29, web 6 |
+| 4 | `corepack pnpm db:test` | 11 RLS/security tests vs the live DB (rolled-back transactions; self-provisioned tenants) |
 | 5 | `corepack pnpm build` | web + fixture + runtime build |
 | 6 | `corepack pnpm --filter fixture-shop test:e2e` | 7/7 — WebMCP register/execute + fail-closed security |
 | 7 | `corepack pnpm --filter @sodium/web test:e2e` | 3/3 — full dashboard flow (spawns the worker itself; ~3 min) |
@@ -80,28 +81,34 @@ mode.
 
 ## Part 3 — Visual: auth & onboarding
 
-1. Open `http://localhost:3000` → redirected to **/login**.
-2. Try a wrong password → inline error next to the form.
-3. Sign in as `alice@acme.test` → lands on the dashboard, header shows the
-   org and your email.
-4. Visit **/onboarding**: step 1 shows you're an owner of Acme; step 2
-   explains GitHub App repository access is separate from sign-in and, since
-   no GitHub App is configured, offers **“Use the local fixture repository”**;
-   step 3–4 explain repository + preview configuration.
-5. Sign out (header) → back to /login.
+1. Open `http://localhost:3000` → redirected to **/login**, which offers
+   exactly one method: **Continue with GitHub**.
+2. Click it → GitHub consent screen → back on the dashboard, header shows
+   your email. (If you see “provider is not enabled”, the error renders
+   inline on /login — finish the one-time setup from Part 0.)
+3. First sign-in has no organization: the dashboard shows a single next
+   action, **Start onboarding**. Create your organization (step 1).
+4. Back on **/onboarding**: step 2 explains that GitHub App repository access
+   is separate from how you signed in and, since no GitHub App is configured,
+   offers **“Use the local fixture repository”** — click it; you land on the
+   repository page. Steps 3–4 explain repository + preview configuration.
+5. Sign out (header) → back to /login. Sign in again — you land straight on
+   your dashboard (session + org persist).
 
 ---
 
 ## Part 4 — Visual: project overview & the analysis pipeline
 
-1. As alice, open **local-fixture/fixture-shop** from the dashboard.
-2. Overview shows four areas: *Run analysis*, *Preview environment* (seeded:
-   `http://localhost:4000`, auth `none`), *Analysis runs* (history), and
-   *Compatibility findings*.
-3. In *Run analysis*: leave SHA blank (fixture), keep the preview environment
+1. Open **local-fixture/fixture-shop** from the dashboard.
+2. Overview shows four areas: *Run analysis*, *Preview environment*,
+   *Analysis runs* (history), and *Compatibility findings*.
+3. Configure the preview first (this is what the crawl stage explores): in
+   *Preview environment*, save `http://localhost:4000` with auth mode
+   `none` → it appears in the list.
+4. In *Run analysis*: leave SHA blank (fixture), keep the preview environment
    selected (this enables the Playwright crawl stage), click **Analyze
    repository** → you land on the run page.
-4. Watch the pipeline **live** (no reloads needed — Realtime broadcast):
+5. Watch the pipeline **live** (no reloads needed — Realtime broadcast):
    - `Snapshot repository` → succeeded (“30 files”)
    - `Static analysis` → succeeded (“9 routes, 2 forms, 5 actions, 2 handlers”)
    - `Preview exploration` → succeeded (“crawled 5/5 pages”) — watch Terminal 3
@@ -110,7 +117,7 @@ mode.
    - `Validation & evals` → succeeded (“9 ready, 2 need review”)
    Total ≈ 45–75 s. If the live badge stays on “Connecting…”, reload — the
    run state is in the database either way.
-5. Failure state (optional): stop the fixture app, run an analysis **with**
+6. Failure state (optional): stop the fixture app, run an analysis **with**
    the preview selected → the crawl stage retries then the run fails with a
    structured `preview_unreachable` error rendered on the run page. Restart
    the fixture afterwards.
@@ -149,17 +156,21 @@ On the finished run page:
 
 ---
 
-## Part 6 — Visual: permissions & tenant isolation
+## Part 6 — Permissions & tenant isolation
 
-1. Sign out → sign in `carol@acme.test` (member):
-   - She **can** see the repo, runs, candidates, evidence (read access).
-   - Open any reviewable candidate → **Approve** → inline error “requires
-     owner or admin role”.
-   - Publish screen → Publish → the dialog shows the server-side refusal.
-2. Sign out → sign in `bob@globex.test`:
-   - Dashboard shows only **Globex**; no Acme repository anywhere.
-   - Paste alice's repo URL directly → 404. RLS, not UI hiding.
-3. Sign back in as alice.
+These paths are fully covered by automation — no demo accounts exist:
+
+- `pnpm db:test` proves at the SQL layer that members read but cannot
+  administer, that owners cannot cross tenants, and that another tenant sees
+  zero rows (11 tests, each inside a rolled-back transaction).
+- `pnpm --filter @sodium/web test:e2e` proves it in the browser: an
+  ephemeral **member** sees the repo but publishing fails with the
+  server-side refusal in the dialog, and an ephemeral **outsider** gets an
+  empty dashboard and a 404 on the owner's repo URL.
+
+To also see it by hand, sign in with a second GitHub account in a private
+window: with no membership it gets the empty dashboard, and pasting your
+repo URL returns 404 — RLS, not UI hiding.
 
 ---
 
@@ -303,9 +314,13 @@ published tool:
      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
    }
    const sql = postgres(process.env.SUPABASE_DB_URL, { max: 1 });
+   const [repo] = await sql`
+     select id from repositories where full_name = 'local-fixture/fixture-shop'
+     order by created_at desc limit 1
+   `;
    const message = {
      type: "sync.compare",
-     repositoryId: "dddddddd-0000-0000-0000-000000000001",
+     repositoryId: repo.id,
      commitSha: "b".repeat(40),
      deliveryId: "manual-" + Date.now(),
      attempt: 0,
@@ -349,7 +364,7 @@ published tool:
 
 | Area | Pass looks like |
 | --- | --- |
-| Automated baseline | 107 unit + 9 DB + 7 fixture e2e + 3 dashboard e2e, lint/types/build green |
+| Automated baseline | 109 unit + 11 DB + 7 fixture e2e + 3 dashboard e2e, lint/types/build green |
 | Pipeline | 5 stages stream live; ~11 candidates; structured errors on unreachable preview |
 | Review | filters work; evidence one click away; floors block unsafe edits; edit → needs review; approve/reject stick |
 | Permissions | member reads but cannot approve/publish; other tenant sees nothing |

@@ -44,24 +44,48 @@ supabase projects create sodium --org-id <your-org> --region <region> --db-passw
 supabase link --project-ref <project-ref>
 cp .env.example .env                       # fill SUPABASE_DB_URL (IPv4 pooler URL)
 pnpm db:push                               # apply supabase/migrations
-pnpm db:seed                               # seed users/orgs + fixture repository
 pnpm db:types                              # regenerate packages/contracts/src/database.types.ts
 
-# 2. Environment files (see .env.example for every variable):
+# 2. GitHub sign-in (once — see the section below):
+#    set SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID / _SECRET in .env, then:
+supabase config push
+
+# 3. Environment files (see .env.example for every variable):
 #    apps/web/.env.local  and  apps/worker/.env
 
-# 3. Build the loader once, then run everything:
+# 4. Build the loader once, then run everything:
 pnpm --filter @sodium/runtime build
 pnpm dev        # dashboard :3000, fixture shop :4000 (turbo)
 # worker (separate terminal):
 pnpm --filter @sodium/worker dev
 ```
 
-Seeded accounts (password `password123`): `alice@acme.test` (owner),
-`carol@acme.test` (member — for permission testing), `bob@globex.test`
-(separate org — for isolation testing).
+### GitHub sign-in
 
-### Credentials are optional in development
+Sign-in is **GitHub-only** — no passwords, no demo accounts, no seed data.
+Signing in identifies you; repository access is a separate, per-repository
+grant made by installing the GitHub App during onboarding.
+
+One-time provider setup (works for local dev and production alike, since one
+hosted Supabase project backs both):
+
+1. Create a GitHub **OAuth App** (github.com → Settings → Developer settings
+   → OAuth Apps) — or reuse the Sodium GitHub App's client id/secret if you
+   registered one (docs/github-app.md); both speak the same OAuth flow.
+   Authorization callback URL:
+   `https://<project-ref>.supabase.co/auth/v1/callback`
+2. Put the credentials in the root `.env`:
+   `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` and
+   `SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET`
+3. `supabase config push` — this enables the provider and allow-lists the
+   app's `/auth/callback` and `/auth/confirm` redirect URLs from
+   `supabase/config.toml`.
+
+Everything a user needs afterwards is created through the product itself:
+onboarding creates the organization, and "Use the local fixture repository"
+provides an analyzable repo without any GitHub App credentials.
+
+### The remaining credentials are optional in development
 
 The real adapters are implemented; missing credentials switch in
 fixture-backed providers instead of fake secrets:
@@ -81,9 +105,11 @@ through the Vercel AI Gateway).
 
 ## The workflow
 
-1. **Sign in** (Supabase auth) and create or select an organization.
-2. **Install the GitHub App** (repository access — deliberately separate from
-   how you signed in) and select a repository, or use the local fixture.
+1. **Sign in with GitHub** (identity only) and create or select an
+   organization.
+2. **Install the GitHub App** (repository access — deliberately separate
+   from sign-in, granted per repository) and select a repository, or use the
+   local fixture.
 3. **Configure a preview environment**: a deployed URL Sodium may crawl with
    Playwright (optional credentials stored via Supabase Vault). Sodium never
    builds or executes repository code — analysis is tarball + AST only.

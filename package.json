@@ -13,7 +13,6 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "db:push": "node scripts/db-push.mjs",
-    "db:seed": "node scripts/db-seed.mjs",
     "db:test": "pnpm --filter @sodium/worker test:db",
     "db:types": "supabase gen types typescript --linked --schema public > packages/contracts/src/database.types.ts"
   },

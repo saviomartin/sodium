@@ -35,36 +35,32 @@ const FIXTURE_SHA = "f".repeat(40);
 // Auth
 // ---------------------------------------------------------------------------
 
-export async function signInAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult> {
-  const email = String(formData.get("email") ?? "");
-  const password = String(formData.get("password") ?? "");
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { ok: false, error: error.message };
-  redirect(String(formData.get("next") ?? "/dashboard"));
+/** Only internal paths are valid post-auth destinations. */
+function safeNext(raw: unknown): string {
+  const next = String(raw ?? "/dashboard");
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
 }
 
-export async function signUpAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult> {
-  const email = String(formData.get("email") ?? "");
-  const password = String(formData.get("password") ?? "");
-  if (password.length < 8)
-    return { ok: false, error: "password must be at least 8 characters" };
+/**
+ * GitHub is the only sign-in method. PKCE flow: Supabase hands back the
+ * GitHub consent URL; after consent it redirects to /auth/callback, which
+ * exchanges the code for a cookie session.
+ */
+export async function signInWithGithubAction(formData: FormData): Promise<void> {
+  const next = safeNext(formData.get("next"));
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) return { ok: false, error: error.message };
-  if (!data.session) {
-    return {
-      ok: true,
-      error: "Check your email to confirm your account, then sign in.",
-    };
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "github",
+    options: {
+      redirectTo: `${env.SITE_URL}/auth/callback?next=${encodeURIComponent(next)}`,
+    },
+  });
+  if (error || !data?.url) {
+    redirect(
+      `/login?error=${encodeURIComponent(error?.message ?? "could not start GitHub sign-in")}`,
+    );
   }
-  redirect("/dashboard");
+  redirect(data.url);
 }
 
 export async function signOutAction(): Promise<void> {
