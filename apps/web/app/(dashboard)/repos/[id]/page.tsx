@@ -10,6 +10,7 @@ import {
   getSiteForRepository,
 } from "@/lib/queries";
 import { requestAnalysisAction, saveEnvironmentAction } from "@/lib/actions";
+import { shouldEmphasizeRunAnalysis } from "@/lib/analysis-state";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { RepositoryIntegration } from "@/components/repository-integration";
 import { ReviewTable, type CandidateRow } from "@/components/review-table";
@@ -45,6 +46,7 @@ export default async function RepositoryPage({
     (run) => run.status === "queued" || run.status === "running",
   );
   const latestSuccessfulRun = runs.find((run) => run.status === "succeeded");
+  const emphasizeRunAnalysis = shouldEmphasizeRunAnalysis(runs);
   const [candidates, publication] = await Promise.all([
     latestSuccessfulRun ? getCandidates(latestSuccessfulRun.id) : [],
     site ? getPublication(site.id) : null,
@@ -172,7 +174,12 @@ export default async function RepositoryPage({
               name="environmentId"
               value={environments[0]?.id ?? ""}
             />
-            <SubmitButton className={buttonClass} pendingText="Starting…">
+            <SubmitButton
+              className={
+                emphasizeRunAnalysis ? buttonClass : secondaryButtonClass
+              }
+              pendingText="Starting…"
+            >
               Analyze latest commit
             </SubmitButton>
           </ActionForm>
