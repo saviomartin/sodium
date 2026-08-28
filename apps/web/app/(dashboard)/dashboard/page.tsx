@@ -20,7 +20,7 @@ export default async function DashboardPage() {
             Repositories
           </h1>
           <p className="mt-2 text-sm text-neutral-500">
-            Analyze source, review tools, and publish a signed manifest.
+            Analyze source, then enable the tools you want to make available.
           </p>
         </div>
         <Link href="/connect" className={buttonClass}>

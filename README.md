@@ -8,7 +8,7 @@ The product flow is deliberately short:
 1. Continue with GitHub.
 2. Connect a repository through the GitHub App.
 3. Run analysis on the latest default-branch commit.
-4. Review proposed tools and publish a signed manifest.
+4. Enable the proposed tools you want. Availability updates automatically.
 
 There is no organization setup, local repository mode, manual commit SHA, or
 embedded demo application. The database keeps an invisible personal workspace
@@ -18,7 +18,7 @@ only as the RLS tenant boundary.
 
 | Path                 | Purpose                                                                                            |
 | -------------------- | -------------------------------------------------------------------------------------------------- |
-| `apps/web`           | Next.js app: auth, repository connection, review, publication, Settings                            |
+| `apps/web`           | Next.js app: auth, repository connection, analysis, tool controls, Settings                        |
 | `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, crawl, synthesis, validation, PR generation |
 | `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                                       |
 | `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                                 |
@@ -83,6 +83,6 @@ cannot leave completed work stuck on screen.
   never trusted as source metadata.
 - Every exposed table has RLS. Authorization data stays in database roles, not
   user-editable metadata.
-- Manifest publication is explicit, signed, versioned, and reversible.
+- Tool changes publish a signed, versioned manifest automatically.
 - Account deletion removes app rows, stored artifacts, sessions, and the auth
   identity; it never deletes or modifies the user's GitHub repositories.

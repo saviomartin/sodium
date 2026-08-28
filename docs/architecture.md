@@ -2,7 +2,8 @@
 
 Sodium converts existing Next.js sites into reviewed, verified, WebMCP-enabled applications:
 connect a GitHub repository → analyze routes and actions → review proposed tools →
-publish a signed manifest consumed by a one-line loader snippet.
+enable selected tools. Each change automatically publishes the signed manifest consumed
+by the runtime integration.
 
 This document records the research that grounded the design (verified 2026-08-28)
 and the decisions that follow from it. Where the WebMCP proposal is still moving,
