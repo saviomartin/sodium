@@ -9,9 +9,9 @@ import { ActionContractSchema } from "@sodium/contracts";
 import {
   getCandidate,
   getEvalRuns,
-  getPublication,
   getRepository,
   getSiteForRepository,
+  getToolContracts,
 } from "@/lib/queries";
 import { Card, ConfidenceMeter, RiskBadge } from "@/components/ui";
 
@@ -35,8 +35,8 @@ export default async function CandidatePage({
   } | null;
   if (!repo || !candidate || candidateRun?.repository_id !== repo.id) notFound();
 
-  const publication = site ? await getPublication(site.id) : null;
-  const available = (publication?.contracts ?? []).some(
+  const contracts = site ? await getToolContracts(site.id) : [];
+  const available = contracts.some(
     (contract) =>
       contract.action_id === candidate.action_id && contract.status === "active",
   );

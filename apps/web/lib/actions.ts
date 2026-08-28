@@ -605,7 +605,9 @@ export async function setCandidatesEnabledAction(
 
   const { data: candidates, error: candidatesError } = await supabase
     .from("action_candidates")
-    .select("id, org_id, run_id, action_id, status")
+    .select(
+      "id, org_id, run_id, action_id, status, analysis_runs!inner(repository_id)",
+    )
     .in("id", input.candidateIds);
   if (candidatesError) return { ok: false, error: candidatesError.message };
   if (!candidates || candidates.length !== input.candidateIds.length) {
@@ -614,17 +616,12 @@ export async function setCandidatesEnabledAction(
   if (candidates.some((candidate) => candidate.org_id !== site.org_id)) {
     return { ok: false, error: "tool selection does not belong to this site" };
   }
-
-  const runIds = [...new Set(candidates.map((candidate) => candidate.run_id))];
-  const { data: runs, error: runsError } = await supabase
-    .from("analysis_runs")
-    .select("id, repository_id")
-    .in("id", runIds);
-  if (runsError) return { ok: false, error: runsError.message };
   if (
-    !runs ||
-    runs.length !== runIds.length ||
-    runs.some((run) => run.repository_id !== site.repository_id)
+    candidates.some(
+      (candidate) =>
+        (candidate.analysis_runs as unknown as { repository_id: string })
+          .repository_id !== site.repository_id,
+    )
   ) {
     return { ok: false, error: "tool selection does not belong to this repository" };
   }
@@ -632,18 +629,20 @@ export async function setCandidatesEnabledAction(
   const service = createServiceClient();
   if (input.enabled) {
     for (const candidate of candidates) {
-      const { data: existing, error: existingError } = await service
-        .from("tool_contracts")
-        .select("id, status")
-        .eq("site_id", site.id)
-        .eq("action_id", candidate.action_id)
-        .maybeSingle();
-      if (existingError) return { ok: false, error: existingError.message };
-
-      if (
-        existing &&
-        (candidate.status === "approved" || candidate.status === "published")
-      ) {
+      if (candidate.status === "approved" || candidate.status === "published") {
+        const { data: existing, error: existingError } = await service
+          .from("tool_contracts")
+          .select("id")
+          .eq("site_id", site.id)
+          .eq("action_id", candidate.action_id)
+          .maybeSingle();
+        if (existingError) return { ok: false, error: existingError.message };
+        if (!existing) {
+          return {
+            ok: false,
+            error: `${candidate.action_id} has no approved contract to enable`,
+          };
+        }
         const { error } = await service
           .from("tool_contracts")
           .update({ status: "active" })

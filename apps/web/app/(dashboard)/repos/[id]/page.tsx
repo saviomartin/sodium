@@ -4,10 +4,10 @@ import {
   getCandidates,
   getCompatFindings,
   getEnvironments,
-  getPublication,
   getRepository,
   getRuns,
   getSiteForRepository,
+  getToolContracts,
 } from "@/lib/queries";
 import { requestAnalysisAction, saveEnvironmentAction } from "@/lib/actions";
 import { ActionForm, SubmitButton } from "@/components/action-form";
@@ -44,12 +44,12 @@ export default async function RepositoryPage({
     (run) => run.status === "queued" || run.status === "running",
   );
   const latestSuccessfulRun = runs.find((run) => run.status === "succeeded");
-  const [candidates, publication] = await Promise.all([
+  const [candidates, contracts] = await Promise.all([
     latestSuccessfulRun ? getCandidates(latestSuccessfulRun.id) : [],
-    site ? getPublication(site.id) : null,
+    site ? getToolContracts(site.id) : [],
   ]);
   const activeActionIds = new Set(
-    (publication?.contracts ?? [])
+    contracts
       .filter((contract) => contract.status === "active")
       .map((contract) => contract.action_id),
   );
