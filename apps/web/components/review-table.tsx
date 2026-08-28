@@ -30,19 +30,19 @@ function Toggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-neutral-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+    <label className="relative inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-neutral-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="peer sr-only"
+        className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
         aria-label={label}
       />
       <span
         aria-hidden
         className={cn(
-          "relative h-5 w-9 rounded-full border",
+          "pointer-events-none relative h-5 w-9 rounded-full border",
           checked
             ? "border-blue-600 bg-blue-600"
             : "border-neutral-300 bg-neutral-200",

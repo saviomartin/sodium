@@ -234,7 +234,7 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
   );
   expect(removedPublishPage?.status()).toBe(404);
 
-  await page.getByRole("link", { name: "Settings" }).click();
+  await page.goto("/settings");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
