@@ -36,3 +36,14 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# Playwright
+test-results/
+playwright-report/
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+
+# Worker scratch
+/tmp/

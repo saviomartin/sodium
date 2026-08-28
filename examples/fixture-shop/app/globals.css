@@ -1,0 +1,47 @@
+/* Minimal styles; the fixture exists to be analyzed, not admired. */
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  color: #171717;
+  background: #fafafa;
+  line-height: 1.5;
+}
+a {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+button {
+  cursor: pointer;
+}
+input,
+select,
+textarea {
+  display: block;
+  width: 100%;
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid #d4d4d4;
+  border-radius: 4px;
+  font: inherit;
+}
+.font-sans {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.mx-auto { margin-inline: auto; }
+.max-w-2xl { max-width: 42rem; }
+.px-4 { padding-inline: 1rem; }
+.py-6 { padding-block: 1.5rem; }
+.mb-6 { margin-bottom: 1.5rem; }
+.pb-3 { padding-bottom: 0.75rem; }
+.flex { display: flex; }
+.gap-4 { gap: 1rem; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.text-sm { font-size: 0.875rem; }
+.text-neutral-500 { color: #737373; }
+.border-b { border-bottom: 1px solid; }
+.border-neutral-200 { border-color: #e5e5e5; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 0.375rem 0.5rem; text-align: left; border-bottom: 1px solid #e5e5e5; }

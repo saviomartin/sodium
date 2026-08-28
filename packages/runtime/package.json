@@ -1,0 +1,32 @@
+{
+  "name": "@sodium/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./bridge": {
+      "types": "./src/bridge.ts",
+      "default": "./src/bridge.ts"
+    },
+    "./loader-src": "./src/loader.ts",
+    "./dist/agent.js": "./dist/agent.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "eslint --max-warnings 0 src test",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@sodium/contracts": "workspace:*",
+    "@types/node": "26.3.0",
+    "esbuild": "^0.28.2",
+    "eslint": "10.9.1",
+    "happy-dom": "^20.11.12",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.11",
+    "webmcp-types": "^0.1.5"
+  }
+}

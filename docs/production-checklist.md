@@ -1,0 +1,50 @@
+# Production-readiness checklist
+
+## Secrets & keys
+
+- [ ] Generate a production Ed25519 manifest keypair (`node packages/runtime/scripts/gen-dev-keys.mjs` as a template — store the private key in your secret manager, never in the repo). Set `MANIFEST_SIGNING_KEY_ID` + `MANIFEST_SIGNING_PRIVATE_KEY`; build the loader with `SODIUM_MANIFEST_JWKS` containing the matching public JWK(s). The app refuses to boot in production with the committed dev key.
+- [ ] Plan key rotation: the loader pins a JWK **set** — ship new+old, re-sign, then retire the old key with the next loader version.
+- [ ] GitHub App private key and webhook secret in env/KMS only; confirm they never appear in logs or generated PRs.
+- [ ] `SUPABASE_SECRET_KEY` is server-only (web server + worker). Rotate any key that ever reached a client bundle.
+
+## Supabase
+
+- [ ] Dedicated production project; separate project (or branch) for previews. `supabase link` + `pnpm db:push` per environment; never edit schema through the dashboard.
+- [ ] Run `supabase db advisors` (CLI ≥ 2.81) after every migration and resolve findings.
+- [ ] `pnpm db:test` (RLS suite) green against the production schema before first launch.
+- [ ] Do NOT run `pnpm db:seed` in production (it creates demo users with known passwords).
+- [ ] Auth: enable email confirmation + configure SMTP; set site URL and redirect allowlists; consider MFA for org owners.
+- [ ] Storage: confirm the `artifacts` bucket stays private; set retention for crawl artifacts.
+- [ ] Queues: monitor `pgmq.q_sodium_jobs` depth and the archive table (poison messages land there) — alert on growth.
+- [ ] Backups/PITR enabled; test a restore.
+
+## Web / worker deployment
+
+- [ ] `apps/web` behind HTTPS (WebMCP and the loader require secure contexts). Set `SITE_URL` to the public origin.
+- [ ] Serve `/agent/v1.js` via a CDN with immutable caching; keep old majors available forever (customers pin versions).
+- [ ] Run at least 2 worker instances; stages are idempotent and pgmq redelivers on crash. Bound `WORKER_CONCURRENCY` by CPU.
+- [ ] Rate-limit `/api/events` and `/api/m/*` at the edge; both are public by design and serve/accept only non-sensitive data.
+- [ ] Structured worker logs shipped somewhere queryable; alert on `job exceeded max attempts`.
+
+## GitHub
+
+- [ ] App registered per docs/github-app.md with the minimal permission set (contents rw, pull requests rw, metadata ro).
+- [ ] Webhook endpoint reachable; deliveries page checked after launch; redelivery runbook written (GitHub does not auto-retry).
+- [ ] Verify webhook secret rotation procedure (GitHub supports two active secrets via app settings + env rollover).
+
+## AI
+
+- [ ] `AI_GATEWAY_API_KEY` set; pick the model via `AI_MODEL` (provider/model). Budget alerts on the gateway.
+- [ ] Re-confirm prompt-injection posture after any prompt change: repository/page content must stay inside `<untrusted-data>` blocks and outputs must pass `validateContract`.
+
+## Product safety invariants (verify in staging before each release)
+
+- [ ] A tampered or wrong-origin manifest registers zero tools (fixture e2e covers this — keep it green).
+- [ ] Destructive/financial candidates cannot be approved below `confirmation: required` and never bind to automatic form submission.
+- [ ] Publishing requires an owner/admin; members can review UI but every privileged action fails server-side.
+- [ ] Continuous sync creates drafts only; confirm production manifests never change without a human publish.
+- [ ] Rollback restores the previous tool set end-to-end (loader picks it up within the manifest cache TTL of 60s).
+
+## Honest-claims copy
+
+- [ ] All user-facing copy describes availability as "compatible WebMCP browser agents while the application is open" — no universal-agent claims.

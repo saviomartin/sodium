@@ -1,159 +1,132 @@
-# Turborepo starter
+# Sodium
 
-This Turborepo starter is maintained by the Turborepo core team.
+Sodium converts existing Next.js websites into **reviewed, verified,
+WebMCP-enabled applications**: connect a GitHub repository, let the analysis
+pipeline discover routes and application actions, review the proposed tool
+contracts with evidence and risk classification, then publish a signed
+manifest consumed by a one-line loader:
 
-## Using this example
-
-Run the following command:
-
-```sh
-npx create-turbo@latest
+```html
+<script
+  src="https://your-sodium-host/agent/v1.js"
+  data-site="site_123"
+></script>
 ```
 
-## What's inside?
+Published tools are available to **compatible WebMCP browser agents while the
+application is open** (currently Chrome/Edge origin-trial builds). See
+[docs/architecture.md](docs/architecture.md) for the research, source links
+and design decisions; WebMCP-specific behavior is isolated in
+`packages/runtime/src/webmcp-adapter.ts` because the proposal is still moving.
 
-This Turborepo includes the following packages/apps:
+## Repository layout
 
-### Apps and Packages
+| Path                    | Purpose                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/web`              | Next.js dashboard: onboarding, review, publication, public manifest + loader endpoints, GitHub webhooks                        |
+| `apps/worker`           | Background worker: clone → static analysis → preview crawl → AI synthesis → validation; PR generation; continuous sync         |
+| `packages/analyzer`     | Framework-neutral analysis engine + Next.js App Router adapter (AST only, never executes repository code)                      |
+| `packages/runtime`      | The loader (`agent.js`), the WebMCP adapter and the first-party action-bridge SDK                                              |
+| `packages/contracts`    | Shared Zod schemas, versioned action contracts, deterministic validation, manifest signing                                     |
+| `examples/fixture-shop` | Realistic authenticated fixture app proving the end-to-end path (read-only, form, state-changing, confirmation-required tools) |
+| `supabase/`             | Migrations, seed data (two organizations for isolation testing)                                                                |
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+## Local development setup
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+Prereqs: Node ≥ 24, pnpm 11 (via corepack), the Supabase CLI. **No Docker**:
+one hosted Supabase project backs local development, previews and production.
 
-### Utilities
+```bash
+corepack enable && pnpm install
 
-This Turborepo has some additional tools already setup for you:
+# 1. Supabase project (once):
+supabase projects create sodium --org-id <your-org> --region <region> --db-password <pw>
+supabase link --project-ref <project-ref>
+cp .env.example .env                       # fill SUPABASE_DB_URL (IPv4 pooler URL)
+pnpm db:push                               # apply supabase/migrations
+pnpm db:seed                               # seed users/orgs + fixture repository
+pnpm db:types                              # regenerate packages/contracts/src/database.types.ts
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+# 2. Environment files (see .env.example for every variable):
+#    apps/web/.env.local  and  apps/worker/.env
 
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+# 3. Build the loader once, then run everything:
+pnpm --filter @sodium/runtime build
+pnpm dev        # dashboard :3000, fixture shop :4000 (turbo)
+# worker (separate terminal):
+pnpm --filter @sodium/worker dev
 ```
 
-Without global `turbo`, use your package manager:
+Seeded accounts (password `password123`): `alice@acme.test` (owner),
+`carol@acme.test` (member — for permission testing), `bob@globex.test`
+(separate org — for isolation testing).
 
-```sh
-cd my-turborepo
-npx turbo build
-bun exec turbo build
-bun exec turbo build
+### Credentials are optional in development
+
+The real adapters are implemented; missing credentials switch in
+fixture-backed providers instead of fake secrets:
+
+- **No GitHub App** → "Use the local fixture repository" in onboarding
+  analyzes `examples/fixture-shop`; integration "PRs" are written to
+  `$WORK_DIR/local-prs/` as a reviewable file set.
+- **No AI gateway key** → deterministic fixture synthesis maps analyzer
+  primitives to tools with fixed rules (the whole pipeline, validation, evals
+  and review flow stay real).
+- **Manifest signing** falls back to the committed, clearly-marked INSECURE
+  dev key; production refuses to boot with it.
+
+To go live with real integrations: [docs/github-app.md](docs/github-app.md)
+and set `AI_GATEWAY_API_KEY` (+ `AI_MODEL`, addressed as `provider/model`
+through the Vercel AI Gateway).
+
+## The workflow
+
+1. **Sign in** (Supabase auth) and create or select an organization.
+2. **Install the GitHub App** (repository access — deliberately separate from
+   how you signed in) and select a repository, or use the local fixture.
+3. **Configure a preview environment**: a deployed URL Sodium may crawl with
+   Playwright (optional credentials stored via Supabase Vault). Sodium never
+   builds or executes repository code — analysis is tarball + AST only.
+4. **Run analysis**: five durable, resumable stages over Supabase Queues
+   (pgmq) with progress streamed over Realtime broadcast.
+5. **Review** proposed tools: evidence, risk (read-only → financial),
+   confidence, deterministic validation issues, evaluation results. Edit
+   agent-facing wording, approve or reject. AI proposes — deterministic code
+   validates — humans decide. **State-changing tools are never published
+   automatically.**
+6. **Publish**: approved contracts become an immutable, Ed25519-signed
+   manifest version served at `/api/m/{siteId}`; the loader registers tools
+   only on the exact configured origins. One-click rollback re-signs any
+   previous version.
+7. **Integrate**: for complex apps, generate a reviewable PR that adds the
+   pinned loader plus a generated action bridge binding approved tools to
+   your existing functions — your validation, auth, idempotency and
+   confirmation logic runs unchanged. Never pushes to the default branch.
+8. **Stay in sync**: verified push webhooks re-analyze changed code and file
+   compatibility findings; breaking drift creates a _draft_ manifest that a
+   human must approve.
+
+## Testing
+
+```bash
+pnpm test                    # unit tests: contracts, analyzer, runtime, worker, web
+pnpm db:test                 # RLS/database security tests against the linked project
+pnpm --filter fixture-shop test:e2e   # WebMCP end-to-end fixture (Playwright)
+pnpm --filter @sodium/web test:e2e    # dashboard browser tests (spawns the worker)
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+Five verification layers: unit (extractors, contract validation, risk floors,
+manifest generation/signing), database (cross-tenant RLS isolation,
+member/owner differences, immutability triggers — run against the real
+project inside rolled-back transactions), integration (webhook verification,
+queued pipeline, approval → publication → rollback), browser (onboarding,
+review, editing, approval, publishing), and the end-to-end fixture proving an
+approved tool is registered **and executed** on a sample Next.js site under a
+WebMCP-capable browser (hermetic polyfill of the current draft API). Security
+tests cover tampered/malicious manifests, duplicate tool names, unknown
+handler kinds, unauthorized handlers, prompt-injected repository content and
+cross-origin loader use.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Production readiness
 
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+See [docs/production-checklist.md](docs/production-checklist.md).

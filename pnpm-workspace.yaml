@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "examples/*"
+allowBuilds:
+  esbuild: true
+  "@tailwindcss/oxide": true
+  sharp: true
+minimumReleaseAgeExclude:
+  - happy-dom@20.11.12
