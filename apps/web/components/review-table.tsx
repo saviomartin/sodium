@@ -70,8 +70,9 @@ export function ReviewTable({
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const enabledCount = candidates.filter((candidate) => enabled[candidate.id])
-    .length;
+  const enabledCount = candidates.filter(
+    (candidate) => enabled[candidate.id],
+  ).length;
   const allEnabled = enabledCount === candidates.length;
 
   function update(candidateIds: string[], nextEnabled: boolean) {
@@ -127,7 +128,9 @@ export function ReviewTable({
                   <Toggle
                     checked={allEnabled}
                     disabled={pending}
-                    label={allEnabled ? "Disable all tools" : "Enable all tools"}
+                    label={
+                      allEnabled ? "Disable all tools" : "Enable all tools"
+                    }
                     onChange={(checked) =>
                       update(
                         candidates.map((candidate) => candidate.id),

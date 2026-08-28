@@ -31,7 +31,8 @@ export default async function RunPage({
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold text-balance">
-            Analyzing <span className="font-mono">{commit?.sha.slice(0, 10)}</span>
+            Analyzing{" "}
+            <span className="font-mono">{commit?.sha.slice(0, 10)}</span>
           </h1>
           <RunStatusBadge status={run.status as RunStatus} />
         </div>

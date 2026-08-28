@@ -623,7 +623,10 @@ export async function setCandidatesEnabledAction(
           .repository_id !== site.repository_id,
     )
   ) {
-    return { ok: false, error: "tool selection does not belong to this repository" };
+    return {
+      ok: false,
+      error: "tool selection does not belong to this repository",
+    };
   }
 
   const service = createServiceClient();

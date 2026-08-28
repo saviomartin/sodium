@@ -216,9 +216,9 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
 
   await page.getByRole("link", { name: "Cancel order" }).click();
   await expect(page.getByText("available", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /approve|publish|reject/i })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: /approve|publish|reject/i }),
+  ).toHaveCount(0);
 
   await page.goto(`/repos/${seeded.repositoryId}`);
   const disableToggle = page.getByRole("checkbox", {

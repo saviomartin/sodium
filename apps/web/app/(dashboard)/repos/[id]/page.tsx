@@ -152,7 +152,8 @@ export default async function RepositoryPage({
             {repo.full_name}
           </h1>
           <p className="text-sm text-neutral-500">
-            Default branch <span className="font-mono">{repo.default_branch}</span>
+            Default branch{" "}
+            <span className="font-mono">{repo.default_branch}</span>
           </p>
         </div>
         {activeRun ? (
@@ -200,7 +201,9 @@ export default async function RepositoryPage({
           />
         ) : rows.length === 0 ? (
           <EmptyState
-            title={latestSuccessfulRun ? "No tools proposed" : "No analysis yet"}
+            title={
+              latestSuccessfulRun ? "No tools proposed" : "No analysis yet"
+            }
             hint={
               latestSuccessfulRun
                 ? "The analyzer found no useful actions in the latest successful run."

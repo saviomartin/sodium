@@ -33,12 +33,14 @@ export default async function CandidatePage({
     id: string;
     repository_id: string;
   } | null;
-  if (!repo || !candidate || candidateRun?.repository_id !== repo.id) notFound();
+  if (!repo || !candidate || candidateRun?.repository_id !== repo.id)
+    notFound();
 
   const contracts = site ? await getToolContracts(site.id) : [];
   const available = contracts.some(
     (contract) =>
-      contract.action_id === candidate.action_id && contract.status === "active",
+      contract.action_id === candidate.action_id &&
+      contract.status === "active",
   );
   const parsedContract = ActionContractSchema.safeParse(candidate.contract);
   const contract: ActionContract | null = parsedContract.success
