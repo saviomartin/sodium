@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -14,11 +14,16 @@ export interface E2eState {
 
 export function loadWebEnv(): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const line of readFileSync(join(here, "..", ".env.local"), "utf8").split(
-    "\n",
-  )) {
-    const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-    if (match) env[match[1]!] = match[2]!;
+  const files = [
+    join(here, "..", "..", "..", ".env"),
+    join(here, "..", ".env.local"),
+  ];
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
+      if (match) env[match[1]!] = match[2]!;
+    }
   }
   return env;
 }

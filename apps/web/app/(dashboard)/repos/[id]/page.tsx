@@ -4,13 +4,14 @@ import {
   getCandidates,
   getCompatFindings,
   getEnvironments,
+  getPublication,
   getRepository,
   getRuns,
   getSiteForRepository,
-  getToolContracts,
 } from "@/lib/queries";
 import { requestAnalysisAction, saveEnvironmentAction } from "@/lib/actions";
 import { ActionForm, SubmitButton } from "@/components/action-form";
+import { RepositoryIntegration } from "@/components/repository-integration";
 import { ReviewTable, type CandidateRow } from "@/components/review-table";
 import {
   Card,
@@ -44,12 +45,12 @@ export default async function RepositoryPage({
     (run) => run.status === "queued" || run.status === "running",
   );
   const latestSuccessfulRun = runs.find((run) => run.status === "succeeded");
-  const [candidates, contracts] = await Promise.all([
+  const [candidates, publication] = await Promise.all([
     latestSuccessfulRun ? getCandidates(latestSuccessfulRun.id) : [],
-    site ? getToolContracts(site.id) : [],
+    site ? getPublication(site.id) : null,
   ]);
   const activeActionIds = new Set(
-    contracts
+    (publication?.contracts ?? [])
       .filter((contract) => contract.status === "active")
       .map((contract) => contract.action_id),
   );
@@ -218,6 +219,14 @@ export default async function RepositoryPage({
           />
         )}
       </Card>
+
+      {site && publication ? (
+        <RepositoryIntegration
+          repo={repo}
+          site={site}
+          publication={publication}
+        />
+      ) : null}
 
       {site && site.allowed_origins.length > 0 && settings}
 

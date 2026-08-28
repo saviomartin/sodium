@@ -90,7 +90,7 @@ async function provisionRepository(userId: string) {
       site_id: `site_e2e${String(unique).slice(-8)}`,
       allowed_origins: ["https://example.com"],
     })
-    .select("id")
+    .select("id, site_id")
     .single();
   if (siteError || !site) throw siteError;
 
@@ -150,11 +150,14 @@ async function provisionRepository(userId: string) {
     repositoryId: repository.id,
     runId: run.id,
     candidateId: candidate.id,
+    siteId: site.id,
+    sitePublicId: site.site_id,
   };
 }
 
 test("analysis returns to the repo and tool toggles publish immediately", async ({
   page,
+  context,
 }) => {
   const { users } = state();
   await signIn(page, users.owner.email);
@@ -195,6 +198,20 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
     timeout: 10_000,
   });
   await expect(page.getByRole("link", { name: "Cancel order" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Install & access" }),
+  ).toBeVisible();
+
+  const snippet = page.locator("pre").filter({ hasText: seeded.sitePublicId });
+  await expect(snippet).toContainText("/agent/v1.js");
+  await expect(snippet).toContainText(`data-site="${seeded.sitePublicId}"`);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy snippet" }).click();
+  await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /\/api\/m\// })).toHaveAttribute(
+    "href",
+    `http://localhost:3100/api/m/${seeded.sitePublicId}`,
+  );
 
   const enableToggle = page.getByRole("checkbox", {
     name: "Enable Cancel order",
@@ -213,6 +230,137 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
       return liveSite?.current_manifest_id ?? null;
     })
     .not.toBeNull();
+
+  const manifestResponse = await page.request.get(
+    `/api/m/${seeded.sitePublicId}`,
+  );
+  expect(manifestResponse.ok()).toBeTruthy();
+  const envelope = (await manifestResponse.json()) as {
+    algorithm: string;
+    payload: string;
+    signature: string;
+  };
+  expect(envelope).toMatchObject({
+    algorithm: "Ed25519",
+  });
+  expect(envelope.signature).toBeTruthy();
+  const publicManifest = JSON.parse(
+    Buffer.from(envelope.payload, "base64url").toString("utf8"),
+  ) as unknown;
+  expect(publicManifest).toMatchObject({
+    siteId: seeded.sitePublicId,
+    origins: ["https://example.com"],
+    tools: [{ name: "cancel_order" }],
+  });
+
+  const origins = page.getByRole("textbox", {
+    name: "One origin per line",
+  });
+  await origins.fill("https://example.com\nhttps://staging.example.com");
+  await page.getByRole("button", { name: "Save origins" }).click();
+  await expect(
+    page.getByText("Origins saved and availability updated."),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect
+    .poll(async () => {
+      const { data: liveSite } = await seeded.admin
+        .from("sites")
+        .select("allowed_origins, current_manifest_id")
+        .eq("id", seeded.siteId)
+        .single();
+      if (!liveSite?.current_manifest_id) return null;
+      const { data: liveManifest } = await seeded.admin
+        .from("manifests")
+        .select("manifest")
+        .eq("id", liveSite.current_manifest_id)
+        .single();
+      return {
+        origins: liveSite.allowed_origins,
+        manifest: liveManifest?.manifest,
+      };
+    })
+    .toMatchObject({
+      origins: ["https://example.com", "https://staging.example.com"],
+      manifest: {
+        origins: ["https://example.com", "https://staging.example.com"],
+        tools: [{ name: "cancel_order" }],
+      },
+    });
+
+  const { data: beforeRepublish } = await seeded.admin
+    .from("manifests")
+    .select("version")
+    .eq("site_id", seeded.siteId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .single();
+  await page.getByRole("button", { name: "Republish now" }).click();
+  await page.getByRole("button", { name: "Publish manifest" }).click();
+  await expect
+    .poll(async () => {
+      const { data } = await seeded.admin
+        .from("manifests")
+        .select("version")
+        .eq("site_id", seeded.siteId)
+        .order("version", { ascending: false })
+        .limit(1)
+        .single();
+      return data?.version ?? 0;
+    })
+    .toBe((beforeRepublish?.version ?? 0) + 1);
+
+  await seeded.admin.from("usage_events").insert({
+    org_id: seeded.workspaceId,
+    site_id: seeded.siteId,
+    event: "loader_ready",
+    data: { origin: "https://example.com" },
+  });
+  await page.reload();
+  await expect(page.getByText(/Loader last ready/)).toBeVisible();
+
+  await page.getByText("Versions, rollback & activity").click();
+  await expect(page.getByText("Loader activity")).toBeVisible();
+  await expect(page.getByText(/loader_ready/)).toBeVisible();
+  await page.getByRole("button", { name: "Roll back to this" }).first().click();
+  await page.getByRole("button", { name: "Roll back", exact: true }).click();
+  await expect
+    .poll(async () => {
+      const { data } = await seeded.admin
+        .from("manifest_deployments")
+        .select("action")
+        .eq("site_id", seeded.siteId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      return data?.action;
+    })
+    .toBe("rollback");
+
+  await page.getByRole("button", { name: "Generate integration PR" }).click();
+  await expect(page.getByText(/PR generation (is )?queued/)).toBeVisible({
+    timeout: 15_000,
+  });
+  const { data: integrationPr } = await seeded.admin
+    .from("integration_prs")
+    .select("id, status")
+    .eq("site_id", seeded.siteId)
+    .single();
+  expect(integrationPr?.status).toBe("pending");
+  const prUrl = "https://github.com/foundative/webmcp-fixture-shop/pull/123";
+  await seeded.admin
+    .from("integration_prs")
+    .update({
+      status: "open",
+      branch: "sodium/integration-e2e",
+      pr_number: 123,
+      url: prUrl,
+    })
+    .eq("id", integrationPr!.id);
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Open #123 ↗" })).toHaveAttribute(
+    "href",
+    prUrl,
+  );
 
   await page.getByRole("link", { name: "Cancel order" }).click();
   await expect(page.getByText("available", { exact: true })).toBeVisible();

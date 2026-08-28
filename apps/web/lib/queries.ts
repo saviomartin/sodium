@@ -148,6 +148,57 @@ export async function getEvalRuns(candidateId: string) {
   return data ?? [];
 }
 
+/** Everything rendered by the repository's install and availability area. */
+export async function getPublication(siteUuid: string) {
+  const supabase = await createClient();
+  const [
+    { data: contracts },
+    { data: manifests },
+    { data: deployments },
+    { data: prs },
+    { data: usage },
+  ] = await Promise.all([
+    supabase
+      .from("tool_contracts")
+      .select("id, action_id, name, status, latest_version_id, created_at")
+      .eq("site_id", siteUuid)
+      .order("name"),
+    supabase
+      .from("manifests")
+      .select("id, version, status, created_at, published_at, manifest")
+      .eq("site_id", siteUuid)
+      .order("version", { ascending: false })
+      .limit(20),
+    supabase
+      .from("manifest_deployments")
+      .select("action, created_at, manifest_id")
+      .eq("site_id", siteUuid)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("integration_prs")
+      .select(
+        "id, status, pr_number, url, branch, error, created_at, updated_at",
+      )
+      .eq("site_id", siteUuid)
+      .order("created_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("usage_events")
+      .select("event, data, created_at")
+      .eq("site_id", siteUuid)
+      .order("created_at", { ascending: false })
+      .limit(30),
+  ]);
+  return {
+    contracts: contracts ?? [],
+    manifests: manifests ?? [],
+    deployments: deployments ?? [],
+    prs: prs ?? [],
+    usage: usage ?? [],
+  };
+}
+
 export async function getToolContracts(siteUuid: string) {
   const supabase = await createClient();
   const { data } = await supabase

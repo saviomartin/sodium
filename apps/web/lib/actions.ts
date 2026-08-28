@@ -415,14 +415,29 @@ export async function saveEnvironmentAction(
   const origin = new URL(input.baseUrl).origin;
   const { data: site } = await supabase
     .from("sites")
-    .select("id, allowed_origins")
+    .select("id, allowed_origins, current_manifest_id")
     .eq("repository_id", repo.id)
     .maybeSingle();
   if (site && !site.allowed_origins.includes(origin)) {
-    await supabase
+    const { error: originError } = await supabase
       .from("sites")
       .update({ allowed_origins: [...site.allowed_origins, origin] })
       .eq("id", site.id);
+    if (originError) {
+      return {
+        ok: false,
+        error: `App URL saved, but allowing its origin failed: ${originError.message}`,
+      };
+    }
+    if (site.current_manifest_id) {
+      const publication = await publishSiteManifest(site.id, gate.userId);
+      if (!publication.ok) {
+        return {
+          ok: false,
+          error: `App URL saved, but availability could not update: ${publication.error}`,
+        };
+      }
+    }
   }
 
   revalidatePath(`/repos/${repo.id}`);
@@ -832,7 +847,7 @@ export async function publishSiteAction(
   const supabase = await createClient();
   const { data: site } = await supabase
     .from("sites")
-    .select("id, org_id, allowed_origins")
+    .select("id, org_id, repository_id, allowed_origins")
     .eq("id", siteUuid)
     .maybeSingle();
   if (!site) return { ok: false, error: "site not found" };
@@ -847,7 +862,7 @@ export async function publishSiteAction(
 
   const result = await publishSiteManifest(siteUuid, gate.userId);
   if (!result.ok) return { ok: false, error: result.error };
-  revalidatePath("/", "layout");
+  revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }
 
@@ -860,7 +875,7 @@ export async function rollbackManifestAction(
   const supabase = await createClient();
   const { data: site } = await supabase
     .from("sites")
-    .select("id, org_id")
+    .select("id, org_id, repository_id")
     .eq("id", siteUuid)
     .maybeSingle();
   if (!site) return { ok: false, error: "site not found" };
@@ -869,7 +884,7 @@ export async function rollbackManifestAction(
 
   const result = await rollbackSiteManifest(siteUuid, manifestId, gate.userId);
   if (!result.ok) return { ok: false, error: result.error };
-  revalidatePath("/", "layout");
+  revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }
 
@@ -889,6 +904,31 @@ export async function generateIntegrationPrAction(
   if ("error" in gate) return { ok: false, error: gate.error };
 
   const service = createServiceClient();
+  const { count: activeCount, error: activeError } = await service
+    .from("tool_contracts")
+    .select("id", { count: "exact", head: true })
+    .eq("site_id", site.id)
+    .eq("status", "active");
+  if (activeError) return { ok: false, error: activeError.message };
+  if (!activeCount) {
+    return {
+      ok: false,
+      error: "enable at least one tool before generating an integration PR",
+    };
+  }
+
+  const { data: pending, error: pendingError } = await service
+    .from("integration_prs")
+    .select("id")
+    .eq("site_id", site.id)
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle();
+  if (pendingError) return { ok: false, error: pendingError.message };
+  if (pending) {
+    return { ok: true, error: "PR generation is already queued." };
+  }
+
   const { data: pr, error } = await service
     .from("integration_prs")
     .insert({
@@ -919,7 +959,7 @@ export async function generateIntegrationPrAction(
     subject_id: pr.id,
     data: {} as never,
   });
-  revalidatePath("/", "layout");
+  revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }
 
@@ -952,14 +992,28 @@ export async function updateSiteOriginsAction(
     }
   }
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { data: site } = await supabase
+    .from("sites")
+    .select("id, org_id, repository_id")
+    .eq("id", siteUuid)
+    .maybeSingle();
+  if (!site) return { ok: false, error: "site not found" };
+  const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  const { error } = await supabase
     .from("sites")
     .update({ allowed_origins: origins })
-    .eq("id", siteUuid)
-    .select("id");
+    .eq("id", site.id);
   if (error) return { ok: false, error: error.message };
-  if (!data || data.length === 0)
-    return { ok: false, error: "not permitted (owner or admin role required)" };
-  revalidatePath("/", "layout");
+
+  const publication = await publishSiteManifest(site.id, gate.userId);
+  if (!publication.ok) {
+    return {
+      ok: false,
+      error: `Origins saved, but availability could not update: ${publication.error}`,
+    };
+  }
+  revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }

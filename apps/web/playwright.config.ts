@@ -31,6 +31,7 @@ export default defineConfig({
       GITHUB_APP_PRIVATE_KEY: "e2e-placeholder-".padEnd(120, "x"),
       NEXT_DIST_DIR: ".next-e2e",
       NEXT_PUBLIC_GITHUB_APP_SLUG: "sodium-e2e",
+      SITE_URL: "http://localhost:3100",
       MANIFEST_SIGNING_KEY_ID: "e2e-test",
       MANIFEST_SIGNING_PRIVATE_KEY: e2eSigningKey.privateKeyPem,
     },
