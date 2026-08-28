@@ -43,7 +43,8 @@ export async function publishSiteManifest(
       "latest_version_id, contract_versions!tool_contracts_latest_version_id_fkey(contract)",
     )
     .eq("site_id", siteUuid)
-    .eq("status", "active");
+    .eq("status", "active")
+    .order("name");
   if (contractsError) return { ok: false, error: contractsError.message };
 
   const contracts = (contractRows ?? [])
@@ -56,9 +57,6 @@ export async function publishSiteManifest(
         )?.contract,
     )
     .filter((contract): contract is ActionContract => Boolean(contract));
-  if (contracts.length === 0)
-    return { ok: false, error: "no approved tools to publish" };
-
   const { data: latest } = await service
     .from("manifests")
     .select("version")

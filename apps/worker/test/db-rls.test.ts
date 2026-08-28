@@ -50,8 +50,14 @@ async function actAsService(tx: Tx): Promise<void> {
  * Asserts a statement fails WITHOUT aborting the outer test transaction:
  * the statement runs inside a savepoint that rolls back on error.
  */
-async function expectError(tx: Tx, pattern: RegExp, fn: (t: Tx) => Promise<unknown>): Promise<void> {
-  await expect(tx.savepoint((t) => fn(t as unknown as Tx))).rejects.toThrow(pattern);
+async function expectError(
+  tx: Tx,
+  pattern: RegExp,
+  fn: (t: Tx) => Promise<unknown>,
+): Promise<void> {
+  await expect(tx.savepoint((t) => fn(t as unknown as Tx))).rejects.toThrow(
+    pattern,
+  );
 }
 
 interface Tenants {
@@ -61,6 +67,8 @@ interface Tenants {
   acmeOrg: string;
   globexOrg: string;
   acmeRepo: string;
+  githubRepoId: number;
+  installationId: number;
   acmeSite: string;
   publicSiteId: string;
 }
@@ -93,24 +101,22 @@ async function seedTenants(tx: Tx): Promise<Tenants> {
   }
 
   const [acme] = await tx<{ id: string }[]>`
-    insert into organizations (name, slug, created_by)
-    values ('RLS Acme', ${`rls-acme-${suffix}`}, ${alice}) returning id
+    select id from organizations where created_by = ${alice}
   `;
   const [globex] = await tx<{ id: string }[]>`
-    insert into organizations (name, slug, created_by)
-    values ('RLS Globex', ${`rls-globex-${suffix}`}, ${bob}) returning id
+    select id from organizations where created_by = ${bob}
   `;
-  await tx`insert into org_memberships (org_id, user_id, role) values
-    (${acme!.id}, ${alice}, 'owner'), (${acme!.id}, ${carol}, 'member'), (${globex!.id}, ${bob}, 'owner')`;
+  await tx`insert into org_memberships (org_id, user_id, role)
+    values (${acme!.id}, ${carol}, 'member')`;
 
-  const installationId = -Math.floor(Math.random() * 2_000_000_000) - 1;
+  const installationId = Math.floor(Math.random() * 2_000_000_000) + 1;
   const [installation] = await tx<{ id: string }[]>`
     insert into github_installations (org_id, installation_id, account_login, account_type, created_by)
-    values (${acme!.id}, ${installationId}, 'rls-fixture', 'User', ${alice}) returning id
+    values (${acme!.id}, ${installationId}, 'foundative', 'Organization', ${alice}) returning id
   `;
   const [repo] = await tx<{ id: string }[]>`
     insert into repositories (org_id, installation_id, github_repo_id, owner, name, full_name, default_branch)
-    values (${acme!.id}, ${installation!.id}, 0, 'rls-fixture', 'fixture-shop', 'rls-fixture/fixture-shop', 'main')
+    values (${acme!.id}, ${installation!.id}, 10001, 'foundative', 'test-shop', 'foundative/test-shop', 'main')
     returning id
   `;
   const publicSiteId = `site_${suffix.padEnd(8, "0").slice(0, 16)}`;
@@ -126,6 +132,8 @@ async function seedTenants(tx: Tx): Promise<Tenants> {
     acmeOrg: acme!.id,
     globexOrg: globex!.id,
     acmeRepo: repo!.id,
+    githubRepoId: 10001,
+    installationId,
     acmeSite: site!.id,
     publicSiteId,
   };
@@ -166,11 +174,15 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await actAs(tx, t.alice);
-      const aliceOrgs = await tx<{ id: string }[]>`select id from organizations order by id`;
+      const aliceOrgs = await tx<
+        { id: string }[]
+      >`select id from organizations order by id`;
       expect(aliceOrgs.map((row) => row.id)).toEqual([t.acmeOrg]);
 
       await actAs(tx, t.bob);
-      const bobOrgs = await tx<{ id: string }[]>`select id from organizations order by id`;
+      const bobOrgs = await tx<
+        { id: string }[]
+      >`select id from organizations order by id`;
       expect(bobOrgs.map((row) => row.id)).toEqual([t.globexOrg]);
     });
   });
@@ -181,12 +193,20 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       const candidateId = await seedCandidate(tx, t);
 
       await actAs(tx, t.bob);
-      expect(await tx`select id from repositories where id = ${t.acmeRepo}`).toHaveLength(0);
-      expect(await tx`select id from action_candidates where id = ${candidateId}`).toHaveLength(0);
-      expect(await tx`select id from analysis_runs where org_id = ${t.acmeOrg}`).toHaveLength(0);
+      expect(
+        await tx`select id from repositories where id = ${t.acmeRepo}`,
+      ).toHaveLength(0);
+      expect(
+        await tx`select id from action_candidates where id = ${candidateId}`,
+      ).toHaveLength(0);
+      expect(
+        await tx`select id from analysis_runs where org_id = ${t.acmeOrg}`,
+      ).toHaveLength(0);
 
       await actAs(tx, t.alice);
-      expect(await tx`select id from action_candidates where id = ${candidateId}`).toHaveLength(1);
+      expect(
+        await tx`select id from action_candidates where id = ${candidateId}`,
+      ).toHaveLength(1);
     });
   });
 
@@ -194,7 +214,9 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await actAs(tx, t.carol);
-      expect(await tx`select id from repositories where org_id = ${t.acmeOrg}`).toHaveLength(1);
+      expect(
+        await tx`select id from repositories where org_id = ${t.acmeOrg}`,
+      ).toHaveLength(1);
       await expectError(
         tx,
         /row-level security/,
@@ -227,12 +249,14 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       await expectError(
         tx,
         /immutable/,
-        (x) => x`update action_candidates set contract = '{"evil":true}'::jsonb where id = ${candidateId}`,
+        (x) =>
+          x`update action_candidates set contract = '{"evil":true}'::jsonb where id = ${candidateId}`,
       );
       await expectError(
         tx,
         /manifest publication/,
-        (x) => x`update action_candidates set status = 'published' where id = ${candidateId}`,
+        (x) =>
+          x`update action_candidates set status = 'published' where id = ${candidateId}`,
       );
     });
   });
@@ -266,11 +290,13 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       await expectError(
         tx,
         /immutable/,
-        (x) => x`update contract_versions set contract = '{}'::jsonb where id = ${versionId!.approve_candidate}`,
+        (x) =>
+          x`update contract_versions set contract = '{}'::jsonb where id = ${versionId!.approve_candidate}`,
       );
       // …but tenant offboarding (privileged cascade) can remove it.
       await tx`update tool_contracts set latest_version_id = null where latest_version_id = ${versionId!.approve_candidate}`;
-      const deleted = await tx`delete from contract_versions where id = ${versionId!.approve_candidate} returning id`;
+      const deleted =
+        await tx`delete from contract_versions where id = ${versionId!.approve_candidate} returning id`;
       expect(deleted).toHaveLength(1);
     });
   });
@@ -280,7 +306,12 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       const t = await seedTenants(tx);
       const candidateId = await seedCandidate(tx, t);
       await actAs(tx, t.carol);
-      await expectError(tx, /owner or admin/, (x) => x`select public.approve_candidate(${candidateId}, ${t.acmeSite})`);
+      await expectError(
+        tx,
+        /owner or admin/,
+        (x) =>
+          x`select public.approve_candidate(${candidateId}, ${t.acmeSite})`,
+      );
     });
   });
 
@@ -292,7 +323,8 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       await expectError(
         tx,
         /not found|owner or admin/,
-        (x) => x`select public.approve_candidate(${candidateId}, ${t.acmeSite})`,
+        (x) =>
+          x`select public.approve_candidate(${candidateId}, ${t.acmeSite})`,
       );
     });
   });
@@ -301,18 +333,142 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await actAs(tx, t.alice);
-      expect(await tx`select delivery_id from webhook_deliveries`).toHaveLength(0);
+      expect(await tx`select delivery_id from webhook_deliveries`).toHaveLength(
+        0,
+      );
       await expectError(
         tx,
         /row-level security|permission denied/,
-        (x) => x`insert into webhook_deliveries (delivery_id, event) values ('d1', 'push')`,
+        (x) =>
+          x`insert into webhook_deliveries (delivery_id, event) values ('d1', 'push')`,
       );
       await expectError(
         tx,
         /permission denied/,
-        (x) => x`select public.publish_manifest(${t.acmeSite}, '{}'::jsonb, '{}'::jsonb, ${t.alice})`,
+        (x) =>
+          x`select public.publish_manifest(${t.acmeSite}, '{}'::jsonb, '{}'::jsonb, ${t.alice})`,
       );
-      await expectError(tx, /permission denied/, (x) => x`select public.enqueue_job('{}'::jsonb)`);
+      await expectError(
+        tx,
+        /permission denied/,
+        (x) => x`select public.enqueue_job('{}'::jsonb)`,
+      );
+      await expectError(
+        tx,
+        /permission denied/,
+        (x) =>
+          x`select public.request_push_analysis('delivery-auth', ${t.githubRepoId}, ${t.installationId}, ${"a".repeat(40)}, 'refs/heads/main')`,
+      );
+    });
+  });
+
+  it("atomically deduplicates main pushes and enqueues full analysis", async () => {
+    await withRollback(async (tx) => {
+      const t = await seedTenants(tx);
+      const sha = "e".repeat(40);
+
+      const [first] = await tx<
+        { request_push_analysis: Record<string, unknown> }[]
+      >`
+        select public.request_push_analysis(
+          'delivery-main-1', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+        )
+      `;
+      const firstResult = first!.request_push_analysis;
+      expect(firstResult.ok).toBe(true);
+      expect(firstResult.runId).toBeTruthy();
+      expect(firstResult.enqueued).toEqual(["analysis.stage", "sync.compare"]);
+
+      const [duplicateDelivery] = await tx<
+        { request_push_analysis: Record<string, unknown> }[]
+      >`
+        select public.request_push_analysis(
+          'delivery-main-1', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+        )
+      `;
+      expect(duplicateDelivery!.request_push_analysis.duplicate).toBe(true);
+
+      const [sameCommit] = await tx<
+        { request_push_analysis: Record<string, unknown> }[]
+      >`
+        select public.request_push_analysis(
+          'delivery-main-2', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+        )
+      `;
+      expect(sameCommit!.request_push_analysis.existing).toBe(true);
+      expect(sameCommit!.request_push_analysis.runId).toBe(firstResult.runId);
+
+      const runs = await tx<
+        { id: string; stage_statuses: Record<string, unknown> }[]
+      >`
+        select r.id, r.stage_statuses
+        from analysis_runs r
+        join repository_commits c on c.id = r.commit_id
+        where r.repository_id = ${t.acmeRepo} and c.sha = ${sha}
+      `;
+      expect(runs).toHaveLength(1);
+      expect(runs[0]!.stage_statuses).toMatchObject({
+        clone: { status: "queued" },
+      });
+
+      const messages = await tx<{ message: { type: string } }[]>`
+        select message
+        from pgmq.q_sodium_jobs
+        where message ->> 'runId' = ${firstResult.runId as string}
+           or message ->> 'commitSha' = ${sha}
+      `;
+      expect(messages.map((row) => row.message.type).sort()).toEqual([
+        "analysis.stage",
+        "sync.compare",
+      ]);
+      expect(
+        await tx`select delivery_id from webhook_deliveries where delivery_id like 'delivery-main-%'`,
+      ).toHaveLength(2);
+    });
+  });
+
+  it("ignores non-main, deleted, unknown, and suspended pushes", async () => {
+    await withRollback(async (tx) => {
+      const t = await seedTenants(tx);
+      const sha = "f".repeat(40);
+
+      const cases = [
+        ["delivery-feature", t.installationId, sha, "refs/heads/feature"],
+        [
+          "delivery-deleted",
+          t.installationId,
+          "0".repeat(40),
+          "refs/heads/main",
+        ],
+        ["delivery-unknown", t.installationId + 1, sha, "refs/heads/main"],
+      ] as const;
+      for (const [delivery, installation, commit, ref] of cases) {
+        const [row] = await tx<
+          { request_push_analysis: { ignored?: string } }[]
+        >`
+          select public.request_push_analysis(
+            ${delivery}, ${t.githubRepoId}, ${installation}, ${commit}, ${ref}
+          )
+        `;
+        expect(row!.request_push_analysis.ignored).toBeTruthy();
+      }
+
+      await tx`
+        update github_installations
+        set suspended_at = now()
+        where installation_id = ${t.installationId}
+      `;
+      const [suspended] = await tx<
+        { request_push_analysis: { ignored?: string } }[]
+      >`
+        select public.request_push_analysis(
+          'delivery-suspended', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+        )
+      `;
+      expect(suspended!.request_push_analysis.ignored).toBeTruthy();
+      expect(
+        await tx`select id from analysis_runs where repository_id = ${t.acmeRepo}`,
+      ).toHaveLength(0);
     });
   });
 
@@ -323,7 +479,8 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       await expectError(
         tx,
         /repository not found/,
-        (x) => x`select public.request_analysis(${t.acmeRepo}, ${"d".repeat(40)})`,
+        (x) =>
+          x`select public.request_analysis(${t.acmeRepo}, ${"d".repeat(40)})`,
       );
 
       await actAs(tx, t.carol); // any member may request analysis
@@ -334,7 +491,9 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       expect(runId).toBeTruthy();
 
       await actAsService(tx);
-      const messages = await tx<{ message: { runId: string; stage: string } }[]>`
+      const messages = await tx<
+        { message: { runId: string; stage: string } }[]
+      >`
         select message from pgmq.q_sodium_jobs where message ->> 'runId' = ${runId}
       `;
       expect(messages).toHaveLength(1);
@@ -345,7 +504,11 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
   it("publish_manifest (service path) flips the site atomically and keeps history", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
-      const manifest = { manifestVersion: 1, siteId: t.publicSiteId, tools: [] };
+      const manifest = {
+        manifestVersion: 1,
+        siteId: t.publicSiteId,
+        tools: [],
+      };
       const [first] = await tx<{ publish_manifest: string }[]>`
         select public.publish_manifest(${t.acmeSite}, ${tx.json(manifest as never)}, '{"sig":"a"}'::jsonb, ${t.alice})
       `;
@@ -361,19 +524,26 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         where id in (${first!.publish_manifest}, ${second!.publish_manifest})
         order by version
       `;
-      expect(statuses.map((row) => row.status)).toEqual(["superseded", "published"]);
+      expect(statuses.map((row) => row.status)).toEqual([
+        "superseded",
+        "published",
+      ]);
       const deployments = await tx<{ action: string }[]>`
         select action from manifest_deployments
         where manifest_id in (${first!.publish_manifest}, ${second!.publish_manifest})
         order by created_at
       `;
-      expect(deployments.map((row) => row.action)).toEqual(["publish", "rollback"]);
+      expect(deployments.map((row) => row.action)).toEqual([
+        "publish",
+        "rollback",
+      ]);
 
       // Signed content is immutable even for the service role.
       await expectError(
         tx,
         /immutable/,
-        (x) => x`update manifests set manifest = '{}'::jsonb where id = ${first!.publish_manifest}`,
+        (x) =>
+          x`update manifests set manifest = '{}'::jsonb where id = ${first!.publish_manifest}`,
       );
     });
   });
@@ -389,9 +559,15 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       await tx`select public.publish_manifest(${t.acmeSite}, '{"manifestVersion":1}'::jsonb, '{"sig":"a"}'::jsonb, ${t.alice})`;
       await tx`update sites set current_manifest_id = null where org_id = ${t.acmeOrg}`;
       await tx`delete from organizations where id = ${t.acmeOrg}`;
-      expect(await tx`select id from repositories where org_id = ${t.acmeOrg}`).toHaveLength(0);
-      expect(await tx`select id from contract_versions where org_id = ${t.acmeOrg}`).toHaveLength(0);
-      expect(await tx`select id from manifests where org_id = ${t.acmeOrg}`).toHaveLength(0);
+      expect(
+        await tx`select id from repositories where org_id = ${t.acmeOrg}`,
+      ).toHaveLength(0);
+      expect(
+        await tx`select id from contract_versions where org_id = ${t.acmeOrg}`,
+      ).toHaveLength(0);
+      expect(
+        await tx`select id from manifests where org_id = ${t.acmeOrg}`,
+      ).toHaveLength(0);
     });
   });
 });

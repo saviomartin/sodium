@@ -3,46 +3,33 @@ import { createClient } from "./supabase/server";
 
 /** User-context reads (RLS-scoped). Server components only. */
 
-export interface OrgSummary {
-  id: string;
-  name: string;
-  slug: string;
-  role: string;
-}
-
-export async function getUserAndOrgs() {
+export async function getAccountContext() {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getClaims();
   const userId = (userData?.claims?.sub as string | undefined) ?? null;
   const email = (userData?.claims?.email as string | undefined) ?? "";
-  if (!userId) return { userId: null, email: "", orgs: [] as OrgSummary[] };
+  if (!userId) return { userId: null, email: "", workspaceId: null };
 
   const { data } = await supabase
     .from("org_memberships")
-    .select("role, organizations(id, name, slug)")
-    .eq("user_id", userId);
-  const orgs: OrgSummary[] = [];
-  for (const row of data ?? []) {
-    const org = row.organizations as unknown as {
-      id: string;
-      name: string;
-      slug: string;
-    } | null;
-    if (org)
-      orgs.push({ id: org.id, name: org.name, slug: org.slug, role: row.role });
-  }
-  orgs.sort((a, b) => a.name.localeCompare(b.name));
-  return { userId, email, orgs };
+    .select("org_id, role, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  const owned = data?.find((membership) => membership.role === "owner");
+  return {
+    userId,
+    email,
+    workspaceId: owned?.org_id ?? data?.[0]?.org_id ?? null,
+  };
 }
 
-export async function getRepositories(orgId: string) {
+export async function getRepositories() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("repositories")
     .select(
       "id, full_name, default_branch, is_private, created_at, github_repo_id",
     )
-    .eq("org_id", orgId)
     .order("created_at", { ascending: false });
   return data ?? [];
 }
@@ -226,12 +213,13 @@ export async function getRecentUsage(siteUuid: string) {
   return data ?? [];
 }
 
-export async function getInstallations(orgId: string) {
+export async function getInstallations() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("github_installations")
-    .select("id, installation_id, account_login, suspended_at, created_at")
-    .eq("org_id", orgId)
+    .select(
+      "id, org_id, installation_id, account_login, suspended_at, created_at",
+    )
     .order("created_at", { ascending: false });
   return data ?? [];
 }

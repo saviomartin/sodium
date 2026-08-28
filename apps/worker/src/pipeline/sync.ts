@@ -63,7 +63,7 @@ export async function handleSyncCompare(
     return { kind: "done" };
   }
 
-  const provider = selectRepoProvider(ctx.env, repo.installation_id);
+  const provider = selectRepoProvider(ctx.env);
   const snapshotDir = await provider.ensureSnapshot({
     runId: `sync-${deliveryId}`.slice(0, 60),
     installationId: repo.installation_id,

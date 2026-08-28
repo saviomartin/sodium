@@ -1064,6 +1064,16 @@ export type Database = {
         Returns: string;
       };
       enqueue_job: { Args: { p_message: Json }; Returns: number };
+      request_push_analysis: {
+        Args: {
+          p_commit_sha: string;
+          p_delivery_id: string;
+          p_github_repo_id: number;
+          p_installation_id: number;
+          p_ref: string;
+        };
+        Returns: Json;
+      };
       publish_manifest: {
         Args: {
           p_action?: string;

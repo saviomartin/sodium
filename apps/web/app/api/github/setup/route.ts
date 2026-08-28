@@ -35,36 +35,40 @@ export async function GET(request: NextRequest) {
   }
   if (!orgId || !Number.isInteger(installationId) || installationId <= 0) {
     return NextResponse.redirect(
-      new URL("/onboarding?error=github_state", request.url),
+      new URL("/connect?error=github_state", request.url),
     );
   }
 
   const info = await verifyInstallation(installationId);
   if (!info) {
     return NextResponse.redirect(
-      new URL("/onboarding?error=github_installation", request.url),
+      new URL("/connect?error=github_installation", request.url),
     );
   }
 
   // User-context insert: RLS enforces the admin/owner role in the org.
   const supabase = await createClient();
-  const { error } = await supabase.from("github_installations").insert({
-    org_id: orgId,
-    installation_id: info.installationId,
-    account_login: info.accountLogin,
-    account_type: info.accountType,
-    created_by: userId,
-  });
-  if (error && !error.message.includes("duplicate")) {
+  const { data: existing } = await supabase
+    .from("github_installations")
+    .select("id")
+    .eq("installation_id", info.installationId)
+    .maybeSingle();
+  const { error } = existing
+    ? { error: null }
+    : await supabase.from("github_installations").insert({
+        org_id: orgId,
+        installation_id: info.installationId,
+        account_login: info.accountLogin,
+        account_type: info.accountType,
+        created_by: userId,
+      });
+  if (error) {
     return NextResponse.redirect(
-      new URL("/onboarding?error=github_store", request.url),
+      new URL("/connect?error=github_store", request.url),
     );
   }
 
   return NextResponse.redirect(
-    new URL(
-      `/onboarding/repos?installation=${info.installationId}&org=${orgId}`,
-      request.url,
-    ),
+    new URL(`/connect?installation=${info.installationId}`, request.url),
   );
 }

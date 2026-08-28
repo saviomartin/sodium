@@ -56,7 +56,7 @@ export async function handleGeneratePr(
   }
 
   try {
-    const provider = selectRepoProvider(ctx.env, publication.installation_id);
+    const provider = selectRepoProvider(ctx.env);
     const sha = "0".repeat(40); // fixture provider ignores; GitHub provider snapshots by branch head below
     const snapshotDir = await provider.ensureSnapshot({
       runId: `prgen-${publication.id}`.slice(0, 60),

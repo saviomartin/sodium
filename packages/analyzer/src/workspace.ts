@@ -89,7 +89,9 @@ export class RepoWorkspace {
     this.maxFiles = options.maxFiles ?? DEFAULT_MAX_FILES;
     this.matcher = ignore().add(BUILT_IN_EXCLUDES);
     for (const ignoreFile of [".gitignore", ".sodiumignore"]) {
-      const content = this.tryReadRaw(join(rootDir, ignoreFile));
+      const content = this.tryReadRaw(
+        join(/* turbopackIgnore: true */ rootDir, ignoreFile),
+      );
       if (content !== null) this.matcher.add(content);
     }
   }

@@ -1,94 +1,62 @@
 import Link from "next/link";
-import { getRepositories, getUserAndOrgs } from "@/lib/queries";
-import {
-  Card,
-  EmptyState,
-  buttonClass,
-  secondaryButtonClass,
-} from "@/components/ui";
+import { redirect } from "next/navigation";
+import { getRepositories } from "@/lib/queries";
+import { Card, buttonClass, secondaryButtonClass } from "@/components/ui";
 
-export const metadata = { title: "Dashboard" };
+export const metadata = { title: "Repositories" };
 
 export default async function DashboardPage() {
-  const { orgs } = await getUserAndOrgs();
-
-  if (orgs.length === 0) {
-    return (
-      <EmptyState
-        title="Create your organization"
-        hint="Repositories, analyses and published tools are scoped to an organization."
-        action={
-          <Link href="/onboarding" className={buttonClass}>
-            Start onboarding
-          </Link>
-        }
-      />
-    );
-  }
+  const repositories = await getRepositories();
+  if (repositories.length === 0) redirect("/connect");
 
   return (
     <div className="space-y-6">
-      {await Promise.all(
-        orgs.map(async (org) => {
-          const repos = await getRepositories(org.id);
-          return (
-            <Card
-              key={org.id}
-              title={`${org.name} — repositories`}
-              actions={
-                <Link href="/onboarding" className={secondaryButtonClass}>
-                  Connect repository
-                </Link>
-              }
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+            WebMCP workspace
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Repositories
+          </h1>
+          <p className="mt-2 text-sm text-neutral-500">
+            Analyze source, review tools, and publish a signed manifest.
+          </p>
+        </div>
+        <Link href="/connect" className={buttonClass}>
+          Connect repository
+        </Link>
+      </header>
+
+      <Card>
+        <ul className="divide-y divide-neutral-100">
+          {repositories.map((repository) => (
+            <li
+              key={repository.id}
+              className="flex items-center justify-between gap-4 py-3"
             >
-              {repos.length === 0 ? (
-                <EmptyState
-                  title="No repositories connected"
-                  hint="Install the GitHub App and pick a repository, or use the local fixture repository to try the full flow."
-                  action={
-                    <Link href="/onboarding" className={buttonClass}>
-                      Connect a repository
-                    </Link>
-                  }
-                />
-              ) : (
-                <ul className="divide-y divide-neutral-100">
-                  {repos.map((repo) => (
-                    <li
-                      key={repo.id}
-                      className="flex items-center justify-between gap-4 py-2"
-                    >
-                      <div className="min-w-0">
-                        <Link
-                          href={`/repos/${repo.id}`}
-                          className="text-sm font-medium text-blue-700 hover:underline"
-                        >
-                          {repo.full_name}
-                        </Link>
-                        <p className="text-xs text-neutral-500">
-                          {repo.github_repo_id === 0
-                            ? "local fixture"
-                            : "GitHub"}{" "}
-                          · default branch{" "}
-                          <span className="font-mono">
-                            {repo.default_branch}
-                          </span>
-                        </p>
-                      </div>
-                      <Link
-                        href={`/repos/${repo.id}`}
-                        className={secondaryButtonClass}
-                      >
-                        Open
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          );
-        }),
-      )}
+              <div className="min-w-0">
+                <Link
+                  href={`/repos/${repository.id}`}
+                  className="truncate text-sm font-semibold text-neutral-900 hover:text-blue-700"
+                >
+                  {repository.full_name}
+                </Link>
+                <p className="mt-1 text-xs text-neutral-500">
+                  GitHub · {repository.is_private ? "Private" : "Public"} ·{" "}
+                  {repository.default_branch}
+                </p>
+              </div>
+              <Link
+                href={`/repos/${repository.id}`}
+                className={secondaryButtonClass}
+              >
+                Open
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Card>
     </div>
   );
 }

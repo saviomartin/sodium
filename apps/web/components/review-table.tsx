@@ -1,107 +1,150 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import type { CandidateStatus, RiskLevel } from "@sodium/contracts";
-import {
-  CANDIDATE_STATUSES,
-  RISK_LEVELS,
-  RISK_LABELS,
-} from "@sodium/contracts";
-import { ConfidenceMeter, RiskBadge, StatusBadge, cn, inputClass } from "./ui";
+import type { RiskLevel } from "@sodium/contracts";
+import { setCandidatesEnabledAction } from "@/lib/actions";
+import { ConfidenceMeter, RiskBadge, cn } from "./ui";
 
 export interface CandidateRow {
   id: string;
+  action_id: string;
   name: string;
   title: string;
   description: string;
   risk_level: RiskLevel;
-  confirmation: string;
   confidence: number;
-  status: CandidateStatus;
-  validation_issues: unknown;
-  handlerKind: string;
-  evalSummary: { passed: number; failed: number };
+  enabled: boolean;
   repoId: string;
 }
 
-/**
- * The review table: quick decisions at a glance (purpose, inputs handled via
- * the handler column, effect, confidence, verification), filters for status
- * and risk, full evidence one click away on the detail page.
- */
-export function ReviewTable({ candidates }: { candidates: CandidateRow[] }) {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [riskFilter, setRiskFilter] = useState<string>("all");
-
-  const filtered = useMemo(
-    () =>
-      candidates.filter(
-        (candidate) =>
-          (statusFilter === "all" || candidate.status === statusFilter) &&
-          (riskFilter === "all" || candidate.risk_level === riskFilter),
-      ),
-    [candidates, statusFilter, riskFilter],
+function Toggle({
+  checked,
+  disabled,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-neutral-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="peer sr-only"
+        aria-label={label}
+      />
+      <span
+        aria-hidden
+        className={cn(
+          "relative h-5 w-9 rounded-full border",
+          checked
+            ? "border-blue-600 bg-blue-600"
+            : "border-neutral-300 bg-neutral-200",
+          "after:absolute after:left-0.5 after:top-0.5 after:size-3.5 after:rounded-full after:bg-white after:content-['']",
+          checked && "after:translate-x-4",
+          "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600",
+        )}
+      />
+    </label>
   );
+}
+
+/** One decision surface: inspect details or make tools available immediately. */
+export function ReviewTable({
+  candidates,
+  siteId,
+}: {
+  candidates: CandidateRow[];
+  siteId: string;
+}) {
+  const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      candidates.map((candidate) => [candidate.id, candidate.enabled]),
+    ),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+  const enabledCount = candidates.filter((candidate) => enabled[candidate.id])
+    .length;
+  const allEnabled = enabledCount === candidates.length;
+
+  function update(candidateIds: string[], nextEnabled: boolean) {
+    const previous = { ...enabled };
+    setError(null);
+    setEnabled((current) => ({
+      ...current,
+      ...Object.fromEntries(candidateIds.map((id) => [id, nextEnabled])),
+    }));
+    startTransition(async () => {
+      const result = await setCandidatesEnabledAction(
+        candidateIds,
+        siteId,
+        nextEnabled,
+      );
+      if (!result.ok) {
+        setEnabled(previous);
+        setError(result.error ?? "Tool availability could not be updated.");
+      }
+    });
+  }
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-end gap-3">
-        <label className="text-xs text-neutral-600">
-          <span className="mb-1 block font-medium">Status</span>
-          <select
-            className={cn(inputClass, "w-40")}
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">All statuses</option>
-            {CANDIDATE_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status.replace("_", " ")}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs text-neutral-600">
-          <span className="mb-1 block font-medium">Risk</span>
-          <select
-            className={cn(inputClass, "w-40")}
-            value={riskFilter}
-            onChange={(event) => setRiskFilter(event.target.value)}
-          >
-            <option value="all">All risk levels</option>
-            {RISK_LEVELS.map((risk) => (
-              <option key={risk} value={risk}>
-                {RISK_LABELS[risk]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="ml-auto text-xs text-neutral-400 tabular-nums">
-          {filtered.length} of {candidates.length} tools
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-neutral-500 text-pretty">
+          All tools start disabled. Enabled tools are available immediately.
+        </p>
+        <span className="text-xs text-neutral-500 tabular-nums">
+          {enabledCount} of {candidates.length} available
         </span>
       </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 text-pretty"
+        >
+          {error}
+        </p>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-              <th className="py-2 pr-4 font-medium">Purpose</th>
-              <th className="py-2 pr-4 font-medium">Effect</th>
-              <th className="py-2 pr-4 font-medium">Handler</th>
+              <th className="py-2 pr-4 font-medium">Tool</th>
+              <th className="py-2 pr-4 font-medium">Risk</th>
               <th className="py-2 pr-4 font-medium">Confidence</th>
-              <th className="py-2 pr-4 font-medium">Verification</th>
-              <th className="py-2 font-medium">Status</th>
+              <th className="py-2 text-right font-medium">
+                <span className="inline-flex items-center gap-2">
+                  Enable all
+                  <Toggle
+                    checked={allEnabled}
+                    disabled={pending}
+                    label={allEnabled ? "Disable all tools" : "Enable all tools"}
+                    onChange={(checked) =>
+                      update(
+                        candidates.map((candidate) => candidate.id),
+                        checked,
+                      )
+                    }
+                  />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {filtered.map((candidate) => {
-              const issues = Array.isArray(candidate.validation_issues)
-                ? candidate.validation_issues.length
-                : 0;
+            {candidates.map((candidate) => {
+              const isEnabled = Boolean(enabled[candidate.id]);
               return (
-                <tr key={candidate.id} className="align-top">
-                  <td className="max-w-72 py-2 pr-4">
+                <tr key={candidate.id} className="align-middle">
+                  <td className="max-w-xl py-3 pr-4">
                     <Link
                       href={`/repos/${candidate.repoId}/candidates/${candidate.id}`}
                       className="font-medium text-blue-700 hover:underline"
@@ -111,56 +154,27 @@ export function ReviewTable({ candidates }: { candidates: CandidateRow[] }) {
                     <p className="font-mono text-xs text-neutral-400">
                       {candidate.name}
                     </p>
-                    <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500">
+                    <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 text-pretty">
                       {candidate.description}
                     </p>
                   </td>
-                  <td className="py-2 pr-4">
+                  <td className="py-3 pr-4">
                     <RiskBadge risk={candidate.risk_level} />
-                    <p className="mt-1 text-xs text-neutral-400">
-                      confirm: {candidate.confirmation}
-                    </p>
                   </td>
-                  <td className="py-2 pr-4 font-mono text-xs">
-                    {candidate.handlerKind}
-                  </td>
-                  <td className="py-2 pr-4">
+                  <td className="py-3 pr-4">
                     <ConfidenceMeter value={candidate.confidence} />
                   </td>
-                  <td className="py-2 pr-4 text-xs tabular-nums">
-                    {candidate.evalSummary.failed > 0 ? (
-                      <span className="text-amber-700">
-                        {candidate.evalSummary.failed} eval issue(s)
-                      </span>
-                    ) : candidate.evalSummary.passed > 0 ? (
-                      <span className="text-green-700">
-                        {candidate.evalSummary.passed} evals passed
-                      </span>
-                    ) : (
-                      <span className="text-neutral-400">—</span>
-                    )}
-                    {issues > 0 && (
-                      <p className="text-amber-700">
-                        {issues} validation note(s)
-                      </p>
-                    )}
-                  </td>
-                  <td className="py-2">
-                    <StatusBadge status={candidate.status} />
+                  <td className="py-3 text-right">
+                    <Toggle
+                      checked={isEnabled}
+                      disabled={pending}
+                      label={`${isEnabled ? "Disable" : "Enable"} ${candidate.title}`}
+                      onChange={(checked) => update([candidate.id], checked)}
+                    />
                   </td>
                 </tr>
               );
             })}
-            {filtered.length === 0 && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="py-8 text-center text-sm text-neutral-400"
-                >
-                  No tools match the current filters.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

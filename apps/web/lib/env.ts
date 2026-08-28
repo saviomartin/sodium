@@ -18,10 +18,11 @@ const EnvSchema = z.object({
   MANIFEST_SIGNING_PRIVATE_KEY: z.string().optional(),
   MANIFEST_SIGNING_KEY_FILE: z.string().optional(),
 
-  // GitHub App (optional: fixture-backed local development works without it)
+  // GitHub App. Optional at build time so configuration errors render in-app.
   GITHUB_APP_ID: z.string().optional(),
   GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  CRON_SECRET: z.string().optional(),
   NEXT_PUBLIC_GITHUB_APP_SLUG: z.string().optional(),
 });
 

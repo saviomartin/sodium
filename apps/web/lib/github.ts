@@ -91,3 +91,18 @@ export async function listInstallationRepos(
   }
   return repos;
 }
+
+/** Resolve the current commit on a connected repository's default branch. */
+export async function resolveRepositoryHead(
+  installationId: number,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<string> {
+  const octokit = await githubApp().getInstallationOctokit(installationId);
+  const { data } = await octokit.request(
+    "GET /repos/{owner}/{repo}/commits/{ref}",
+    { owner, repo, ref },
+  );
+  return data.sha;
+}

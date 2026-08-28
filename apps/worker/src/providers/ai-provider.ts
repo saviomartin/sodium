@@ -157,11 +157,11 @@ export class AiSdkProvider implements AiProvider {
 }
 
 /**
- * Deterministic fixture provider used when AI credentials are absent. Maps
+ * Deterministic heuristic provider used when AI credentials are absent. Maps
  * primitives to tools with fixed rules so the entire pipeline (validation,
  * evals, review, publication) works in local development and tests.
  */
-export class FixtureAiProvider implements AiProvider {
+export class HeuristicAiProvider implements AiProvider {
   async proposeTools(input: SynthesisInput): Promise<ProposedTool[]> {
     const tools: ProposedTool[] = [];
     const { analysis } = input;
@@ -200,8 +200,12 @@ export class FixtureAiProvider implements AiProvider {
           } satisfies JsonSchemaSubset);
         const actionName = serverAction?.name ?? "form";
         // Avoid "submit_submit_x" when the action is already named submitX.
-        const baseName = snake(actionName === "form" ? form.pathPattern : actionName);
-        const toolName = baseName.startsWith("submit") ? baseName : `submit_${baseName}`;
+        const baseName = snake(
+          actionName === "form" ? form.pathPattern : actionName,
+        );
+        const toolName = baseName.startsWith("submit")
+          ? baseName
+          : `submit_${baseName}`;
         const label = humanize(baseName.replace(/^submit_?/, "") || baseName);
         tools.push({
           name: toolName.slice(0, 60),
@@ -223,7 +227,7 @@ export class FixtureAiProvider implements AiProvider {
           roles: [],
           confidence: schema ? 0.85 : 0.7,
           evidenceRefs: [primitive.index],
-          reasoning: "Deterministic fixture mapping from an extracted form.",
+          reasoning: "Deterministic mapping from an extracted form.",
         });
       }
 
@@ -268,8 +272,7 @@ export class FixtureAiProvider implements AiProvider {
             roles: [],
             confidence: 0.75,
             evidenceRefs: [primitive.index],
-            reasoning:
-              "Deterministic fixture mapping from crawled data-* attributes.",
+            reasoning: "Deterministic mapping from crawled data-* attributes.",
           });
         }
         if (detail.params.length === 1) {
@@ -304,8 +307,7 @@ export class FixtureAiProvider implements AiProvider {
             roles: [],
             confidence: 0.8,
             evidenceRefs: [primitive.index],
-            reasoning:
-              "Deterministic fixture mapping from a dynamic page route.",
+            reasoning: "Deterministic mapping from a dynamic page route.",
           });
         }
       }
@@ -351,7 +353,7 @@ export class FixtureAiProvider implements AiProvider {
           roles: [],
           confidence: schema ? 0.8 : 0.65,
           evidenceRefs: [primitive.index],
-          reasoning: "Deterministic fixture mapping from a server action.",
+          reasoning: "Deterministic mapping from a server action.",
         });
       }
     }
@@ -361,8 +363,8 @@ export class FixtureAiProvider implements AiProvider {
 
 export function selectAiProvider(env: WorkerEnv): AiProvider {
   if (hasAiCredentials(env)) return new AiSdkProvider(env);
-  log("warn", "AI credentials absent; using deterministic fixture synthesis");
-  return new FixtureAiProvider();
+  log("warn", "AI credentials absent; using deterministic heuristic synthesis");
+  return new HeuristicAiProvider();
 }
 
 function snake(text: string): string {

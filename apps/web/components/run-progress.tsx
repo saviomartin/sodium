@@ -25,9 +25,9 @@ interface StageState {
 }
 
 /**
- * Live stage progress over Supabase Realtime broadcast (private channel,
- * authorized by RLS on realtime.messages). No polling: events trigger a
- * router refresh so server components stay in sync.
+ * Realtime is the fast path; database reconciliation is the durable path.
+ * Broadcasts can be missed while a tab sleeps or connects, so active runs
+ * also refresh at a low frequency and whenever the tab regains focus.
  */
 export function RunProgress({
   runId,
@@ -52,6 +52,16 @@ export function RunProgress({
     const supabase = createClient();
     let disposed = false;
 
+    const reconcile = () => {
+      if (!disposed) router.refresh();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") reconcile();
+    };
+    window.addEventListener("focus", reconcile);
+    document.addEventListener("visibilitychange", onVisibility);
+    const refreshTimer = setInterval(reconcile, 2500);
+
     const channel = supabase.channel(runChannel(runId), {
       config: { private: true },
     });
@@ -63,17 +73,21 @@ export function RunProgress({
             ...previous,
             [event.stage]: { status: event.status, message: event.message },
           }));
-          if (event.status === "succeeded" || event.status === "failed") {
-            router.refresh();
-          }
+          reconcile();
         })
         .subscribe((status) => {
-          if (!disposed) setConnected(status === "SUBSCRIBED");
+          if (!disposed) {
+            setConnected(status === "SUBSCRIBED");
+            if (status === "SUBSCRIBED") reconcile();
+          }
         });
     });
 
     return () => {
       disposed = true;
+      clearInterval(refreshTimer);
+      window.removeEventListener("focus", reconcile);
+      document.removeEventListener("visibilitychange", onVisibility);
       void supabase.removeChannel(channel);
     };
   }, [runId, runStatus, router]);
@@ -108,8 +122,10 @@ export function RunProgress({
         );
       })}
       {running && (
-        <li className="pt-1 text-xs text-neutral-400">
-          {connected ? "Live updates connected." : "Connecting live updates…"}
+        <li className="pt-1 text-xs text-neutral-400" aria-live="polite">
+          {connected
+            ? "Live updates connected"
+            : "Reconnecting live updates · database sync remains active"}
         </li>
       )}
     </ol>

@@ -49,10 +49,10 @@ export default async function LoginPage({
         )}
       </div>
       <p className="text-xs text-neutral-400 text-pretty">
-        GitHub is the only sign-in method. Signing in identifies you;
-        repository access is granted separately, per repository, by installing
-        the GitHub App during onboarding. If you see &ldquo;provider is not
-        enabled&rdquo;, finish the one-time GitHub OAuth setup in the README.
+        GitHub is the only sign-in method. Signing in identifies you; repository
+        access is granted separately, per repository, by installing the GitHub
+        App after sign-in. If you see &ldquo;provider is not enabled&rdquo;,
+        finish the one-time GitHub OAuth setup in the README.
       </p>
     </main>
   );

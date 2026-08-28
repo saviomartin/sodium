@@ -2,34 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type {
   ActionContract,
-  CandidateStatus,
   ContractIssue,
   RiskLevel,
 } from "@sodium/contracts";
-import { ActionContractSchema, RISK_LABELS } from "@sodium/contracts";
+import { ActionContractSchema } from "@sodium/contracts";
 import {
   getCandidate,
   getEvalRuns,
+  getPublication,
   getRepository,
   getSiteForRepository,
 } from "@/lib/queries";
-import {
-  approveCandidateAction,
-  editCandidateAction,
-  reviewCandidateAction,
-} from "@/lib/actions";
-import { ActionForm, SubmitButton } from "@/components/action-form";
-import {
-  Card,
-  ConfidenceMeter,
-  Field,
-  RiskBadge,
-  StatusBadge,
-  buttonClass,
-  dangerButtonClass,
-  inputClass,
-  secondaryButtonClass,
-} from "@/components/ui";
+import { Card, ConfidenceMeter, RiskBadge } from "@/components/ui";
 
 export const metadata = { title: "Tool detail" };
 
@@ -39,22 +23,29 @@ export default async function CandidatePage({
   params: Promise<{ id: string; candidateId: string }>;
 }) {
   const { id, candidateId } = await params;
-  const [repo, candidate, evals] = await Promise.all([
+  const [repo, candidate, evals, site] = await Promise.all([
     getRepository(id),
     getCandidate(candidateId),
     getEvalRuns(candidateId),
+    getSiteForRepository(id),
   ]);
-  if (!repo || !candidate) notFound();
-  const site = await getSiteForRepository(repo.id);
+  const candidateRun = candidate?.analysis_runs as unknown as {
+    id: string;
+    repository_id: string;
+  } | null;
+  if (!repo || !candidate || candidateRun?.repository_id !== repo.id) notFound();
 
+  const publication = site ? await getPublication(site.id) : null;
+  const available = (publication?.contracts ?? []).some(
+    (contract) =>
+      contract.action_id === candidate.action_id && contract.status === "active",
+  );
   const parsedContract = ActionContractSchema.safeParse(candidate.contract);
   const contract: ActionContract | null = parsedContract.success
     ? parsedContract.data
     : null;
   const issues = (candidate.validation_issues ??
     []) as unknown as ContractIssue[];
-  const status = candidate.status as CandidateStatus;
-  const reviewable = status === "proposed" || status === "needs_review";
 
   return (
     <div className="space-y-6">
@@ -63,13 +54,21 @@ export default async function CandidatePage({
           <Link href={`/repos/${repo.id}`} className="hover:underline">
             {repo.full_name}
           </Link>{" "}
-          / tool
+          / tool details
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold text-balance">
             {candidate.title}
           </h1>
-          <StatusBadge status={status} />
+          <span
+            className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${
+              available
+                ? "bg-green-50 text-green-700"
+                : "bg-neutral-100 text-neutral-600"
+            }`}
+          >
+            {available ? "available" : "disabled"}
+          </span>
           <RiskBadge risk={candidate.risk_level as RiskLevel} />
         </div>
         <p className="mt-1 font-mono text-xs text-neutral-500">
@@ -79,75 +78,32 @@ export default async function CandidatePage({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
-          <Card title="Contract">
-            {reviewable ? (
-              <ActionForm
-                action={editCandidateAction}
-                className="space-y-3"
-                successMessage="Saved. Re-validated and marked needs review."
-              >
-                <input type="hidden" name="candidateId" value={candidate.id} />
-                <Field label="Title">
-                  <input
-                    name="title"
-                    defaultValue={candidate.title}
-                    required
-                    minLength={3}
-                    maxLength={120}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field
-                  label="Description"
-                  hint="What agents read when deciding to use this tool. ≤ 500 characters recommended."
-                >
-                  <textarea
-                    name="description"
-                    defaultValue={candidate.description}
-                    required
-                    minLength={10}
-                    maxLength={1024}
-                    rows={3}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field
-                  label="Confirmation policy"
-                  hint={`Cannot go below the deterministic floor for ${RISK_LABELS[candidate.risk_level as RiskLevel]} actions.`}
-                >
-                  <select
-                    name="confirmation"
-                    defaultValue={candidate.confirmation}
-                    className={inputClass}
-                  >
-                    <option value="none">none</option>
-                    <option value="recommended">recommended</option>
-                    <option value="required">required</option>
-                  </select>
-                </Field>
-                <SubmitButton className={secondaryButtonClass}>
-                  Save edits
-                </SubmitButton>
-              </ActionForm>
-            ) : (
-              <dl className="space-y-2 text-sm">
-                <div>
-                  <dt className="text-xs font-medium text-neutral-500">
-                    Description
-                  </dt>
-                  <dd className="text-pretty">{candidate.description}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-neutral-500">
-                    Confirmation
-                  </dt>
-                  <dd>{candidate.confirmation}</dd>
-                </div>
-              </dl>
-            )}
+          <Card title="What it does">
+            <dl className="space-y-3 text-sm">
+              <div>
+                <dt className="text-xs font-medium text-neutral-500">
+                  Description
+                </dt>
+                <dd className="text-pretty">{candidate.description}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-neutral-500">
+                  Confirmation
+                </dt>
+                <dd>{candidate.confirmation}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-neutral-500">
+                  Confidence
+                </dt>
+                <dd>
+                  <ConfidenceMeter value={Number(candidate.confidence)} />
+                </dd>
+              </div>
+            </dl>
           </Card>
 
-          <Card title="Input schema">
+          <Card title="Input & output">
             <pre className="overflow-x-auto rounded bg-neutral-50 p-3 text-xs">
               {JSON.stringify(contract?.inputSchema ?? {}, null, 2)}
             </pre>
@@ -158,8 +114,8 @@ export default async function CandidatePage({
             )}
           </Card>
 
-          <Card title="Handler binding & authorization">
-            <dl className="space-y-2 text-sm">
+          <Card title="Handler & authorization">
+            <dl className="space-y-3 text-sm">
               <div>
                 <dt className="text-xs font-medium text-neutral-500">
                   Handler
@@ -172,7 +128,7 @@ export default async function CandidatePage({
               </div>
               <div>
                 <dt className="text-xs font-medium text-neutral-500">
-                  Registered on routes
+                  Available on
                 </dt>
                 <dd className="font-mono text-xs">
                   {contract?.routes
@@ -192,16 +148,8 @@ export default async function CandidatePage({
                 </dt>
                 <dd className="text-pretty">
                   {contract?.auth.required
-                    ? `Required${contract.auth.roles.length ? ` — roles: ${contract.auth.roles.join(", ")}` : ""}. Enforcement stays in your application; this is detection evidence only.`
-                    : "No auth requirement detected."}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-neutral-500">
-                  Confidence
-                </dt>
-                <dd>
-                  <ConfidenceMeter value={Number(candidate.confidence)} />
+                    ? `Required${contract.auth.roles.length ? ` — roles: ${contract.auth.roles.join(", ")}` : ""}. Your application still enforces access.`
+                    : "No authentication requirement detected."}
                 </dd>
               </div>
             </dl>
@@ -209,67 +157,6 @@ export default async function CandidatePage({
         </div>
 
         <div className="space-y-6">
-          <Card title="Review decision">
-            {reviewable && site ? (
-              <div className="space-y-4">
-                <ActionForm action={approveCandidateAction}>
-                  <input
-                    type="hidden"
-                    name="candidateId"
-                    value={candidate.id}
-                  />
-                  <input type="hidden" name="siteId" value={site.id} />
-                  <SubmitButton
-                    className={buttonClass}
-                    pendingText="Approving…"
-                  >
-                    Approve for publication
-                  </SubmitButton>
-                  <p className="mt-1 text-xs text-neutral-400 text-pretty">
-                    Approval mints an immutable contract version. Nothing
-                    reaches the live manifest until you publish from the Publish
-                    screen.
-                  </p>
-                </ActionForm>
-                <ActionForm
-                  action={reviewCandidateAction}
-                  className="space-y-2"
-                >
-                  <input
-                    type="hidden"
-                    name="candidateId"
-                    value={candidate.id}
-                  />
-                  <input type="hidden" name="decision" value="rejected" />
-                  <Field label="Rejection note (optional)">
-                    <input
-                      name="note"
-                      maxLength={1000}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <SubmitButton
-                    className={dangerButtonClass}
-                    pendingText="Rejecting…"
-                  >
-                    Reject
-                  </SubmitButton>
-                </ActionForm>
-              </div>
-            ) : (
-              <p className="text-sm text-neutral-500 text-pretty">
-                {status === "approved" &&
-                  "Approved. Publish from the Publish screen to make it live."}
-                {status === "rejected" &&
-                  `Rejected${candidate.review_note ? ` — ${candidate.review_note}` : ""}.`}
-                {status === "published" && "Published in the current manifest."}
-                {reviewable &&
-                  !site &&
-                  "No site exists for this repository yet."}
-              </p>
-            )}
-          </Card>
-
           <Card title="Validation & evaluations">
             {issues.length === 0 && evals.length === 0 ? (
               <p className="text-sm text-neutral-500">

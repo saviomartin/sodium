@@ -14,7 +14,9 @@ export interface E2eState {
 
 export function loadWebEnv(): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const line of readFileSync(join(here, "..", ".env.local"), "utf8").split("\n")) {
+  for (const line of readFileSync(join(here, "..", ".env.local"), "utf8").split(
+    "\n",
+  )) {
     const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
     if (match) env[match[1]!] = match[2]!;
   }
@@ -41,13 +43,18 @@ export function readState(): E2eState {
  */
 export async function signIn(page: Page, email: string): Promise<void> {
   const admin = adminClient();
-  const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+  });
   if (error || !data.properties?.hashed_token) {
-    throw new Error(`could not generate sign-in token for ${email}: ${error?.message}`);
+    throw new Error(
+      `could not generate sign-in token for ${email}: ${error?.message}`,
+    );
   }
   await page.context().clearCookies();
   await page.goto(
     `/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink&next=/dashboard`,
   );
-  await page.waitForURL("**/dashboard");
+  await page.waitForURL(/\/(dashboard|connect)$/);
 }

@@ -1,7 +1,6 @@
 packages:
   - "apps/*"
   - "packages/*"
-  - "examples/*"
 allowBuilds:
   esbuild: true
   "@tailwindcss/oxide": true

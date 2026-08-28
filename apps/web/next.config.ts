@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@sodium/contracts", "@sodium/runtime"],
+  transpilePackages: [
+    "@sodium/analyzer",
+    "@sodium/contracts",
+    "@sodium/runtime",
+    "@sodium/worker",
+  ],
 };
 
 export default nextConfig;

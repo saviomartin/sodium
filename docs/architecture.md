@@ -147,13 +147,16 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
 ### D1 — Monorepo boundaries (pnpm + Turborepo)
 
 ```
-apps/web         Next.js dashboard, onboarding, API routes, public manifest + loader endpoints
+apps/web         Next.js dashboard, repository connection, Settings, API routes, public manifest + loader endpoints
 apps/worker      background worker: clone → static analysis → crawl → AI synthesis → validation; PR generation; sync
 packages/analyzer    framework-neutral analysis engine + Next.js adapter (ts-morph AST, no execution)
 packages/runtime     loader (agent.js), WebMCP adapter, first-party bridge SDK
 packages/contracts   Zod schemas, DB types, versioned action contracts, deterministic validation, signing
-examples/fixture-shop  realistic authenticated Next.js fixture proving the end-to-end path
 ```
+
+The test target is intentionally external:
+`foundative/webmcp-fixture-shop`. It is connected and analyzed through the
+same GitHub App path as any customer repository.
 
 Internal packages are consumed as TypeScript source ("just-in-time packages");
 only `packages/runtime` has a build (esbuild → immutable browser bundles).
@@ -240,6 +243,8 @@ Also by explicit decision, **sign-in is GitHub OAuth only** (Supabase's
 GitHub provider; PKCE via `/auth/callback`, token-hash verification via
 `/auth/confirm`) and **no data is seeded** — there are no demo accounts.
 Sign-in identity is deliberately distinct from GitHub App repository access.
+Every auth user receives an invisible personal workspace automatically; this
+is an RLS tenant boundary, not a user-facing organization model.
 Test suites provision their own state: the database tests create tenants
 inside rolled-back transactions; the browser tests create ephemeral users
 through the auth admin API (signed in with admin-issued magic-link tokens
@@ -257,13 +262,16 @@ only. GitHub installation **IDs** are stored; installation tokens are minted on 
 and never persisted. Preview credentials are encrypted via Vault, readable only through
 a security-definer accessor. Artifacts (screenshots, crawl snapshots) go to a private
 bucket with org-scoped policies. Migrations + seed + pgTAP tests run through the
-Supabase CLI; cross-tenant isolation is proven with two seeded organizations.
+Supabase CLI; cross-tenant isolation is proven with transaction-scoped test tenants.
 
 ### D9 — Continuous sync never touches production
 
-Verified push/PR webhooks (signature, delivery ID, repository + installation ownership
-against our records) enqueue `sync.compare` jobs. The worker re-analyzes changed files,
-diffs against published contract versions, and writes compatibility findings
+Verified default-branch push webhooks (signature, delivery ID, repository + installation
+ownership against our records) atomically create a complete analysis run and enqueue its
+`clone` stage plus a `sync.compare` job. Delivery recording and queue writes share one
+database transaction, so redelivery is idempotent and an enqueue failure cannot lose the
+event. Non-default branches are acknowledged without analysis. The worker also diffs
+against published contract versions and writes compatibility findings
 (`input_changed`, `handler_removed`, `side_effect_changed`, `auth_changed`,
 `eval_broken`). Breaking findings create a **draft** manifest version requiring approval.
 Publication is atomic (single row flip of `sites.current_manifest_id`), history is

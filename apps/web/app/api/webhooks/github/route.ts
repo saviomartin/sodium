@@ -1,6 +1,7 @@
 import { verifyWebhookSignature } from "@/lib/github";
 import { env } from "@/lib/env";
 import { createServiceClient } from "@/lib/supabase/service";
+import { after } from "next/server";
 
 /**
  * GitHub webhook receiver. Order of checks, per docs/architecture.md §1.4:
@@ -35,19 +36,16 @@ export async function POST(request: Request) {
 
   const service = createServiceClient();
 
-  // Idempotency: first writer wins; redeliveries return 200 without work.
-  const { error: ledgerError } = await service
-    .from("webhook_deliveries")
-    .insert({ delivery_id: deliveryId, event });
-  if (ledgerError) {
-    if (ledgerError.code === "23505")
-      return Response.json({ ok: true, duplicate: true });
-    return Response.json({ error: "ledger unavailable" }, { status: 500 });
+  // Push delivery recording and queueing happen inside one database
+  // transaction. Other event types only need the idempotency claim.
+  if (event === "push") {
+    return handlePush(service, payload, deliveryId);
   }
 
+  const claim = await claimDelivery(service, deliveryId, event);
+  if (claim instanceof Response) return claim;
+
   switch (event) {
-    case "push":
-      return handlePush(service, payload);
     case "installation":
       return handleInstallation(service, payload);
     case "pull_request":
@@ -60,48 +58,71 @@ export async function POST(request: Request) {
 
 type Service = ReturnType<typeof createServiceClient>;
 
-async function handlePush(service: Service, payload: Record<string, unknown>) {
+async function claimDelivery(
+  service: Service,
+  deliveryId: string,
+  event: string,
+): Promise<true | Response> {
+  const { error } = await service
+    .from("webhook_deliveries")
+    .insert({ delivery_id: deliveryId, event });
+  if (!error) return true;
+  if (error.code === "23505")
+    return Response.json({ ok: true, duplicate: true });
+  return Response.json({ error: "ledger unavailable" }, { status: 500 });
+}
+
+async function handlePush(
+  service: Service,
+  payload: Record<string, unknown>,
+  deliveryId: string,
+) {
   const repository = payload.repository as { id?: number } | undefined;
   const installation = payload.installation as { id?: number } | undefined;
-  const after = typeof payload.after === "string" ? payload.after : "";
+  const commitSha = typeof payload.after === "string" ? payload.after : "";
   const ref = typeof payload.ref === "string" ? payload.ref : "";
-  if (!repository?.id || !installation?.id || !/^[a-f0-9]{40}$/.test(after)) {
+  if (
+    !repository?.id ||
+    !installation?.id ||
+    !/^[a-f0-9]{40}$/.test(commitSha) ||
+    commitSha === "0".repeat(40)
+  ) {
+    const claim = await claimDelivery(service, deliveryId, "push");
+    if (claim instanceof Response) return claim;
     return Response.json({ ok: true, ignored: "malformed push" });
   }
 
-  // Ownership: the repo must be one we track AND belong to the claimed
-  // installation. A forged payload for someone else's repo enqueues nothing.
-  const { data: repo } = await service
-    .from("repositories")
-    .select(
-      "id, default_branch, github_installations!repositories_installation_id_fkey(installation_id)",
-    )
-    .eq("github_repo_id", repository.id)
-    .maybeSingle();
-  const storedInstallation = (
-    repo?.github_installations as unknown as { installation_id: number } | null
-  )?.installation_id;
-  if (!repo || storedInstallation !== installation.id) {
-    return Response.json({
-      ok: true,
-      ignored: "unknown repository/installation",
-    });
-  }
-  if (ref !== `refs/heads/${repo.default_branch}`) {
-    return Response.json({ ok: true, ignored: "non-default branch" });
-  }
-
-  const { error } = await service.rpc("enqueue_job", {
-    p_message: {
-      type: "sync.compare",
-      repositoryId: repo.id,
-      commitSha: after,
-      deliveryId: crypto.randomUUID(),
-      attempt: 0,
-    } as never,
+  const { data, error } = await service.rpc("request_push_analysis", {
+    p_delivery_id: deliveryId,
+    p_github_repo_id: repository.id,
+    p_installation_id: installation.id,
+    p_commit_sha: commitSha,
+    p_ref: ref,
   });
   if (error) return Response.json({ error: "enqueue failed" }, { status: 500 });
-  return Response.json({ ok: true, enqueued: "sync.compare" });
+
+  // Start immediately in production. The minute cron is the durable recovery
+  // path if this best-effort kick is interrupted by a deployment or outage.
+  const workerSecret = env.CRON_SECRET ?? env.GITHUB_WEBHOOK_SECRET;
+  if (workerSecret) {
+    after(async () => {
+      try {
+        const response = await fetch(`${env.SITE_URL}/api/internal/worker`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${workerSecret}` },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          console.error("worker kick failed", { status: response.status });
+        }
+      } catch (error) {
+        console.error("worker kick failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+  }
+  return Response.json(data);
 }
 
 async function handleInstallation(

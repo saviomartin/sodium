@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "exports": {
+    "./runner": "./src/runner.ts",
+    "./db": "./src/db.ts",
+    "./env": "./src/env.ts",
+    "./log": "./src/log.ts"
+  },
   "scripts": {
     "dev": "tsx watch --env-file=.env src/main.ts",
     "start": "tsx --env-file=.env src/main.ts",

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  getCandidates,
   getCompatFindings,
   getEnvironments,
   getPublication,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/queries";
 import { requestAnalysisAction, saveEnvironmentAction } from "@/lib/actions";
 import { ActionForm, SubmitButton } from "@/components/action-form";
+import { ReviewTable, type CandidateRow } from "@/components/review-table";
 import {
   Card,
   EmptyState,
@@ -19,7 +21,7 @@ import {
   inputClass,
   secondaryButtonClass,
 } from "@/components/ui";
-import type { CompatFinding, RunStatus } from "@sodium/contracts";
+import type { CompatFinding, RiskLevel, RunStatus } from "@sodium/contracts";
 
 export const metadata = { title: "Repository" };
 
@@ -31,17 +33,116 @@ export default async function RepositoryPage({
   const { id } = await params;
   const repo = await getRepository(id);
   if (!repo) notFound();
+
   const [environments, runs, site, findings] = await Promise.all([
     getEnvironments(id),
     getRuns(id),
     getSiteForRepository(id),
     getCompatFindings(id),
   ]);
-  const publication = site ? await getPublication(site.id) : null;
-  const approvedCount =
-    publication?.contracts.filter((contract) => contract.status === "active")
-      .length ?? 0;
-  const isFixture = repo.github_repo_id === 0;
+  const activeRun = runs.find(
+    (run) => run.status === "queued" || run.status === "running",
+  );
+  const latestSuccessfulRun = runs.find((run) => run.status === "succeeded");
+  const [candidates, publication] = await Promise.all([
+    latestSuccessfulRun ? getCandidates(latestSuccessfulRun.id) : [],
+    site ? getPublication(site.id) : null,
+  ]);
+  const activeActionIds = new Set(
+    (publication?.contracts ?? [])
+      .filter((contract) => contract.status === "active")
+      .map((contract) => contract.action_id),
+  );
+  const rows: CandidateRow[] = candidates.map((candidate) => ({
+    id: candidate.id,
+    action_id: candidate.action_id,
+    name: candidate.name,
+    title: candidate.title,
+    description: candidate.description,
+    risk_level: candidate.risk_level as RiskLevel,
+    confidence: Number(candidate.confidence),
+    enabled: activeActionIds.has(candidate.action_id),
+    repoId: repo.id,
+  }));
+
+  const settings = (
+    <details
+      className="rounded-lg border border-neutral-200 bg-white"
+      open={Boolean(site && site.allowed_origins.length === 0)}
+    >
+      <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
+        App URL &amp; analysis settings
+      </summary>
+      <div className="border-t border-neutral-100 p-4">
+        {environments.length > 0 && (
+          <ul className="mb-4 space-y-1 text-sm">
+            {environments.map((environment) => (
+              <li
+                key={environment.id}
+                className="flex flex-wrap items-center justify-between gap-2"
+              >
+                <span className="font-mono text-xs truncate">
+                  {environment.base_url}
+                </span>
+                <span className="text-xs text-neutral-500">
+                  {environment.auth_mode}
+                  {environment.credential_secret_id
+                    ? " · credential stored"
+                    : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ActionForm
+          action={saveEnvironmentAction}
+          className="space-y-3"
+          successMessage="App URL saved."
+        >
+          <input type="hidden" name="repositoryId" value={repo.id} />
+          <Field
+            label="App URL"
+            hint="Used for optional preview analysis and to scope enabled tools to your app."
+          >
+            <input
+              name="baseUrl"
+              type="url"
+              required
+              className={inputClass}
+              placeholder="https://app.example.com"
+            />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Preview access">
+              <select
+                name="authMode"
+                className={inputClass}
+                defaultValue="none"
+              >
+                <option value="none">No authentication</option>
+                <option value="basic">HTTP basic (user:pass)</option>
+                <option value="cookie">Cookie header</option>
+              </select>
+            </Field>
+            <Field
+              label="Credential"
+              hint="Only needed for authenticated previews. Stored encrypted."
+            >
+              <input
+                name="credential"
+                type="password"
+                className={inputClass}
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+          <SubmitButton className={secondaryButtonClass} pendingText="Saving…">
+            Save app URL
+          </SubmitButton>
+        </ActionForm>
+      </div>
+    </details>
+  );
 
   return (
     <div className="space-y-6">
@@ -51,204 +152,74 @@ export default async function RepositoryPage({
             {repo.full_name}
           </h1>
           <p className="text-sm text-neutral-500">
-            {isFixture ? "Local fixture repository" : "GitHub repository"} ·
-            default branch{" "}
-            <span className="font-mono">{repo.default_branch}</span>
+            Default branch <span className="font-mono">{repo.default_branch}</span>
           </p>
         </div>
-        <Link
-          href={`/repos/${repo.id}/publish`}
-          className={secondaryButtonClass}
-        >
-          Publish &amp; loader
-        </Link>
+        {activeRun ? (
+          <Link
+            href={`/repos/${repo.id}/runs/${activeRun.id}`}
+            className={secondaryButtonClass}
+          >
+            View analysis
+          </Link>
+        ) : (
+          <ActionForm action={requestAnalysisAction}>
+            <input type="hidden" name="repositoryId" value={repo.id} />
+            <input
+              type="hidden"
+              name="environmentId"
+              value={environments[0]?.id ?? ""}
+            />
+            <SubmitButton className={buttonClass} pendingText="Starting…">
+              Analyze latest commit
+            </SubmitButton>
+          </ActionForm>
+        )}
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Run analysis">
-          <p className="mb-3 text-sm text-neutral-600 text-pretty">
-            Clones the commit into an isolated workspace (never executing
-            repository code), extracts routes, forms, Server Actions and
-            schemas, optionally explores the preview, and proposes tools for
-            review.
-          </p>
-          <ActionForm action={requestAnalysisAction} className="space-y-3">
-            <input type="hidden" name="repositoryId" value={repo.id} />
-            <Field
-              label="Commit SHA"
-              hint={
-                isFixture
-                  ? "Leave blank for the fixture snapshot."
-                  : "Full 40-character SHA on the default branch."
-              }
-            >
-              <input
-                name="sha"
-                className={inputClass}
-                placeholder={isFixture ? "(fixture)" : "e.g. 4f2a…"}
-              />
-            </Field>
-            {environments.length > 0 && (
-              <Field label="Preview environment (optional crawl)">
-                <select
-                  name="environmentId"
-                  className={inputClass}
-                  defaultValue={environments[0]!.id}
-                >
-                  <option value="">Skip preview exploration</option>
-                  {environments.map((environment) => (
-                    <option key={environment.id} value={environment.id}>
-                      {environment.base_url} ({environment.auth_mode})
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            <SubmitButton className={buttonClass} pendingText="Queueing…">
-              Analyze repository
-            </SubmitButton>
-          </ActionForm>
-        </Card>
-
-        <Card title="Preview environment">
-          {environments.length > 0 && (
-            <ul className="mb-3 space-y-1 text-sm">
-              {environments.map((environment) => (
-                <li
-                  key={environment.id}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <span className="font-mono text-xs truncate">
-                    {environment.base_url}
-                  </span>
-                  <span className="text-xs text-neutral-500">
-                    {environment.auth_mode}
-                    {environment.credential_secret_id
-                      ? " · credential stored"
-                      : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <ActionForm
-            action={saveEnvironmentAction}
-            className="space-y-3"
-            successMessage="Environment saved."
-          >
-            <input type="hidden" name="repositoryId" value={repo.id} />
-            <Field
-              label="Preview URL"
-              hint="A deployed preview Sodium may crawl. Nothing is built or executed by Sodium."
-            >
-              <input
-                name="baseUrl"
-                type="url"
-                required
-                className={inputClass}
-                placeholder="https://preview.example.com"
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Auth mode">
-                <select
-                  name="authMode"
-                  className={inputClass}
-                  defaultValue="none"
-                >
-                  <option value="none">None</option>
-                  <option value="basic">HTTP basic (user:pass)</option>
-                  <option value="cookie">Cookie header</option>
-                </select>
-              </Field>
-              <Field
-                label="Credential"
-                hint="Stored encrypted (Vault); never shown again."
-              >
-                <input
-                  name="credential"
-                  type="password"
-                  className={inputClass}
-                  autoComplete="off"
-                />
-              </Field>
-            </div>
-            <SubmitButton className={secondaryButtonClass}>
-              Save environment
-            </SubmitButton>
-          </ActionForm>
-        </Card>
-      </div>
+      {site && site.allowed_origins.length === 0 && settings}
 
       <Card
-        title="Analysis runs"
+        title="Proposed tools"
         actions={
-          approvedCount > 0 ? (
-            <span className="text-xs text-neutral-500 tabular-nums">
-              {approvedCount} approved tools
+          latestSuccessfulRun ? (
+            <span className="font-mono text-xs text-neutral-400">
+              {(
+                latestSuccessfulRun.repository_commits as unknown as {
+                  sha: string;
+                } | null
+              )?.sha.slice(0, 10)}
             </span>
           ) : undefined
         }
       >
-        {runs.length === 0 ? (
+        {!site ? (
           <EmptyState
-            title="No analyses yet"
-            hint="Run the first analysis to discover candidate tools."
+            title="Repository setup is incomplete"
+            hint="Reconnect this repository to restore its tool settings."
+          />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title={latestSuccessfulRun ? "No tools proposed" : "No analysis yet"}
+            hint={
+              latestSuccessfulRun
+                ? "The analyzer found no useful actions in the latest successful run."
+                : "Analyze the latest commit to discover tools."
+            }
           />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                  <th className="py-2 pr-4 font-medium">Commit</th>
-                  <th className="py-2 pr-4 font-medium">Status</th>
-                  <th className="py-2 pr-4 font-medium">Stage</th>
-                  <th className="py-2 pr-4 font-medium">Started</th>
-                  <th className="py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {runs.map((run) => {
-                  const commit = run.repository_commits as unknown as {
-                    sha: string;
-                  } | null;
-                  return (
-                    <tr key={run.id}>
-                      <td className="py-2 pr-4 font-mono text-xs">
-                        {commit?.sha.slice(0, 10)}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <RunStatusBadge status={run.status as RunStatus} />
-                      </td>
-                      <td className="py-2 pr-4 text-xs">{run.stage}</td>
-                      <td className="py-2 pr-4 text-xs text-neutral-500 tabular-nums">
-                        {new Date(run.created_at).toLocaleString()}
-                      </td>
-                      <td className="py-2 text-right">
-                        <Link
-                          href={`/repos/${repo.id}/runs/${run.id}`}
-                          className="text-xs font-medium text-blue-700 hover:underline"
-                        >
-                          Open →
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ReviewTable
+            key={`${latestSuccessfulRun?.id}:${rows.map((row) => `${row.id}:${row.enabled}`).join(",")}`}
+            candidates={rows}
+            siteId={site.id}
+          />
         )}
       </Card>
 
-      <Card title="Compatibility findings (continuous sync)">
-        {findings.length === 0 ? (
-          <p className="text-sm text-neutral-500 text-pretty">
-            No open findings. Verified push webhooks re-analyze changed code and
-            report drift against published tools here; production manifests are
-            never changed automatically.
-          </p>
-        ) : (
+      {site && site.allowed_origins.length > 0 && settings}
+
+      {findings.length > 0 && (
+        <Card title="Needs attention">
           <ul className="space-y-2">
             {findings.map((row) => {
               const finding = row.finding as unknown as CompatFinding;
@@ -281,8 +252,58 @@ export default async function RepositoryPage({
               );
             })}
           </ul>
-        )}
-      </Card>
+        </Card>
+      )}
+
+      {runs.length > 0 && (
+        <details className="rounded-lg border border-neutral-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
+            Analysis history
+          </summary>
+          <div className="overflow-x-auto border-t border-neutral-100 px-4 pb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
+                  <th className="py-2 pr-4 font-medium">Commit</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Started</th>
+                  <th className="py-2 font-medium" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {runs.map((run) => {
+                  const commit = run.repository_commits as unknown as {
+                    sha: string;
+                  } | null;
+                  return (
+                    <tr key={run.id}>
+                      <td className="py-2 pr-4 font-mono text-xs">
+                        {commit?.sha.slice(0, 10)}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <RunStatusBadge status={run.status as RunStatus} />
+                      </td>
+                      <td className="py-2 pr-4 text-xs text-neutral-500 tabular-nums">
+                        {new Date(run.created_at).toLocaleString()}
+                      </td>
+                      <td className="py-2 text-right">
+                        {run.status !== "succeeded" && (
+                          <Link
+                            href={`/repos/${repo.id}/runs/${run.id}`}
+                            className="text-xs font-medium text-blue-700 hover:underline"
+                          >
+                            Open →
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

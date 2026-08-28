@@ -74,14 +74,86 @@ export async function markStage(
   stage: string,
   status: "running" | "succeeded" | "failed" | "skipped",
   detail: Record<string, unknown> = {},
-): Promise<void> {
-  await sql`
+): Promise<boolean> {
+  const rows = await sql<{ id: string }[]>`
     update analysis_runs
     set stage = ${stage}::analysis_stage,
         stage_statuses = stage_statuses || ${jsonb(sql, { [stage]: { status, at: new Date().toISOString(), ...detail } })}::jsonb,
         started_at = coalesce(started_at, now())
-    where id = ${runId}
+    where id = ${runId} and status in ('queued', 'running')
+    returning id
   `;
+  return rows.length === 1;
+}
+
+/**
+ * Completes a stage and dispatches the next one in the same transaction.
+ * The queued marker in stage_statuses is the dispatch idempotency key: a
+ * redelivered stage can repeat its writes, but it can never fan out twice.
+ */
+export async function completeStage(
+  sql: Sql,
+  runId: string,
+  stage: string,
+  status: "succeeded" | "skipped",
+  detail: Record<string, unknown>,
+  nextStage: string | null,
+): Promise<void> {
+  await sql.begin(async (tx) => {
+    const rows = await tx<
+      { status: string; stage_statuses: Record<string, { status?: string }> }[]
+    >`
+      select status, stage_statuses
+      from analysis_runs
+      where id = ${runId}
+      for update
+    `;
+    const run = rows[0];
+    if (!run || !["queued", "running"].includes(run.status)) return;
+
+    const completed = run.stage_statuses?.[stage]?.status;
+    if (completed === "succeeded" || completed === "skipped") return;
+
+    const now = new Date().toISOString();
+    await tx`
+      update analysis_runs
+      set stage = ${stage}::analysis_stage,
+          stage_statuses = stage_statuses || ${jsonb(tx, {
+            [stage]: { status, at: now, ...detail },
+          })}::jsonb
+      where id = ${runId}
+    `;
+
+    if (!nextStage) {
+      await tx`
+        update analysis_runs
+        set status = 'succeeded', error = null, finished_at = now()
+        where id = ${runId} and status in ('queued', 'running')
+      `;
+      return;
+    }
+
+    if (run.stage_statuses?.[nextStage]) return;
+    await tx`
+      update analysis_runs
+      set stage = ${nextStage}::analysis_stage,
+          stage_statuses = stage_statuses || ${jsonb(tx, {
+            [nextStage]: { status: "queued", at: now },
+          })}::jsonb
+      where id = ${runId}
+    `;
+    await tx`
+      select pgmq.send(
+        'sodium_jobs',
+        ${jsonb(tx, {
+          type: "analysis.stage",
+          runId,
+          stage: nextStage,
+          attempt: 0,
+        })}::jsonb
+      )
+    `;
+  });
 }
 
 export async function finishRun(

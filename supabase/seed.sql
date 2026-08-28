@@ -1,9 +1,8 @@
 -- Intentionally empty: Sodium seeds no data.
 --
 -- Sign-in is GitHub-only (see README → "GitHub sign-in"), so there are no
--- demo accounts. Everything else is created through the product itself:
--- create an organization in onboarding, then "Use the local fixture
--- repository" to get an analyzable repo without GitHub credentials.
+-- demo accounts. Auth automatically creates each user's private workspace;
+-- repositories are connected through the GitHub App.
 --
 -- Test suites provision their own throwaway data:
 --   - the database security tests create tenants inside rolled-back

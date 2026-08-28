@@ -1,28 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import type {
-  ActionContract,
-  CandidateStatus,
-  JobError,
-  RiskLevel,
-  RunStatus,
-} from "@sodium/contracts";
-import {
-  getCandidates,
-  getEvalSummaries,
-  getRepository,
-  getRun,
-} from "@/lib/queries";
-import {
-  Card,
-  EmptyState,
-  RunStatusBadge,
-  secondaryButtonClass,
-} from "@/components/ui";
+import { notFound, redirect } from "next/navigation";
+import type { JobError, RunStatus } from "@sodium/contracts";
+import { getRepository, getRun } from "@/lib/queries";
+import { Card, RunStatusBadge } from "@/components/ui";
 import { RunProgress } from "@/components/run-progress";
-import { ReviewTable, type CandidateRow } from "@/components/review-table";
 
-export const metadata = { title: "Analysis run" };
+export const metadata = { title: "Analysis" };
 
 export default async function RunPage({
   params,
@@ -32,55 +15,32 @@ export default async function RunPage({
   const { id, runId } = await params;
   const [repo, run] = await Promise.all([getRepository(id), getRun(runId)]);
   if (!repo || !run || run.repository_id !== repo.id) notFound();
+  if (run.status === "succeeded") redirect(`/repos/${repo.id}`);
 
-  const [candidates, evalSummaries] = await Promise.all([
-    getCandidates(runId),
-    getEvalSummaries(runId),
-  ]);
   const commit = run.repository_commits as unknown as { sha: string } | null;
   const error = run.error as unknown as JobError | null;
 
-  const rows: CandidateRow[] = candidates.map((candidate) => ({
-    id: candidate.id,
-    name: candidate.name,
-    title: candidate.title,
-    description: candidate.description,
-    risk_level: candidate.risk_level as RiskLevel,
-    confirmation: candidate.confirmation,
-    confidence: Number(candidate.confidence),
-    status: candidate.status as CandidateStatus,
-    validation_issues: candidate.validation_issues,
-    handlerKind:
-      (candidate.contract as unknown as ActionContract | null)?.handler.kind ??
-      "?",
-    evalSummary: evalSummaries.get(candidate.id) ?? { passed: 0, failed: 0 },
-    repoId: repo.id,
-  }));
-
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs text-neutral-400">
-            <Link href={`/repos/${repo.id}`} className="hover:underline">
-              {repo.full_name}
-            </Link>{" "}
-            / analysis
-          </p>
-          <h1 className="text-lg font-semibold">
-            Commit <span className="font-mono">{commit?.sha.slice(0, 10)}</span>{" "}
-            <RunStatusBadge status={run.status as RunStatus} />
+    <div className="mx-auto max-w-2xl space-y-6">
+      <header>
+        <p className="text-xs text-neutral-400">
+          <Link href={`/repos/${repo.id}`} className="hover:underline">
+            {repo.full_name}
+          </Link>{" "}
+          / analysis
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-lg font-semibold text-balance">
+            Analyzing <span className="font-mono">{commit?.sha.slice(0, 10)}</span>
           </h1>
+          <RunStatusBadge status={run.status as RunStatus} />
         </div>
-        <Link
-          href={`/repos/${repo.id}/publish`}
-          className={secondaryButtonClass}
-        >
-          Publish &amp; loader
-        </Link>
+        <p className="mt-1 text-sm text-neutral-500 text-pretty">
+          This page returns to the repository as soon as the analysis completes.
+        </p>
       </header>
 
-      <Card title="Pipeline">
+      <Card title="Progress">
         <RunProgress
           runId={run.id}
           runStatus={run.status}
@@ -98,25 +58,6 @@ export default async function RunPage({
           >
             {error.code}: {error.message}
           </p>
-        )}
-      </Card>
-
-      <Card title="Proposed tools">
-        {rows.length === 0 ? (
-          <EmptyState
-            title={
-              run.status === "succeeded"
-                ? "No tools proposed"
-                : "Waiting for synthesis"
-            }
-            hint={
-              run.status === "succeeded"
-                ? "The analyzer found no groupable actions in this commit."
-                : "Candidates appear here after the synthesis and validation stages complete."
-            }
-          />
-        ) : (
-          <ReviewTable candidates={rows} />
         )}
       </Card>
     </div>

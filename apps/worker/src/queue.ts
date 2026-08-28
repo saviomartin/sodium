@@ -19,7 +19,7 @@ import { log } from "./log";
 const VISIBILITY_TIMEOUT_SECONDS = 120;
 const POLL_SECONDS = 5;
 
-interface QueueRow {
+export interface QueueRow {
   msg_id: string;
   read_ct: number;
   message: unknown;
@@ -39,6 +39,16 @@ export async function readJobs(
   return sql<QueueRow[]>`
     select msg_id, read_ct, message
     from pgmq.read_with_poll(${JOB_QUEUE}, ${VISIBILITY_TIMEOUT_SECONDS}, ${quantity}, ${POLL_SECONDS})
+  `;
+}
+
+export async function readJobsNow(
+  sql: Sql,
+  quantity: number,
+): Promise<QueueRow[]> {
+  return sql<QueueRow[]>`
+    select msg_id, read_ct, message
+    from pgmq.read(${JOB_QUEUE}, ${VISIBILITY_TIMEOUT_SECONDS}, ${quantity})
   `;
 }
 
@@ -83,6 +93,11 @@ export async function processOne(
       msgId: row.msg_id,
       readCt: row.read_ct,
     });
+    await failExhaustedAnalysisRun(
+      sql,
+      parsed.data,
+      "job was redelivered too many times",
+    );
     await archiveJob(sql, row.msg_id);
     return;
   }
@@ -123,6 +138,7 @@ export async function processOne(
           ...label,
           reason: outcome.reason,
         });
+        await failExhaustedAnalysisRun(sql, message, outcome.reason);
         await archiveJob(sql, row.msg_id);
         return;
       }
@@ -140,6 +156,39 @@ export async function processOne(
       return;
     }
   }
+}
+
+async function failExhaustedAnalysisRun(
+  sql: Sql,
+  message: JobMessage,
+  reason: string,
+): Promise<void> {
+  if (message.type !== "analysis.stage") return;
+  const error = {
+    code: "internal",
+    message:
+      `Analysis stopped after ${MAX_JOB_ATTEMPTS} attempts: ${reason}`.slice(
+        0,
+        2000,
+      ),
+    retryable: false,
+    stage: message.stage,
+  };
+  await sql`
+    update analysis_runs
+    set status = 'failed',
+        stage = ${message.stage}::analysis_stage,
+        stage_statuses = stage_statuses || ${jsonb(sql, {
+          [message.stage]: {
+            status: "failed",
+            at: new Date().toISOString(),
+            error,
+          },
+        })}::jsonb,
+        error = ${jsonb(sql, error)}::jsonb,
+        finished_at = now()
+    where id = ${message.runId} and status in ('queued', 'running')
+  `;
 }
 
 export interface ConsumerHandle {

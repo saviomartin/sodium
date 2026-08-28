@@ -15,6 +15,7 @@ import {
 } from "@sodium/contracts";
 import { jsonb, type RunRow, type WorkerContext } from "../db";
 import {
+  completeStage,
   finishRun,
   loadRun,
   markStage,
@@ -22,7 +23,6 @@ import {
   setRunRunning,
 } from "../db";
 import { progressEvent, sendProgress } from "../progress";
-import { enqueueJob } from "../queue";
 import { selectRepoProvider } from "../providers/repo-provider";
 import { selectCrawler, type CrawledPage } from "../providers/crawler";
 import { selectAiProvider } from "../providers/ai-provider";
@@ -55,36 +55,39 @@ export async function handleAnalysisStage(
 ): Promise<JobOutcome> {
   const run = await loadRun(ctx.sql, runId);
   if (!run) return { kind: "fatal", reason: `run ${runId} not found` };
-  if (run.status === "canceled") return { kind: "done" };
+  if (["succeeded", "failed", "canceled"].includes(run.status)) {
+    return { kind: "done" };
+  }
+
+  const prior = (run.stage_statuses[stage] as { status?: string } | undefined)
+    ?.status;
+  if (prior === "succeeded" || prior === "skipped") {
+    return { kind: "done" };
+  }
 
   await setRunRunning(ctx.sql, runId);
-  await markStage(ctx.sql, runId, stage, "running");
+  const active = await markStage(ctx.sql, runId, stage, "running");
+  if (!active) return { kind: "done" };
   await sendProgress(ctx.sql, progressEvent(runId, stage, "running"));
 
   try {
     const detail = await executeStage(ctx, run, stage);
-    await markStage(
+    const next = STAGE_ORDER[STAGE_ORDER.indexOf(stage) + 1] ?? null;
+    await completeStage(
       ctx.sql,
       runId,
       stage,
       detail.skipped ? "skipped" : "succeeded",
       detail.info ?? {},
+      next,
     );
 
-    const next = STAGE_ORDER[STAGE_ORDER.indexOf(stage) + 1];
     if (next) {
-      await enqueueJob(ctx.sql, {
-        type: "analysis.stage",
-        runId,
-        stage: next,
-        attempt: 0,
-      });
       await sendProgress(
         ctx.sql,
         progressEvent(runId, stage, "succeeded", { message: detail.message }),
       );
     } else {
-      await finishRun(ctx.sql, runId, "succeeded");
       await sendProgress(
         ctx.sql,
         progressEvent(runId, stage, "succeeded", {
@@ -149,7 +152,7 @@ async function ensureSnapshot(
   ctx: WorkerContext,
   run: RunRow,
 ): Promise<string> {
-  const provider = selectRepoProvider(ctx.env, run.installation_id);
+  const provider = selectRepoProvider(ctx.env);
   return provider.ensureSnapshot({
     runId: run.id,
     installationId: run.installation_id,

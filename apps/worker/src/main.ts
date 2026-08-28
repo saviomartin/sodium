@@ -1,33 +1,17 @@
 import { loadEnv } from "./env";
 import { createWorkerContext } from "./db";
-import { startConsumer, type JobOutcome } from "./queue";
-import { handleAnalysisStage } from "./pipeline/stages";
-import { handleSyncCompare } from "./pipeline/sync";
-import { handleGeneratePr } from "./pipeline/generate-pr";
+import { startConsumer } from "./queue";
+import { createDispatcher } from "./runner";
 import { log, setLogLevel } from "./log";
-import type { JobMessage } from "@sodium/contracts";
 
 const env = loadEnv();
 setLogLevel(env.LOG_LEVEL);
 const ctx = createWorkerContext(env);
-
-async function dispatch(message: JobMessage): Promise<JobOutcome> {
-  switch (message.type) {
-    case "analysis.stage":
-      return handleAnalysisStage(ctx, message.runId, message.stage);
-    case "sync.compare":
-      return handleSyncCompare(
-        ctx,
-        message.repositoryId,
-        message.commitSha,
-        message.deliveryId,
-      );
-    case "publication.generate_pr":
-      return handleGeneratePr(ctx, message.publicationId);
-  }
-}
-
-const consumer = startConsumer(ctx.sql, env.WORKER_CONCURRENCY, dispatch);
+const consumer = startConsumer(
+  ctx.sql,
+  env.WORKER_CONCURRENCY,
+  createDispatcher(ctx),
+);
 log("info", "sodium worker started", {
   concurrency: env.WORKER_CONCURRENCY,
   github: Boolean(env.GITHUB_APP_ID),

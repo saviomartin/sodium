@@ -1,5 +1,4 @@
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -10,9 +9,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { extract } from "tar";
 import type { WorkerEnv } from "../env";
-import { hasGithubCredentials } from "../env";
 import { GithubAppClient } from "./github";
-import { log } from "../log";
 
 /**
  * Repository access provider. `ensureSnapshot` materializes the source of one
@@ -81,67 +78,7 @@ export class GithubRepoProvider implements RepoProvider {
   }
 }
 
-/**
- * Fixture-backed provider used when GitHub credentials are absent or the
- * repository is the seeded local fixture (installation_id = 0). Snapshots
- * come from FIXTURE_REPO_DIR; "pull requests" are written to a local
- * directory so the full pipeline stays exercisable without credentials.
- */
-export class LocalFixtureRepoProvider implements RepoProvider {
-  constructor(private readonly env: WorkerEnv) {}
-
-  async ensureSnapshot(spec: RepoSnapshotSpec): Promise<string> {
-    const source = this.env.FIXTURE_REPO_DIR;
-    if (!source || !existsSync(source)) {
-      throw new Error(
-        "FIXTURE_REPO_DIR is not configured; cannot snapshot the local fixture repository",
-      );
-    }
-    const target = snapshotDir(this.env, spec.runId, spec.sha);
-    if (existsSync(join(target, ".sodium-complete"))) return target;
-    rmSync(target, { recursive: true, force: true });
-    mkdirSync(target, { recursive: true });
-    cpSync(source, target, {
-      recursive: true,
-      filter: (src) => !src.includes("node_modules") && !src.includes(".next"),
-    });
-    writeFileSync(join(target, ".sodium-complete"), spec.sha);
-    return target;
-  }
-
-  async createPullRequest(spec: PullRequestSpec) {
-    const prDir = join(
-      this.env.WORK_DIR,
-      "local-prs",
-      `${spec.repo}-${spec.branch}`.replace(/[^a-zA-Z0-9._-]/g, "_"),
-    );
-    rmSync(prDir, { recursive: true, force: true });
-    for (const file of spec.files) {
-      const filePath = join(prDir, file.path);
-      mkdirSync(join(filePath, ".."), { recursive: true });
-      writeFileSync(filePath, file.content);
-    }
-    writeFileSync(
-      join(prDir, "PR_DESCRIPTION.md"),
-      `# ${spec.title}\n\n${spec.body}\n`,
-    );
-    log("info", "local PR written (no GitHub credentials)", {
-      prDir,
-      files: spec.files.length,
-    });
-    return { prNumber: null, url: `file://${prDir}` };
-  }
-}
-
-export function selectRepoProvider(
-  env: WorkerEnv,
-  installationId: number,
-): RepoProvider {
-  // Fixture installations use non-positive installation ids (see seed +
-  // connectFixtureRepoAction); real GitHub ids are always positive.
-  if (installationId <= 0 || !hasGithubCredentials(env)) {
-    return new LocalFixtureRepoProvider(env);
-  }
+export function selectRepoProvider(env: WorkerEnv): RepoProvider {
   return new GithubRepoProvider(env);
 }
 

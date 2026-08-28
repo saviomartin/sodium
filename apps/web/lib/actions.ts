@@ -17,6 +17,7 @@ import { createClient, currentUserId } from "./supabase/server";
 import { createServiceClient } from "./supabase/service";
 import { publishSiteManifest, rollbackSiteManifest } from "./manifest";
 import { env, hasGithubApp } from "./env";
+import { listInstallationRepos, resolveRepositoryHead } from "./github";
 
 const siteIdAlphabet = customAlphabet(
   "abcdefghijklmnopqrstuvwxyz0123456789",
@@ -28,8 +29,6 @@ export interface ActionResult {
   error?: string;
   redirectTo?: string;
 }
-
-const FIXTURE_SHA = "f".repeat(40);
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -46,7 +45,9 @@ function safeNext(raw: unknown): string {
  * GitHub consent URL; after consent it redirects to /auth/callback, which
  * exchanges the code for a cookie session.
  */
-export async function signInWithGithubAction(formData: FormData): Promise<void> {
+export async function signInWithGithubAction(
+  formData: FormData,
+): Promise<void> {
   const next = safeNext(formData.get("next"));
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -69,50 +70,106 @@ export async function signOutAction(): Promise<void> {
   redirect("/login");
 }
 
-// ---------------------------------------------------------------------------
-// Organizations
-// ---------------------------------------------------------------------------
+type ServiceClient = ReturnType<typeof createServiceClient>;
 
-const OrgSchema = z.object({
-  name: z.string().min(1).max(120),
-  slug: z
-    .string()
-    .min(2)
-    .max(48)
-    .regex(
-      /^[a-z0-9](-?[a-z0-9])*$/,
-      "lowercase letters, digits and single dashes",
-    ),
-});
+async function listArtifactPaths(
+  service: ServiceClient,
+  prefix: string,
+): Promise<string[]> {
+  const paths: string[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const { data, error } = await service.storage
+      .from("artifacts")
+      .list(prefix, { limit: 100, offset });
+    if (error)
+      throw new Error(`could not inspect stored artifacts: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const object of data) {
+      const path = prefix ? `${prefix}/${object.name}` : object.name;
+      if (object.id) paths.push(path);
+      else paths.push(...(await listArtifactPaths(service, path)));
+    }
+    if (data.length < 100) break;
+  }
+  return paths;
+}
 
-export async function createOrganizationAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult> {
-  const parsed = OrgSchema.safeParse({
-    name: formData.get("name"),
-    slug: formData.get("slug"),
-  });
-  if (!parsed.success)
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "invalid input",
-    };
+/** Permanently removes every app-owned row, artifact and auth identity. */
+export async function deleteAccountAction(): Promise<ActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase.rpc("create_organization", {
-    p_name: parsed.data.name,
-    p_slug: parsed.data.slug,
-  });
-  if (error) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "not signed in" };
+
+  const service = createServiceClient();
+  const { data: workspaces, error: workspaceError } = await service
+    .from("organizations")
+    .select("id")
+    .eq("created_by", user.id);
+  if (workspaceError) return { ok: false, error: workspaceError.message };
+  const workspaceIds = (workspaces ?? []).map((workspace) => workspace.id);
+
+  try {
+    const artifactPaths = (
+      await Promise.all(
+        workspaceIds.map((workspaceId) =>
+          listArtifactPaths(service, workspaceId),
+        ),
+      )
+    ).flat();
+    for (let index = 0; index < artifactPaths.length; index += 100) {
+      const { error } = await service.storage
+        .from("artifacts")
+        .remove(artifactPaths.slice(index, index + 100));
+      if (error)
+        throw new Error(`could not remove stored artifacts: ${error.message}`);
+    }
+  } catch (error) {
     return {
       ok: false,
-      error: error.message.includes("duplicate")
-        ? "that slug is taken"
-        : error.message,
+      error:
+        error instanceof Error
+          ? error.message
+          : "could not remove stored artifacts",
     };
   }
-  redirect(`/dashboard?org=${parsed.data.slug}`);
+
+  if (workspaceIds.length > 0) {
+    const { error: unlinkError } = await service
+      .from("sites")
+      .update({ current_manifest_id: null })
+      .in("org_id", workspaceIds);
+    if (unlinkError) return { ok: false, error: unlinkError.message };
+
+    const { data: deleted, error: deleteError } = await service
+      .from("organizations")
+      .delete()
+      .in("id", workspaceIds)
+      .select("id");
+    if (deleteError) return { ok: false, error: deleteError.message };
+    if ((deleted?.length ?? 0) !== workspaceIds.length) {
+      return {
+        ok: false,
+        error: "account data deletion was incomplete; no identity was removed",
+      };
+    }
+  }
+
+  const { error: authError } = await service.auth.admin.deleteUser(user.id);
+  if (authError) {
+    return {
+      ok: false,
+      error: `your app data was removed, but the sign-in identity could not be deleted: ${authError.message}`,
+    };
+  }
+  await supabase.auth.signOut({ scope: "global" });
+  redirect("/login?deleted=1");
 }
+
+// ---------------------------------------------------------------------------
+// Internal personal workspace
+// ---------------------------------------------------------------------------
 
 /** Membership + role gate used by privileged mutations (user-context, RLS-scoped). */
 async function requireOrgRole(
@@ -129,18 +186,35 @@ async function requireOrgRole(
     .eq("user_id", userId)
     .maybeSingle();
   if (!data || !roles.includes(data.role as never))
-    return { error: "requires elevated permissions in this organization" };
+    return { error: "you do not have permission to change this workspace" };
   return { userId };
+}
+
+async function requirePersonalWorkspace(): Promise<
+  { userId: string; orgId: string } | { error: string }
+> {
+  const userId = await currentUserId();
+  if (!userId) return { error: "not signed in" };
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("org_memberships")
+    .select("org_id, role, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  const membership = data?.find((candidate) => candidate.role === "owner");
+  if (!membership)
+    return { error: "account setup is incomplete; sign out and sign in again" };
+  return { userId, orgId: membership.org_id };
 }
 
 // ---------------------------------------------------------------------------
 // GitHub connection
 // ---------------------------------------------------------------------------
 
-export async function connectGithubAction(
-  orgId: string,
-): Promise<ActionResult> {
-  const gate = await requireOrgRole(orgId, ["owner", "admin"]);
+export async function connectGithubAction(): Promise<ActionResult> {
+  const workspace = await requirePersonalWorkspace();
+  if ("error" in workspace) return { ok: false, error: workspace.error };
+  const gate = await requireOrgRole(workspace.orgId, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
   if (!hasGithubApp() || !env.NEXT_PUBLIC_GITHUB_APP_SLUG) {
     return {
@@ -151,87 +225,25 @@ export async function connectGithubAction(
   }
   const state = randomBytes(16).toString("hex");
   const cookieStore = await cookies();
-  cookieStore.set("sodium_gh_state", JSON.stringify({ state, orgId }), {
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: 600,
-    path: "/",
-  });
+  cookieStore.set(
+    "sodium_gh_state",
+    JSON.stringify({ state, orgId: workspace.orgId }),
+    {
+      httpOnly: true,
+      secure: env.SITE_URL.startsWith("https://"),
+      sameSite: "lax",
+      maxAge: 600,
+      path: "/",
+    },
+  );
   redirect(
     `https://github.com/apps/${env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new?state=${state}`,
   );
 }
 
-/**
- * Local-development path: registers the seeded fixture repository (analyzed
- * from FIXTURE_REPO_DIR by the worker) for an organization without GitHub
- * credentials. Fixture installations use non-positive installation ids.
- */
-export async function connectFixtureRepoAction(
-  orgId: string,
-): Promise<ActionResult> {
-  const gate = await requireOrgRole(orgId, ["owner", "admin"]);
-  if ("error" in gate) return { ok: false, error: gate.error };
-  const supabase = await createClient();
-
-  const { data: existing } = await supabase
-    .from("repositories")
-    .select("id")
-    .eq("org_id", orgId)
-    .eq("github_repo_id", 0)
-    .maybeSingle();
-  if (existing) return { ok: true, redirectTo: `/repos/${existing.id}` };
-
-  const fixtureInstallationId = -Math.floor(Math.random() * 2_000_000_000) - 1;
-  const { data: installation, error: installError } = await supabase
-    .from("github_installations")
-    .insert({
-      org_id: orgId,
-      installation_id: fixtureInstallationId,
-      account_login: "local-fixture",
-      account_type: "User",
-      created_by: gate.userId,
-    })
-    .select("id")
-    .single();
-  if (installError) return { ok: false, error: installError.message };
-
-  const { data: repo, error: repoError } = await supabase
-    .from("repositories")
-    .insert({
-      org_id: orgId,
-      installation_id: installation.id,
-      github_repo_id: 0,
-      owner: "local-fixture",
-      name: "fixture-shop",
-      full_name: "local-fixture/fixture-shop",
-      default_branch: "main",
-      is_private: false,
-    })
-    .select("id")
-    .single();
-  if (repoError) return { ok: false, error: repoError.message };
-
-  const { error: siteError } = await supabase.from("sites").insert({
-    org_id: orgId,
-    repository_id: repo.id,
-    site_id: `site_${siteIdAlphabet()}`,
-    allowed_origins: ["http://localhost:4000"],
-  });
-  if (siteError) return { ok: false, error: siteError.message };
-
-  redirect(`/repos/${repo.id}`);
-}
-
 const RepoSelectionSchema = z.object({
-  orgId: z.string().uuid(),
   installationUuid: z.string().uuid(),
-  githubRepoId: z.coerce.number().int(),
-  owner: z.string().min(1),
-  name: z.string().min(1),
-  fullName: z.string().min(1),
-  defaultBranch: z.string().min(1),
-  isPrivate: z.coerce.boolean(),
+  githubRepoId: z.coerce.number().int().positive(),
 });
 
 export async function selectRepositoryAction(
@@ -242,33 +254,88 @@ export async function selectRepositoryAction(
   if (!parsed.success)
     return { ok: false, error: "invalid repository selection" };
   const input = parsed.data;
-  const gate = await requireOrgRole(input.orgId, ["owner", "admin"]);
+  const supabase = await createClient();
+  const { data: installation } = await supabase
+    .from("github_installations")
+    .select("id, org_id, installation_id, suspended_at")
+    .eq("id", input.installationUuid)
+    .maybeSingle();
+  if (!installation || installation.suspended_at) {
+    return {
+      ok: false,
+      error: "GitHub connection is unavailable; reconnect it and try again",
+    };
+  }
+  const gate = await requireOrgRole(installation.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
 
-  const supabase = await createClient();
+  let available;
+  try {
+    available = await listInstallationRepos(installation.installation_id);
+  } catch {
+    return {
+      ok: false,
+      error: "GitHub could not list repositories for this connection",
+    };
+  }
+  const selected = available.find(
+    (repository) => repository.githubRepoId === input.githubRepoId,
+  );
+  if (!selected) {
+    return {
+      ok: false,
+      error: "that repository is not available to this GitHub connection",
+    };
+  }
+
+  const { data: existing } = await supabase
+    .from("repositories")
+    .select("id")
+    .eq("org_id", installation.org_id)
+    .eq("github_repo_id", selected.githubRepoId)
+    .maybeSingle();
+  if (existing) redirect(`/repos/${existing.id}`);
+
   const { data: repo, error } = await supabase
     .from("repositories")
     .insert({
-      org_id: input.orgId,
+      org_id: installation.org_id,
       installation_id: input.installationUuid,
-      github_repo_id: input.githubRepoId,
-      owner: input.owner,
-      name: input.name,
-      full_name: input.fullName,
-      default_branch: input.defaultBranch,
-      is_private: input.isPrivate,
+      github_repo_id: selected.githubRepoId,
+      owner: selected.owner,
+      name: selected.name,
+      full_name: selected.fullName,
+      default_branch: selected.defaultBranch,
+      is_private: selected.isPrivate,
     })
     .select("id")
     .single();
-  if (error) return { ok: false, error: error.message };
+  if (error || !repo) {
+    // A second tab may have connected the same repository after our pre-read.
+    // Converge on that row instead of surfacing a unique-constraint error.
+    const { data: concurrent } = await supabase
+      .from("repositories")
+      .select("id")
+      .eq("org_id", installation.org_id)
+      .eq("github_repo_id", selected.githubRepoId)
+      .maybeSingle();
+    if (concurrent) redirect(`/repos/${concurrent.id}`);
+    return {
+      ok: false,
+      error: error?.message ?? "could not connect repository",
+    };
+  }
 
   const { error: siteError } = await supabase.from("sites").insert({
-    org_id: input.orgId,
+    org_id: installation.org_id,
     repository_id: repo.id,
     site_id: `site_${siteIdAlphabet()}`,
     allowed_origins: [],
   });
-  if (siteError) return { ok: false, error: siteError.message };
+  if (siteError) {
+    await supabase.from("repositories").delete().eq("id", repo.id);
+    return { ok: false, error: siteError.message };
+  }
 
   redirect(`/repos/${repo.id}`);
 }
@@ -372,29 +439,76 @@ export async function requestAnalysisAction(
 ): Promise<ActionResult> {
   const repositoryId = String(formData.get("repositoryId") ?? "");
   const environmentId = String(formData.get("environmentId") ?? "") || null;
-  let sha = String(formData.get("sha") ?? "")
-    .trim()
-    .toLowerCase();
 
   const supabase = await createClient();
   const { data: repo } = await supabase
     .from("repositories")
-    .select("id, org_id, github_repo_id")
+    .select(
+      "id, org_id, owner, name, default_branch, github_installations(installation_id, suspended_at)",
+    )
     .eq("id", repositoryId)
     .maybeSingle();
   if (!repo) return { ok: false, error: "repository not found" };
 
-  if (!sha) sha = repo.github_repo_id === 0 ? FIXTURE_SHA : "";
-  if (!/^[a-f0-9]{40}$/.test(sha)) {
+  const installation = repo.github_installations as unknown as {
+    installation_id: number;
+    suspended_at: string | null;
+  } | null;
+  if (!installation || installation.suspended_at) {
     return {
       ok: false,
-      error: "provide a full 40-character commit SHA to analyze",
+      error: "GitHub connection is unavailable; reconnect it and try again",
+    };
+  }
+
+  const { data: activeRuns } = await supabase
+    .from("analysis_runs")
+    .select("id, created_at")
+    .eq("repository_id", repositoryId)
+    .in("status", ["queued", "running"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const activeRun = activeRuns?.[0];
+  if (activeRun) {
+    const age = Date.now() - new Date(activeRun.created_at).getTime();
+    if (age < 30 * 60 * 1000) {
+      redirect(`/repos/${repositoryId}/runs/${activeRun.id}`);
+    }
+    await createServiceClient()
+      .from("analysis_runs")
+      .update({
+        status: "failed",
+        error: {
+          code: "stale_run",
+          message:
+            "The worker stopped reporting progress. A fresh analysis was started.",
+          retryable: true,
+        },
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", activeRun.id)
+      .in("status", ["queued", "running"]);
+  }
+
+  let sha: string;
+  try {
+    sha = await resolveRepositoryHead(
+      installation.installation_id,
+      repo.owner,
+      repo.name,
+      repo.default_branch,
+    );
+  } catch {
+    return {
+      ok: false,
+      error: `GitHub could not resolve the latest commit on ${repo.default_branch}`,
     };
   }
 
   const { data: runId, error } = await supabase.rpc("request_analysis", {
     p_repository_id: repositoryId,
     p_commit_sha: sha,
+    p_ref: repo.default_branch,
     p_environment_id: environmentId ?? undefined,
   });
   if (error) return { ok: false, error: error.message };
@@ -447,6 +561,161 @@ export async function approveCandidateAction(
   });
   if (error) return { ok: false, error: error.message };
   revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+const ToolAvailabilitySchema = z.object({
+  candidateIds: z.array(z.string().uuid()).min(1).max(128),
+  siteId: z.string().uuid(),
+  enabled: z.boolean(),
+});
+
+/**
+ * The repo-page toggle is the complete review flow: validate ownership, update
+ * immutable contract lineage, and immediately publish the resulting tool set.
+ */
+export async function setCandidatesEnabledAction(
+  candidateIds: string[],
+  siteId: string,
+  enabled: boolean,
+): Promise<ActionResult> {
+  const parsed = ToolAvailabilitySchema.safeParse({
+    candidateIds: [...new Set(candidateIds)],
+    siteId,
+    enabled,
+  });
+  if (!parsed.success) return { ok: false, error: "invalid tool selection" };
+  const input = parsed.data;
+
+  const supabase = await createClient();
+  const { data: site } = await supabase
+    .from("sites")
+    .select("id, org_id, repository_id, allowed_origins")
+    .eq("id", input.siteId)
+    .maybeSingle();
+  if (!site) return { ok: false, error: "site not found" };
+  const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
+  if ("error" in gate) return { ok: false, error: gate.error };
+  if (input.enabled && site.allowed_origins.length === 0) {
+    return {
+      ok: false,
+      error: "Add your app URL before enabling tools.",
+    };
+  }
+
+  const { data: candidates, error: candidatesError } = await supabase
+    .from("action_candidates")
+    .select("id, org_id, run_id, action_id, status")
+    .in("id", input.candidateIds);
+  if (candidatesError) return { ok: false, error: candidatesError.message };
+  if (!candidates || candidates.length !== input.candidateIds.length) {
+    return { ok: false, error: "one or more tools were not found" };
+  }
+  if (candidates.some((candidate) => candidate.org_id !== site.org_id)) {
+    return { ok: false, error: "tool selection does not belong to this site" };
+  }
+
+  const runIds = [...new Set(candidates.map((candidate) => candidate.run_id))];
+  const { data: runs, error: runsError } = await supabase
+    .from("analysis_runs")
+    .select("id, repository_id")
+    .in("id", runIds);
+  if (runsError) return { ok: false, error: runsError.message };
+  if (
+    !runs ||
+    runs.length !== runIds.length ||
+    runs.some((run) => run.repository_id !== site.repository_id)
+  ) {
+    return { ok: false, error: "tool selection does not belong to this repository" };
+  }
+
+  const service = createServiceClient();
+  if (input.enabled) {
+    for (const candidate of candidates) {
+      const { data: existing, error: existingError } = await service
+        .from("tool_contracts")
+        .select("id, status")
+        .eq("site_id", site.id)
+        .eq("action_id", candidate.action_id)
+        .maybeSingle();
+      if (existingError) return { ok: false, error: existingError.message };
+
+      if (
+        existing &&
+        (candidate.status === "approved" || candidate.status === "published")
+      ) {
+        const { error } = await service
+          .from("tool_contracts")
+          .update({ status: "active" })
+          .eq("id", existing.id);
+        if (error) return { ok: false, error: error.message };
+        continue;
+      }
+
+      if (candidate.status === "rejected") {
+        const { error } = await service
+          .from("action_candidates")
+          .update({ status: "needs_review" })
+          .eq("id", candidate.id);
+        if (error) return { ok: false, error: error.message };
+      } else if (
+        candidate.status !== "proposed" &&
+        candidate.status !== "needs_review"
+      ) {
+        return {
+          ok: false,
+          error: `${candidate.action_id} cannot be enabled from its current state`,
+        };
+      }
+
+      const { error } = await supabase.rpc("approve_candidate", {
+        p_candidate_id: candidate.id,
+        p_site_id: site.id,
+      });
+      if (error) return { ok: false, error: error.message };
+    }
+  } else {
+    const actionIds = candidates.map((candidate) => candidate.action_id);
+    const { error: contractsError } = await service
+      .from("tool_contracts")
+      .update({ status: "retired" })
+      .eq("site_id", site.id)
+      .in("action_id", actionIds);
+    if (contractsError) return { ok: false, error: contractsError.message };
+
+    const { error: candidateError } = await service
+      .from("action_candidates")
+      .update({
+        status: "rejected",
+        reviewed_by: gate.userId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .in("id", input.candidateIds);
+    if (candidateError) return { ok: false, error: candidateError.message };
+
+    const { error: auditError } = await service.from("audit_events").insert({
+      org_id: site.org_id,
+      actor: gate.userId,
+      action: "candidate.disabled",
+      subject_type: "site",
+      subject_id: site.id,
+      data: {
+        candidateIds: input.candidateIds,
+        actionIds,
+      } as never,
+    });
+    if (auditError) return { ok: false, error: auditError.message };
+  }
+
+  const publication = await publishSiteManifest(site.id, gate.userId);
+  if (!publication.ok) {
+    return {
+      ok: false,
+      error: `Tool settings changed, but availability could not update: ${publication.error}`,
+    };
+  }
+
+  revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }
 
