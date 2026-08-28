@@ -16,6 +16,8 @@ export const metadata = { title: "Connect repository" };
 const ERROR_MESSAGES: Record<string, string> = {
   github_state: "The GitHub connection expired. Start it again.",
   github_installation: "GitHub could not verify that installation.",
+  github_access:
+    "Authorize GitHub with an account that owns this installation.",
   github_store: "The GitHub connection could not be saved.",
 };
 

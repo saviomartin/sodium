@@ -1,9 +1,7 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import {
@@ -18,6 +16,7 @@ import { createServiceClient } from "./supabase/service";
 import { publishSiteManifest, rollbackSiteManifest } from "./manifest";
 import { env, hasGithubApp } from "./env";
 import { listInstallationRepos, resolveRepositoryHead } from "./github";
+import { createGithubAuthorization } from "./github-connection";
 
 const siteIdAlphabet = customAlphabet(
   "abcdefghijklmnopqrstuvwxyz0123456789",
@@ -223,22 +222,19 @@ export async function connectGithubAction(): Promise<ActionResult> {
         "GitHub App is not configured on this deployment (see README: GitHub App setup)",
     };
   }
-  const state = randomBytes(16).toString("hex");
-  const cookieStore = await cookies();
-  cookieStore.set(
-    "sodium_gh_state",
-    JSON.stringify({ state, orgId: workspace.orgId }),
-    {
-      httpOnly: true,
-      secure: env.SITE_URL.startsWith("https://"),
-      sameSite: "lax",
-      maxAge: 600,
-      path: "/",
-    },
-  );
-  redirect(
-    `https://github.com/apps/${env.NEXT_PUBLIC_GITHUB_APP_SLUG}/installations/new?state=${state}`,
-  );
+  let authorization: Awaited<ReturnType<typeof createGithubAuthorization>>;
+  try {
+    authorization = await createGithubAuthorization(workspace.orgId);
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "could not start GitHub authorization",
+    };
+  }
+  redirect(authorization.url);
 }
 
 const RepoSelectionSchema = z.object({

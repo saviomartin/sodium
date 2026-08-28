@@ -19,8 +19,27 @@ export function githubApp(): App {
 
 export interface InstallationInfo {
   installationId: number;
+  accountId: number;
   accountLogin: string;
   accountType: string;
+}
+
+function installationInfo(data: {
+  id: number;
+  account: unknown;
+}): InstallationInfo {
+  const account = data.account as {
+    id?: number;
+    login?: string;
+    slug?: string;
+    type?: string;
+  } | null;
+  return {
+    installationId: data.id,
+    accountId: account?.id ?? 0,
+    accountLogin: account?.login ?? account?.slug ?? "unknown",
+    accountType: account?.type ?? "User",
+  };
 }
 
 /**
@@ -39,19 +58,27 @@ export async function verifyInstallation(
         installation_id: installationId,
       },
     );
-    const account = data.account as {
-      login?: string;
-      slug?: string;
-      type?: string;
-    } | null;
-    return {
-      installationId: data.id,
-      accountLogin: account?.login ?? account?.slug ?? "unknown",
-      accountType: account?.type ?? "User",
-    };
+    return installationInfo(data);
   } catch {
     return null;
   }
+}
+
+/** Lists every account where this GitHub App is currently installed. */
+export async function listAppInstallations(): Promise<InstallationInfo[]> {
+  const installations: InstallationInfo[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const { data } = await githubApp().octokit.request(
+      "GET /app/installations",
+      {
+        per_page: 100,
+        page,
+      },
+    );
+    installations.push(...data.map(installationInfo));
+    if (data.length < 100) break;
+  }
+  return installations;
 }
 
 export interface InstallationRepo {
