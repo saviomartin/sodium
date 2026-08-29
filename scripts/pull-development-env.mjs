@@ -108,6 +108,11 @@ try {
     "NEXT_PUBLIC_GITHUB_APP_SLUG",
     "MANIFEST_SIGNING_KEY_ID",
     "MANIFEST_SIGNING_PRIVATE_KEY",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_REPOSITORY_PRICE_ID",
+    "STRIPE_PORTAL_CONFIGURATION_ID",
+    "STRIPE_MODE",
   ];
   const missing = required.filter((key) => !environment[key]);
   if (missing.length > 0) {
@@ -139,6 +144,11 @@ try {
       "GITHUB_WEBHOOK_SECRET",
       "CRON_SECRET",
       "NEXT_PUBLIC_GITHUB_APP_SLUG",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_WEBHOOK_SECRET",
+      "STRIPE_REPOSITORY_PRICE_ID",
+      "STRIPE_PORTAL_CONFIGURATION_ID",
+      "STRIPE_MODE",
     ],
     environment,
   );
