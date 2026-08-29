@@ -48,7 +48,37 @@ export type HandlerBinding =
       fieldMap: Record<string, string>;
       submitSelector?: string;
     }
-  | { kind: "bridge"; bridgeKey: string };
+  | {
+      kind: "interaction";
+      steps: InteractionStep[];
+      postcondition?: InteractionPostcondition;
+    }
+  | {
+      kind: "request";
+      method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      pathTemplate: string;
+      queryMap?: Record<string, string>;
+      body?: { encoding: "json" | "form"; fieldMap: Record<string, string> };
+      response: "json" | "text" | "status";
+    };
+
+export type InteractionStep =
+  | { kind: "set"; selector: string; input: string }
+  | { kind: "click"; selector: string }
+  | { kind: "click"; role: "button"; name: string }
+  | { kind: "submit"; formSelector: string; submitSelector?: string }
+  | {
+      kind: "wait_for";
+      selector: string;
+      state: "present" | "absent";
+      timeoutMs: number;
+    }
+  | { kind: "read"; selector: string; output: string; attribute?: string };
+
+export type InteractionPostcondition =
+  | { kind: "selector_present"; selector: string }
+  | { kind: "selector_absent"; selector: string }
+  | { kind: "path_matches"; pathPattern: string };
 
 export interface PublishedTool {
   name: string;
@@ -68,7 +98,7 @@ export interface PublishedTool {
 }
 
 export interface ToolManifest {
-  manifestVersion: 1;
+  manifestVersion: 2;
   siteId: string;
   origins: string[];
   version: number;
@@ -107,30 +137,11 @@ export interface ModelContextLike {
   ): Promise<void>;
 }
 
-export interface BridgeContext {
-  toolName: string;
-  riskLevel: RiskLevel;
-  confirmation: ConfirmationPolicy;
-  signal?: AbortSignal;
-}
-
-export type BridgeHandler = (
-  input: unknown,
-  context: BridgeContext,
-) => Promise<unknown> | unknown;
-
-export interface BridgeRegistry {
-  handlers: Map<string, BridgeHandler>;
-}
-
 declare global {
   interface Document {
     modelContext?: ModelContextLike;
   }
   interface Navigator {
     modelContext?: ModelContextLike;
-  }
-  interface Window {
-    __sodiumBridge?: BridgeRegistry;
   }
 }

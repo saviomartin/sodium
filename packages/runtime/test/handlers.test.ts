@@ -1,12 +1,10 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTool } from "../src/handlers";
-import { registerBridgeHandlers } from "../src/bridge";
 import { makeTool } from "./manifest-fixture";
 
 beforeEach(() => {
   document.body.innerHTML = "";
-  window.__sodiumBridge?.handlers.clear();
 });
 
 describe("input validation gate", () => {
@@ -143,13 +141,11 @@ describe("form handler", () => {
   });
 });
 
-describe("bridge handler", () => {
-  it("dispatches to registered first-party handlers with context", async () => {
-    const handler = vi.fn(async (input: unknown) => ({
-      canceled: (input as { orderId: string }).orderId,
-    }));
-    registerBridgeHandlers({ "orders.cancel": handler });
-
+describe("loader-native handlers", () => {
+  it("enforces confirmation before a destructive interaction", async () => {
+    document.body.innerHTML = `<button id="cancel">Cancel order</button>`;
+    const clicked = vi.fn();
+    document.querySelector("#cancel")!.addEventListener("click", clicked);
     const tool = makeTool({
       name: "cancel_order",
       riskLevel: "destructive",
@@ -166,43 +162,125 @@ describe("bridge handler", () => {
         required: ["orderId"],
         additionalProperties: false,
       },
-      handler: { kind: "bridge", bridgeKey: "orders.cancel" },
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", selector: "#cancel" }],
+      },
     });
-
-    const result = await executeTool(tool, { orderId: "ord_1" }, document);
-    expect(result).toMatchObject({ ok: true, result: { canceled: "ord_1" } });
-    expect(handler).toHaveBeenCalledWith(
-      { orderId: "ord_1" },
-      expect.objectContaining({
-        toolName: "cancel_order",
-        riskLevel: "destructive",
-        confirmation: "required",
-      }),
+    const execution = executeTool(tool, { orderId: "ord_1" }, document);
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-sodium-confirm]")).not.toBeNull(),
     );
+    expect(clicked).not.toHaveBeenCalled();
+    (
+      document.querySelector("[data-sodium-confirm]") as HTMLButtonElement
+    ).click();
+    await expect(execution).resolves.toMatchObject({ ok: true });
+    expect(clicked).toHaveBeenCalledTimes(1);
   });
 
-  it("fails cleanly when no handler is registered", async () => {
+  it("returns user_denied without executing", async () => {
+    document.body.innerHTML = `<button id="cancel">Cancel order</button>`;
+    const clicked = vi.fn();
+    document.querySelector("#cancel")!.addEventListener("click", clicked);
+    const tool = makeTool({
+      riskLevel: "destructive",
+      confirmation: "required",
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", selector: "#cancel" }],
+      },
+    });
+    const execution = executeTool(tool, {}, document);
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-sodium-cancel]")).not.toBeNull(),
+    );
+    (
+      document.querySelector("[data-sodium-cancel]") as HTMLButtonElement
+    ).click();
+    await expect(execution).resolves.toMatchObject({
+      ok: false,
+      error: "user_denied",
+    });
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when an interaction selector is ambiguous", async () => {
+    document.body.innerHTML = `<button class="cancel">One</button><button class="cancel">Two</button>`;
     const tool = makeTool({
       riskLevel: "state_changing",
       confirmation: "recommended",
-      handler: { kind: "bridge", bridgeKey: "orders.cancel" },
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", selector: ".cancel" }],
+      },
     });
-    const result = await executeTool(tool, {}, document);
-    expect(result).toMatchObject({
+    await expect(executeTool(tool, {}, document)).resolves.toMatchObject({
       ok: false,
-      error: "bridge_handler_not_registered",
+      error: "selector_not_unique",
     });
   });
 
-  it("unregister function removes handlers", async () => {
-    const unregister = registerBridgeHandlers({ "cart.add": () => ({}) });
-    unregister();
+  it("clicks one exact accessible-name button and rejects duplicates", async () => {
+    document.body.innerHTML = `<button>Sign out</button>`;
+    const clicked = vi.fn();
+    document.querySelector("button")!.addEventListener("click", clicked);
+    const tool = makeTool({
+      riskLevel: "state_changing",
+      confirmation: "recommended",
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", role: "button", name: "Sign out" }],
+      },
+    });
+    await expect(executeTool(tool, {}, document)).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(clicked).toHaveBeenCalledTimes(1);
+
+    document.body.innerHTML = `<button>Sign out</button><button aria-label="Sign out">Exit</button>`;
+    await expect(executeTool(tool, {}, document)).resolves.toMatchObject({
+      ok: false,
+      error: "accessible_target_not_unique",
+    });
+  });
+
+  it("runs a constrained same-origin request", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ added: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    window.fetch = fetchMock as typeof fetch;
     const tool = makeTool({
       riskLevel: "reversible",
-      handler: { kind: "bridge", bridgeKey: "cart.add" },
+      inputSchema: {
+        type: "object",
+        properties: { productId: { type: "string" } },
+        required: ["productId"],
+        additionalProperties: false,
+      },
+      handler: {
+        kind: "request",
+        method: "POST",
+        pathTemplate: "/api/cart",
+        body: { encoding: "json", fieldMap: { productId: "productId" } },
+        response: "json",
+      },
     });
-    const result = await executeTool(tool, {}, document);
-    expect(result.ok).toBe(false);
+    const result = await executeTool(tool, { productId: "p1" }, document);
+    expect(result).toMatchObject({ ok: true, data: { added: true } });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: "/api/cart" }),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        redirect: "error",
+        body: JSON.stringify({ productId: "p1" }),
+      }),
+    );
   });
 });
 

@@ -112,6 +112,16 @@ const navigation: ProposedTool = {
     additionalProperties: false,
   },
   outputDescription: "Navigation acknowledgement.",
+  outputSchema: {
+    type: "object",
+    properties: {
+      ok: { type: "boolean", const: true },
+      navigatedTo: { type: "string" },
+      note: { type: "string" },
+    },
+    required: ["ok", "navigatedTo", "note"],
+    additionalProperties: false,
+  },
   riskLevel: "read_only",
   confirmation: "none",
   handler: { kind: "navigate", urlTemplate: "/products/{id}" },
@@ -298,7 +308,7 @@ describe("AiSdkProvider", () => {
 
     expect(result.mode).toBe("ai");
     expect(result.model).toBe("openai/gpt-5.6-terra");
-    expect(result.tools).toHaveLength(4);
+    expect(result.tools).toHaveLength(3);
     expect(result.tools[0]).toMatchObject({
       name: "open_product",
       handler: { kind: "navigate", urlTemplate: "/products/{id}" },
@@ -311,12 +321,8 @@ describe("AiSdkProvider", () => {
       name: "send_contact_message",
       handler: { kind: "form", formSelector: "#contact-form" },
     });
-    expect(result.tools[3]).toMatchObject({
-      name: "add_to_cart",
-      handler: { kind: "bridge", bridgeKey: "actions.add_to_cart" },
-    });
     expect(result.discarded).toBe(1);
-    expect(result.supplemented).toBe(2);
+    expect(result.supplemented).toBe(1);
     expect(result.attemptedModels).toEqual([
       "openai/gpt-5.6-terra",
       "anthropic/claude-sonnet-5",
@@ -420,6 +426,8 @@ describe("AiSdkProvider", () => {
 
     expect(tool).toMatchObject({
       title: "Send contact message",
+      description:
+        "Fills in and submits the Contact form on /contact using the same fields a user would complete.",
       riskLevel: "state_changing",
       confirmation: "recommended",
       handler: {
@@ -429,6 +437,52 @@ describe("AiSdkProvider", () => {
       },
       routes: [{ pathPattern: "/contact" }],
     });
+  });
+
+  it("grounds page authorization in matching route auth evidence", async () => {
+    const authSignal = {
+      kind: "redirect_guard" as const,
+      span: {
+        filePath: "app/contact/page.tsx",
+        startLine: 5,
+        endLine: 7,
+      },
+      detail: "redirects unauthenticated users",
+    };
+    const authAnalysis: StaticAnalysis = {
+      ...analysis,
+      routes: [analysis.routes[1]!],
+      forms: [],
+      links: [
+        {
+          href: "/contact",
+          label: "Contact",
+          routeBindings: [{ urlPattern: "/", pathPattern: "/" }],
+          span: { filePath: "app/page.tsx", startLine: 4, endLine: 4 },
+          excerpt: '<a href="/contact">Contact</a>',
+        },
+      ],
+      serverActions: [],
+      authSignals: [authSignal],
+    };
+    const authPrimitives = buildPrimitives(authAnalysis);
+    const result = await new HeuristicAiProvider().proposeTools({
+      analysis: authAnalysis,
+      primitives: authPrimitives,
+    });
+    const tool = result.tools.find(
+      (candidate) =>
+        candidate.handler.kind === "navigate" &&
+        candidate.handler.urlTemplate === "/contact",
+    );
+
+    expect(tool).toMatchObject({
+      authRequired: true,
+      authDetectedFrom: "redirects unauthenticated users in page /contact",
+    });
+    expect(
+      tool?.evidenceRefs.map((ref) => authPrimitives[ref]?.kind).sort(),
+    ).toEqual(["auth_check", "link", "page"]);
   });
 
   it("does not call the same model twice when both settings match", async () => {
@@ -495,7 +549,7 @@ describe("AiSdkProvider", () => {
 });
 
 describe("HeuristicAiProvider", () => {
-  it("keeps server actions available behind reviewed first-party bridges", async () => {
+  it("publishes only loader-executable browser capabilities", async () => {
     const result = await new HeuristicAiProvider().proposeTools({
       analysis,
       primitives,
@@ -506,21 +560,13 @@ describe("HeuristicAiProvider", () => {
       "open_products",
       "open_contact",
       "submit_contact",
-      "add_to_cart",
     ]);
-    expect(
-      result.tools.find((tool) => tool.name === "add_to_cart"),
-    ).toMatchObject({
-      handler: { kind: "bridge", bridgeKey: "actions.add_to_cart" },
-      riskLevel: "state_changing",
-      confirmation: "recommended",
-    });
     expect(
       result.tools.every(
         (tool) =>
           tool.handler.kind === "navigate" ||
           tool.handler.kind === "form" ||
-          tool.handler.kind === "bridge",
+          tool.handler.kind === "interaction",
       ),
     ).toBe(true);
   });
@@ -565,7 +611,9 @@ describe("HeuristicAiProvider", () => {
     ).proposeTools({ analysis, primitives });
     expect(result.mode).toBe("deterministic_fallback");
     expect(result.fallbackReason).toContain("gateway unavailable");
-    expect(result.tools.some((tool) => tool.name === "add_to_cart")).toBe(true);
+    expect(result.tools.some((tool) => tool.name === "add_to_cart")).toBe(
+      false,
+    );
   });
 
   it("requires every parameter in a multi-segment dynamic route", async () => {
@@ -643,7 +691,7 @@ describe("HeuristicAiProvider", () => {
       urlPattern: "/feedback",
       pathPattern: "/feedback",
       routeBindings: [{ urlPattern: "/feedback", pathPattern: "/feedback" }],
-      action: { kind: "unknown" as const },
+      action: { kind: "server_action" as const, name: "submitContact" },
       span: {
         filePath: "app/feedback/page.tsx",
         startLine: 10,
@@ -672,7 +720,7 @@ describe("HeuristicAiProvider", () => {
     const zeroInputForm = {
       ...analysis.forms[0]!,
       fields: [],
-      action: { kind: "unknown" as const },
+      action: { kind: "server_action" as const, name: "signOut" },
     };
     const zeroInputAnalysis: StaticAnalysis = {
       ...analysis,
@@ -692,7 +740,28 @@ describe("HeuristicAiProvider", () => {
     });
   });
 
-  it("routes destructive form actions through reviewed bridges", async () => {
+  it("excludes forms that require sensitive browser-only controls", async () => {
+    const sensitiveAnalysis: StaticAnalysis = {
+      ...analysis,
+      routes: [],
+      forms: [
+        {
+          ...analysis.forms[0]!,
+          hasSensitiveFields: true,
+          action: { kind: "server_action" as const, name: "signIn" },
+        },
+      ],
+      serverActions: [],
+    };
+    const result = await new HeuristicAiProvider().proposeTools({
+      analysis: sensitiveAnalysis,
+      primitives: buildPrimitives(sensitiveAnalysis),
+    });
+
+    expect(result.tools).toEqual([]);
+  });
+
+  it("keeps destructive forms loader-native with required confirmation", async () => {
     const destructiveAction = {
       ...analysis.serverActions[1]!,
       name: "deleteAccount",
@@ -720,7 +789,7 @@ describe("HeuristicAiProvider", () => {
     expect(result.tools[0]).toMatchObject({
       riskLevel: "destructive",
       confirmation: "required",
-      handler: { kind: "bridge", bridgeKey: "actions.delete_account" },
+      handler: { kind: "form", formSelector: "#contact-form" },
     });
   });
 
@@ -788,7 +857,7 @@ describe("HeuristicAiProvider", () => {
     expect(schema.required).toEqual(["email", "message"]);
   });
 
-  it("proposes a reviewed bridge when only a server action exists", async () => {
+  it("does not publish a private-only server action", async () => {
     const nonExecutableAnalysis: StaticAnalysis = {
       ...analysis,
       routes: [],
@@ -800,14 +869,10 @@ describe("HeuristicAiProvider", () => {
       primitives: buildPrimitives(nonExecutableAnalysis),
     });
 
-    expect(result.tools).toHaveLength(1);
-    expect(result.tools[0]).toMatchObject({
-      name: "add_to_cart",
-      handler: { kind: "bridge", bridgeKey: "actions.add_to_cart" },
-    });
+    expect(result.tools).toEqual([]);
   });
 
-  it("derives a safe flat object schema instead of inventing an input wrapper", async () => {
+  it("does not publish typed private actions without a rendered control", async () => {
     const objectAction = {
       ...analysis.serverActions[1]!,
       name: "cancelOrder",
@@ -832,15 +897,7 @@ describe("HeuristicAiProvider", () => {
       primitives: buildPrimitives(objectAnalysis),
     });
 
-    expect(result.tools[0]?.inputSchema).toEqual({
-      type: "object",
-      properties: {
-        orderId: { type: "string" },
-        notify: { type: "boolean" },
-      },
-      required: ["orderId"],
-      additionalProperties: false,
-    });
+    expect(result.tools).toEqual([]);
   });
 
   it("omits server actions whose inputs cannot be invoked without guessing", async () => {
@@ -864,7 +921,7 @@ describe("HeuristicAiProvider", () => {
     expect(result.tools).toEqual([]);
   });
 
-  it("uses analyzer-resolved schemas for named server-action inputs", async () => {
+  it("does not expose analyzer-resolved private action inputs", async () => {
     const typedAnalysis: StaticAnalysis = {
       ...analysis,
       routes: [],
@@ -897,12 +954,10 @@ describe("HeuristicAiProvider", () => {
       primitives: buildPrimitives(typedAnalysis),
     });
 
-    expect(result.tools[0]?.inputSchema).toEqual(
-      typedAnalysis.serverActions[0]?.parameters?.[0]?.schema,
-    );
+    expect(result.tools).toEqual([]);
   });
 
-  it("uses distinct bridge keys for same-named actions in different files", async () => {
+  it("does not expose private server actions without browser controls", async () => {
     const first = {
       ...analysis.serverActions[1]!,
       span: { filePath: "app/cart/actions.ts", startLine: 1, endLine: 4 },
@@ -921,14 +976,7 @@ describe("HeuristicAiProvider", () => {
       analysis: duplicateAnalysis,
       primitives: buildPrimitives(duplicateAnalysis),
     });
-    const keys = result.tools.map((tool) =>
-      tool.handler.kind === "bridge" ? tool.handler.bridgeKey : "",
-    );
-
-    expect(new Set(keys).size).toBe(2);
-    expect(keys.every((key) => key.startsWith("actions.add_to_cart_"))).toBe(
-      true,
-    );
+    expect(result.tools).toEqual([]);
   });
 
   it("turns source-defined links into tools even when the repo has only a root page", async () => {

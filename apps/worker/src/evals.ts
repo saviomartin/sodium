@@ -22,9 +22,102 @@ export function runCandidateEvals(
 ): EvalResult[] {
   return [
     schemaRoundTripEval(contract),
+    outputContractEval(contract),
+    evidenceTraceabilityEval(contract),
     descriptionBudgetEval(contract),
     agentSelectionEval(contract, siblings),
   ];
+}
+
+/** Checks the declared output against the exact successful runtime envelope. */
+export function outputContractEval(contract: ActionContract): EvalResult {
+  if (!contract.output.schema) {
+    return {
+      name: "output_contract",
+      passed: false,
+      details: "no machine-checkable output schema is attached",
+    };
+  }
+  const result = successfulRuntimeResult(contract);
+  const issues = validateValue(contract.output.schema, result);
+  return issues.length === 0
+    ? {
+        name: "output_contract",
+        passed: true,
+        details:
+          "declared schema accepts the handler's successful runtime result",
+      }
+    : {
+        name: "output_contract",
+        passed: false,
+        details: `successful runtime result rejected: ${issues[0]!.message} at ${issues[0]!.path}`,
+      };
+}
+
+/** Ensures the executable and authorization claims cite matching source facts. */
+export function evidenceTraceabilityEval(contract: ActionContract): EvalResult {
+  const sourceKinds = new Set(
+    contract.evidence
+      .filter((evidence) => evidence.kind === "source")
+      .map((evidence) => evidence.primitive),
+  );
+  const acceptable =
+    contract.handler.kind === "navigate"
+      ? ["route"]
+      : contract.handler.kind === "form"
+        ? ["form"]
+        : contract.handler.kind === "interaction"
+          ? ["ui_event"]
+          : contract.handler.kind === "request"
+            ? ["route_handler"]
+            : ["route", "form", "ui_event"];
+  if (!acceptable.some((kind) => sourceKinds.has(kind as never))) {
+    return {
+      name: "evidence_traceability",
+      passed: false,
+      details: `${contract.handler.kind} handler lacks matching ${acceptable.join("/")} source evidence`,
+    };
+  }
+  if (contract.auth.required && !sourceKinds.has("auth_check")) {
+    return {
+      name: "evidence_traceability",
+      passed: false,
+      details:
+        "authorization is required but no auth_check evidence is attached",
+    };
+  }
+  return {
+    name: "evidence_traceability",
+    passed: true,
+    details:
+      "handler and authorization claims trace to matching source evidence",
+  };
+}
+
+function successfulRuntimeResult(contract: ActionContract): unknown {
+  switch (contract.handler.kind) {
+    case "navigate":
+      return {
+        ok: true,
+        navigatedTo: contract.handler.urlTemplate,
+        note: "navigation started; tools re-register on the new page",
+      };
+    case "form":
+      return { ok: true, submitted: true };
+    case "interaction":
+    case "extract":
+      return { ok: true, data: {} };
+    case "request":
+      return {
+        ok: true,
+        status: 200,
+        ...(contract.handler.response === "status"
+          ? {}
+          : {
+              data: contract.handler.response === "text" ? "example" : {},
+            }),
+      };
+  }
 }
 
 /**

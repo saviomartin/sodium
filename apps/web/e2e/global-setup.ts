@@ -1,6 +1,5 @@
 import { rmSync, writeFileSync } from "node:fs";
-import postgres from "postgres";
-import { STATE_PATH, adminClient, loadWebEnv, type E2eState } from "./helpers";
+import { STATE_PATH, adminClient, type E2eState } from "./helpers";
 
 /**
  * Suite setup:
@@ -36,23 +35,6 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       .in("created_by", userIds);
     const orgIds = (orgs ?? []).map((org) => org.id);
     if (orgIds.length > 0) {
-      const databaseUrl =
-        process.env.SUPABASE_DB_URL ?? loadWebEnv().SUPABASE_DB_URL;
-      if (databaseUrl) {
-        const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
-        try {
-          await sql`
-            delete from pgmq.q_sodium_jobs as job
-            where job.message ->> 'publicationId' in (
-              select id::text
-              from public.integration_prs
-              where org_id in ${sql(orgIds)}
-            )
-          `;
-        } finally {
-          await sql.end();
-        }
-      }
       await admin
         .from("sites")
         .update({ current_manifest_id: null })

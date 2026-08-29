@@ -209,22 +209,62 @@ export function compareManifestToAnalysis(
         }
         break;
       }
-      case "bridge": {
-        const expected = tool.handler.bridgeKey.replace(/^actions\./, "");
-        const hasMatchingAction = analysis.serverActions.some((action) => {
-          const normalized = snake(action.name);
-          return (
-            expected === normalized || expected.startsWith(`${normalized}_`)
+      case "interaction": {
+        const selectors = new Set(
+          (analysis.controls ?? [])
+            .map((control) => control.selector)
+            .filter((selector): selector is string => Boolean(selector)),
+        );
+        const accessibleButtons = new Set(
+          (analysis.controls ?? [])
+            .map((control) => control.accessibleName)
+            .filter((name): name is string => Boolean(name)),
+        );
+        const missing = tool.handler.steps
+          .filter(
+            (step) =>
+              step.kind === "click" ||
+              step.kind === "set" ||
+              step.kind === "read",
+          )
+          .map((step) => ("selector" in step ? step.selector : ""))
+          .filter(
+            (selector) =>
+              selector &&
+              !selectors.has(selector) &&
+              !analysis.forms.some((form) => form.selector === selector),
           );
-        });
-        if (!hasMatchingAction) {
+        const missingAccessible = tool.handler.steps
+          .filter(
+            (step) => step.kind === "click" && "role" in step,
+          )
+          .map((step) => ("name" in step ? step.name : ""))
+          .filter((name) => name && !accessibleButtons.has(name));
+        missing.push(...missingAccessible.map((name) => `button:${name}`));
+        if (missing.length > 0) {
           findings.push({
             kind: "handler_removed",
             severity: "breaking",
             toolName: tool.name,
-            summary: `server action backing bridge key "${tool.handler.bridgeKey}" was removed or renamed`,
+            summary: `interaction controls removed or renamed: ${missing.join(", ")}`,
           });
         }
+        break;
+      }
+      case "request": {
+        const request = tool.handler;
+        const exists = analysis.routeHandlers.some(
+          (handler) =>
+            handler.method === request.method &&
+            handler.urlPattern === request.pathTemplate,
+        );
+        if (!exists)
+          findings.push({
+            kind: "handler_removed",
+            severity: "breaking",
+            toolName: tool.name,
+            summary: `${request.method} ${request.pathTemplate} route handler no longer exists`,
+          });
         break;
       }
     }
@@ -234,15 +274,6 @@ export function compareManifestToAnalysis(
   // this pass works at file level via published tool routes).
   void filesWithAuth;
   return findings;
-}
-
-/** Kept in sync with the fixture AI provider naming. */
-function snake(text: string): string {
-  return text
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^a-zA-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
 }
 
 export type { SourceEvidence, PublishedTool };

@@ -26,6 +26,13 @@ const EnvSchema = z.object({
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
   CRON_SECRET: z.string().optional(),
   NEXT_PUBLIC_GITHUB_APP_SLUG: z.string().optional(),
+
+  // Optional at build time and required only by the billing entry points.
+  STRIPE_SECRET_KEY: z.string().regex(/^(sk|rk)_(test|live)_/).optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
+  STRIPE_REPOSITORY_PRICE_ID: z.string().startsWith("price_").optional(),
+  STRIPE_PORTAL_CONFIGURATION_ID: z.string().startsWith("bpc_").optional(),
+  STRIPE_MODE: z.enum(["test", "live"]).optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -62,10 +69,15 @@ function exactOrigin(raw: string): string {
 /** Canonical origin for callbacks and generated loader URLs. */
 export function siteUrl(): string {
   if (publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "preview") {
-    if (!env.VERCEL_URL) {
-      throw new Error("VERCEL_URL is required in the preview environment");
+    if (env.SITE_URL) {
+      return exactOrigin(env.SITE_URL);
     }
-    return exactOrigin(`https://${env.VERCEL_URL}`);
+    if (env.VERCEL_URL) {
+      return exactOrigin(`https://${env.VERCEL_URL}`);
+    }
+    throw new Error(
+      "SITE_URL or VERCEL_URL is required in the preview environment",
+    );
   }
 
   const url = exactOrigin(env.SITE_URL ?? "http://localhost:3000");

@@ -7,11 +7,11 @@ import { ToolInputSchemaSchema } from "./json-schema";
 /**
  * The published manifest is the ONLY thing the browser loader consumes.
  * It contains declarative data exclusively — schemas, selectors, templates,
- * bridge keys — never executable code. The loader rejects anything that does
+ * bounded recipes — never executable code. The loader rejects anything that does
  * not parse against this shape.
  */
 
-export const MANIFEST_VERSION = 1;
+export const MANIFEST_VERSION = 2;
 
 /** Aligned with MCP/WebMCP tool annotations; the runtime adapter maps them. */
 export const ToolAnnotationsSchema = z

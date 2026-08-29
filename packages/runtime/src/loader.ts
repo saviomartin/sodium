@@ -13,7 +13,6 @@ import {
   type ToolRegistrar,
 } from "./webmcp-adapter";
 import type { PublishedTool, ToolManifest } from "./types";
-import { BRIDGE_CHANGE_EVENT } from "./bridge";
 
 /**
  * The loader is the delivery mechanism only. It:
@@ -26,7 +25,7 @@ import { BRIDGE_CHANGE_EVENT } from "./bridge";
  * failure path degrades to "no tools registered".
  */
 
-export const LOADER_VERSION = "1.0.0";
+export const LOADER_VERSION = "2.0.0";
 
 export interface BootstrapOptions {
   /** Pinned verification keys by keyId. Injected at build time in the bundle. */
@@ -214,8 +213,6 @@ export async function bootstrap(
   });
 
   const stopNavigation = observeNavigation(win, () => void registrar.sync());
-  const onBridgeChange = () => void registrar.sync();
-  win.addEventListener(BRIDGE_CHANGE_EVENT, onBridgeChange);
 
   // Re-evaluate `requiresSelector` conditions when the DOM changes.
   let mutationObserver: MutationObserver | null = null;
@@ -246,7 +243,6 @@ export async function bootstrap(
     refresh: () => registrar.sync(),
     dispose: () => {
       stopNavigation();
-      win.removeEventListener(BRIDGE_CHANGE_EVENT, onBridgeChange);
       mutationObserver?.disconnect();
       registrar.dispose();
     },

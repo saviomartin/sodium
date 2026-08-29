@@ -103,7 +103,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function validateManifest(value: unknown): ToolManifest | null {
   if (!isRecord(value)) return null;
-  if (value.manifestVersion !== 1) return null;
+  if (value.manifestVersion !== 2) return null;
   if (typeof value.siteId !== "string" || !SITE_ID.test(value.siteId))
     return null;
   if (
@@ -135,7 +135,7 @@ export function validateManifest(value: unknown): ToolManifest | null {
     tools.push(tool);
   }
   return {
-    manifestVersion: 1,
+    manifestVersion: 2,
     siteId: value.siteId,
     origins: value.origins as string[],
     version: value.version,
@@ -308,21 +308,208 @@ function validateHandler(value: unknown): HandlerBinding | null {
         submitSelector: value.submitSelector as string | undefined,
       };
     }
-    case "bridge": {
+    case "interaction": {
       if (
-        typeof value.bridgeKey !== "string" ||
-        !/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/.test(value.bridgeKey) ||
-        value.bridgeKey.length > 128
+        !Array.isArray(value.steps) ||
+        value.steps.length === 0 ||
+        value.steps.length > 8
       )
         return null;
-      if (Object.keys(value).length !== 2) return null;
-      return { kind: "bridge", bridgeKey: value.bridgeKey };
+      const steps: Extract<HandlerBinding, { kind: "interaction" }>["steps"] =
+        [];
+      for (const raw of value.steps) {
+        if (!isRecord(raw) || typeof raw.kind !== "string") return null;
+        if (raw.kind === "set") {
+          if (
+            !validSelector(raw.selector) ||
+            !validName(raw.input) ||
+            Object.keys(raw).length !== 3
+          )
+            return null;
+          steps.push({
+            kind: "set",
+            selector: raw.selector as string,
+            input: raw.input as string,
+          });
+        } else if (raw.kind === "click") {
+          if (raw.selector !== undefined) {
+            if (!validSelector(raw.selector) || Object.keys(raw).length !== 2)
+              return null;
+            steps.push({ kind: "click", selector: raw.selector as string });
+          } else {
+            if (
+              raw.role !== "button" ||
+              typeof raw.name !== "string" ||
+              raw.name.length === 0 ||
+              raw.name.length > 160 ||
+              Object.keys(raw).length !== 3
+            )
+              return null;
+            steps.push({ kind: "click", role: "button", name: raw.name });
+          }
+        } else if (raw.kind === "submit") {
+          if (
+            !validSelector(raw.formSelector) ||
+            (raw.submitSelector !== undefined &&
+              !validSelector(raw.submitSelector))
+          )
+            return null;
+          if (
+            Object.keys(raw).length !==
+            (raw.submitSelector === undefined ? 2 : 3)
+          )
+            return null;
+          steps.push({
+            kind: "submit",
+            formSelector: raw.formSelector as string,
+            submitSelector: raw.submitSelector as string | undefined,
+          });
+        } else if (raw.kind === "wait_for") {
+          if (
+            !validSelector(raw.selector) ||
+            (raw.state !== "present" && raw.state !== "absent") ||
+            typeof raw.timeoutMs !== "number" ||
+            !Number.isInteger(raw.timeoutMs) ||
+            raw.timeoutMs < 50 ||
+            raw.timeoutMs > 10_000 ||
+            Object.keys(raw).length !== 4
+          )
+            return null;
+          steps.push({
+            kind: "wait_for",
+            selector: raw.selector as string,
+            state: raw.state,
+            timeoutMs: raw.timeoutMs,
+          });
+        } else if (raw.kind === "read") {
+          if (
+            !validSelector(raw.selector) ||
+            !validName(raw.output) ||
+            (raw.attribute !== undefined &&
+              (typeof raw.attribute !== "string" ||
+                raw.attribute.length > 64 ||
+                /^on/i.test(raw.attribute)))
+          )
+            return null;
+          if (Object.keys(raw).length !== (raw.attribute === undefined ? 3 : 4))
+            return null;
+          steps.push({
+            kind: "read",
+            selector: raw.selector as string,
+            output: raw.output as string,
+            attribute: raw.attribute as string | undefined,
+          });
+        } else return null;
+      }
+      let postcondition: Extract<
+        HandlerBinding,
+        { kind: "interaction" }
+      >["postcondition"];
+      if (value.postcondition !== undefined) {
+        const raw = value.postcondition;
+        if (!isRecord(raw) || Object.keys(raw).length !== 2) return null;
+        if (raw.kind === "selector_present" || raw.kind === "selector_absent") {
+          if (!validSelector(raw.selector)) return null;
+          postcondition = { kind: raw.kind, selector: raw.selector as string };
+        } else if (raw.kind === "path_matches") {
+          if (
+            typeof raw.pathPattern !== "string" ||
+            !raw.pathPattern.startsWith("/") ||
+            raw.pathPattern.length > 512
+          )
+            return null;
+          postcondition = {
+            kind: "path_matches",
+            pathPattern: raw.pathPattern,
+          };
+        } else return null;
+      }
+      if (
+        Object.keys(value).length !==
+        (value.postcondition === undefined ? 2 : 3)
+      )
+        return null;
+      return { kind: "interaction", steps, postcondition };
+    }
+    case "request": {
+      if (
+        !["GET", "POST", "PUT", "PATCH", "DELETE"].includes(
+          String(value.method),
+        )
+      )
+        return null;
+      if (
+        typeof value.pathTemplate !== "string" ||
+        !value.pathTemplate.startsWith("/") ||
+        value.pathTemplate.startsWith("//") ||
+        value.pathTemplate.length > 1024
+      )
+        return null;
+      if (!validateStringMap(value.queryMap, true)) return null;
+      let body: Extract<HandlerBinding, { kind: "request" }>["body"];
+      if (value.body !== undefined) {
+        if (
+          !isRecord(value.body) ||
+          (value.body.encoding !== "json" && value.body.encoding !== "form") ||
+          !validateStringMap(value.body.fieldMap, false) ||
+          Object.keys(value.body).length !== 2
+        )
+          return null;
+        if (value.method === "GET" || value.method === "DELETE") return null;
+        body = {
+          encoding: value.body.encoding,
+          fieldMap: value.body.fieldMap as Record<string, string>,
+        };
+      }
+      if (
+        value.response !== "json" &&
+        value.response !== "text" &&
+        value.response !== "status"
+      )
+        return null;
+      const allowed =
+        4 +
+        (value.queryMap === undefined ? 0 : 1) +
+        (value.body === undefined ? 0 : 1);
+      if (Object.keys(value).length !== allowed) return null;
+      return {
+        kind: "request",
+        method: value.method as Extract<
+          HandlerBinding,
+          { kind: "request" }
+        >["method"],
+        pathTemplate: value.pathTemplate,
+        queryMap: value.queryMap as Record<string, string> | undefined,
+        body,
+        response: value.response,
+      };
     }
     default:
       // Unknown handler kinds (including anything resembling executable
       // content) fail the whole manifest.
       return null;
   }
+}
+
+function validSelector(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 512;
+}
+
+function validName(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 64;
+}
+
+function validateStringMap(value: unknown, optional: boolean): boolean {
+  if (value === undefined) return optional;
+  if (!isRecord(value)) return false;
+  return Object.entries(value).every(
+    ([key, mapped]) =>
+      key.length > 0 &&
+      key.length <= 64 &&
+      typeof mapped === "string" &&
+      mapped.length > 0 &&
+      mapped.length <= 128,
+  );
 }
 
 const SCHEMA_KEYS = new Set([

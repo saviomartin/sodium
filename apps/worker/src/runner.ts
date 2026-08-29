@@ -1,6 +1,5 @@
 import type { JobMessage } from "@sodium/contracts";
 import type { WorkerContext } from "./db";
-import { handleGeneratePr } from "./pipeline/generate-pr";
 import { handleAnalysisStage } from "./pipeline/stages";
 import { handleSyncCompare } from "./pipeline/sync";
 import { processOne, readJobsNow, type JobOutcome } from "./queue";
@@ -16,12 +15,6 @@ export function createDispatcher(ctx: WorkerContext) {
           message.repositoryId,
           message.commitSha,
           message.deliveryId,
-        );
-      case "publication.generate_pr":
-        return handleGeneratePr(
-          ctx,
-          message.publicationId,
-          message.attempt,
         );
     }
   };

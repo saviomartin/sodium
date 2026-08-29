@@ -4,8 +4,10 @@ import {
   getAgentAnalytics,
   getCandidates,
   getCompatFindings,
+  getEvalRunsForCandidates,
   getPublication,
   getRepository,
+  getRepositoryBilling,
   getRuns,
   getSiteForRepository,
 } from "@/lib/queries";
@@ -19,13 +21,25 @@ import { RepositorySettingsState } from "@/components/repository-settings-state"
 import { RepositoryLiveRefresh } from "@/components/repository-live-refresh";
 import { ReviewTable, type CandidateRow } from "@/components/review-table";
 import {
+  CheckoutStatusNotice,
+  RepositoryBillingControl,
+} from "@/components/repository-paywall";
+import { hasPaidRepositoryAccess } from "@/lib/billing-state";
+import {
   Card,
   EmptyState,
   RunStatusBadge,
   buttonClass,
   secondaryButtonClass,
 } from "@/components/ui";
-import type { CompatFinding, RiskLevel, RunStatus } from "@sodium/contracts";
+import {
+  ActionContractSchema,
+  type CompatFinding,
+  type ConfirmationPolicy,
+  type ContractIssue,
+  type RiskLevel,
+  type RunStatus,
+} from "@sodium/contracts";
 
 export const metadata = { title: "Repository" };
 
@@ -36,7 +50,10 @@ export default async function RepositoryPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ range?: string | string[] }>;
+  searchParams: Promise<{
+    range?: string | string[];
+    checkout?: string | string[];
+  }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const requestedRange = Array.isArray(query.range)
@@ -51,12 +68,17 @@ export default async function RepositoryPage({
     : 30;
   const repo = await getRepository(id);
   if (!repo) notFound();
+  const checkoutState = Array.isArray(query.checkout)
+    ? query.checkout[0]
+    : query.checkout;
 
-  const [runs, site, findings] = await Promise.all([
+  const [runs, site, findings, billing] = await Promise.all([
     getRuns(id),
     getSiteForRepository(id),
     getCompatFindings(id),
+    getRepositoryBilling(id),
   ]);
+  const paid = hasPaidRepositoryAccess(billing?.status);
   const activeRun = runs.find(
     (run) => run.status === "queued" || run.status === "running",
   );
@@ -76,29 +98,50 @@ export default async function RepositoryPage({
     | undefined;
   const [candidates, publication, analytics] = await Promise.all([
     latestSuccessfulRun ? getCandidates(latestSuccessfulRun.id) : [],
-    site ? getPublication(site.id) : null,
-    site ? getAgentAnalytics(site.id, analyticsDays) : null,
+    paid && site ? getPublication(site.id) : null,
+    paid && site ? getAgentAnalytics(site.id, analyticsDays) : null,
   ]);
+  const candidateEvals = await getEvalRunsForCandidates(
+    candidates.map((candidate) => candidate.id),
+  );
   const activeActionIds = new Set(
     (publication?.contracts ?? [])
       .filter((contract) => contract.status === "active")
       .map((contract) => contract.action_id),
   );
-  const rows: CandidateRow[] = candidates.map((candidate) => ({
-    id: candidate.id,
-    action_id: candidate.action_id,
-    name: candidate.name,
-    title: candidate.title,
-    description: candidate.description,
-    risk_level: candidate.risk_level as RiskLevel,
-    confidence: Number(candidate.confidence),
-    status: candidate.status,
-    handlerKind: (
-      candidate.contract as { handler: { kind: CandidateRow["handlerKind"] } }
-    ).handler.kind,
-    enabled: activeActionIds.has(candidate.action_id),
-    repoId: repo.id,
-  }));
+  const rows: CandidateRow[] = candidates.flatMap((candidate) => {
+    const parsedContract = ActionContractSchema.safeParse(candidate.contract);
+    if (!parsedContract.success) return [];
+    const contract = parsedContract.data;
+
+    return [
+      {
+        id: candidate.id,
+        action_id: candidate.action_id,
+        name: candidate.name,
+        title: candidate.title,
+        description: candidate.description,
+        risk_level: candidate.risk_level as RiskLevel,
+        confidence: Number(candidate.confidence),
+        status: candidate.status,
+        scopePaths: contract.routes.map((route) => route.pathPattern),
+        detail: {
+          actionId: candidate.action_id,
+          name: candidate.name,
+          title: candidate.title,
+          description: candidate.description,
+          riskLevel: candidate.risk_level as RiskLevel,
+          confirmation: candidate.confirmation as ConfirmationPolicy,
+          confidence: Number(candidate.confidence),
+          contract,
+          issues: (candidate.validation_issues ??
+            []) as unknown as ContractIssue[],
+          evals: candidateEvals.get(candidate.id) ?? [],
+        },
+        enabled: activeActionIds.has(candidate.action_id),
+      },
+    ];
+  });
   const discoveredPrimitiveCount =
     (staticDetail?.routes ?? 0) +
     (staticDetail?.links ?? 0) +
@@ -109,10 +152,7 @@ export default async function RepositoryPage({
     Boolean(latestSuccessfulRun) &&
     rows.length === 0 &&
     discoveredPrimitiveCount > 0 &&
-    synthesizeDetail?.potential === undefined;
-  const hasActiveBridgeTools = rows.some(
-    (row) => row.enabled && row.handlerKind === "bridge",
-  );
+    (synthesizeDetail?.potential === undefined || candidates.length > 0);
   const emphasizeRunAnalysis =
     shouldEmphasizeRunAnalysis(runs) || legacyEmptyAnalysis;
 
@@ -120,6 +160,7 @@ export default async function RepositoryPage({
     <RepositorySettingsState>
       <div className="space-y-6">
         <RepositoryLiveRefresh active={Boolean(activeRun)} />
+        <CheckoutStatusNotice state={checkoutState} paid={paid} />
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold text-balance">
@@ -128,7 +169,12 @@ export default async function RepositoryPage({
             <p className="text-sm text-neutral-500">
               Default branch{" "}
               <span className="font-mono">{repo.default_branch}</span>
-              {" · "}New commits are analyzed automatically
+              {" · "}
+              {paid
+                ? "New commits are analyzed automatically"
+                : repo.free_analysis_consumed_at
+                  ? "Generated tools are ready to review"
+                  : "Your first successful analysis is included"}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -139,8 +185,14 @@ export default async function RepositoryPage({
               >
                 View analysis
               </Link>
-            ) : (
-              <ActionForm action={requestAnalysisAction}>
+            ) : paid || !repo.free_analysis_consumed_at ? (
+              <ActionForm
+                action={requestAnalysisAction}
+                submitEvent={{
+                  name: "Analysis Requested",
+                  properties: { source: "manual" },
+                }}
+              >
                 <input type="hidden" name="repositoryId" value={repo.id} />
                 <SubmitButton
                   className={
@@ -151,7 +203,18 @@ export default async function RepositoryPage({
                   Run analysis now
                 </SubmitButton>
               </ActionForm>
-            )}
+            ) : null}
+            {latestSuccessfulRun || paid ? (
+              <RepositoryBillingControl
+                repositoryId={repo.id}
+                repositoryName={repo.full_name}
+                paid={paid}
+                status={billing?.status ?? null}
+                cancelAtPeriodEnd={billing?.cancel_at_period_end ?? false}
+                currentPeriodEnd={billing?.current_period_end ?? null}
+                checkoutState={checkoutState}
+              />
+            ) : null}
           </div>
         </header>
 
@@ -187,7 +250,7 @@ export default async function RepositoryPage({
                 latestSuccessfulRun
                   ? legacyEmptyAnalysis
                     ? `The previous analyzer found ${discoveredPrimitiveCount} code primitives but discarded every tool. Run analysis again with the repaired pipeline.`
-                    : "The repository has no source-grounded page, link, form, or server-action capability that can be exposed safely."
+                    : "The repository has no source-grounded page, link, form, or browser-control capability that can be exposed safely."
                   : "Analyze the latest commit to discover tools."
               }
             />
@@ -196,20 +259,35 @@ export default async function RepositoryPage({
               key={`${latestSuccessfulRun?.id}:${rows.map((row) => `${row.id}:${row.enabled}`).join(",")}`}
               candidates={rows}
               siteId={site.id}
+              locked={!paid}
             />
           )}
         </Card>
 
-        {site && publication ? (
-          <RepositoryIntegration
-            repo={repo}
-            site={site}
-            publication={publication}
-            hasBridgeTools={hasActiveBridgeTools}
-          />
+        {paid && site && publication ? (
+          <RepositoryIntegration site={site} publication={publication} />
+        ) : rows.length > 0 && !paid ? (
+          <Card title="Enable these tools on your site">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <p className="max-w-2xl text-sm text-neutral-600 text-pretty">
+                Subscribe to configure origins, publish the loader, manage
+                rollbacks, and run automatic analysis for this repository.
+              </p>
+              <RepositoryBillingControl
+                repositoryId={repo.id}
+                repositoryName={repo.full_name}
+                paid={false}
+                status={billing?.status ?? null}
+                cancelAtPeriodEnd={false}
+                currentPeriodEnd={null}
+                checkoutState={checkoutState}
+                label="Enable tools"
+              />
+            </div>
+          </Card>
         ) : null}
 
-        {site ? (
+        {paid && site ? (
           <AgentAnalyticsDashboard
             repoId={repo.id}
             managedTools={(publication?.contracts ?? [])

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { trackProductEvent } from "@/lib/product-analytics";
 import { secondaryButtonClass } from "./ui";
 
 /** Brand marks for the coding agents this prompt is meant to be pasted into. */
@@ -62,6 +63,10 @@ export function CopySnippet({ snippet }: { snippet: string }) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(kind);
+      trackProductEvent({
+        name: "Loader Install Copied",
+        properties: { format: kind === "snippet" ? "script" : "agent_prompt" },
+      });
       setTimeout(() => setCopied(null), 1500);
     } catch {
       // Clipboard unavailable; user can select the text manually.

@@ -36,14 +36,6 @@ export const AnalysisJobSchema = z
   })
   .strict();
 
-export const GeneratePrJobSchema = z
-  .object({
-    type: z.literal("publication.generate_pr"),
-    publicationId: z.string().uuid(),
-    attempt: z.number().int().nonnegative().default(0),
-  })
-  .strict();
-
 export const SyncCompareJobSchema = z
   .object({
     type: z.literal("sync.compare"),
@@ -57,7 +49,6 @@ export const SyncCompareJobSchema = z
 
 export const JobMessageSchema = z.discriminatedUnion("type", [
   AnalysisJobSchema,
-  GeneratePrJobSchema,
   SyncCompareJobSchema,
 ]);
 export type JobMessage = z.infer<typeof JobMessageSchema>;

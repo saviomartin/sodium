@@ -14,6 +14,7 @@ import { parseAppPath, routeFileKind } from "./routes";
 import { detectAuthSignals } from "./auth";
 import {
   extractForms,
+  extractControls,
   extractLinks,
   extractRouteHandlers,
   extractServerActions,
@@ -117,6 +118,7 @@ export class NextJsAnalyzer {
     const routeHandlers: RouteHandlerInfo[] = [];
     const forms: FormInfo[] = [];
     const links: StaticAnalysis["links"] = [];
+    const controls: NonNullable<StaticAnalysis["controls"]> = [];
     const zodSchemas: ZodSchemaInfo[] = [];
     const authSignals: AuthSignalInfo[] = [];
 
@@ -133,10 +135,20 @@ export class NextJsAnalyzer {
         });
       }
     }
+    const browserBindingRoots = new Map(pageRouteByFile);
+    for (const filePath of fileTexts.keys()) {
+      const route = routeForFile(filePath, appDir);
+      if (route?.kind !== "layout") continue;
+      browserBindingRoots.set(filePath, {
+        urlPattern: route.urlPattern === "/" ? "/**" : `${route.urlPattern}/**`,
+        pathPattern:
+          route.pathPattern === "/" ? "/**" : `${route.pathPattern}/**`,
+      });
+    }
     const routeBindingsByFile = buildRouteBindings(
       project,
       fileTexts,
-      pageRouteByFile,
+      browserBindingRoots,
       projectRoot,
     );
 
@@ -196,6 +208,7 @@ export class NextJsAnalyzer {
         }
         forms.push(...extracted);
         links.push(...extractLinks(sourceFile, filePath, routeBindings));
+        controls.push(...extractControls(sourceFile, filePath, routeBindings));
       }
       try {
         zodSchemas.push(...extractZodSchemas(sourceFile, filePath, warnings));
@@ -221,11 +234,22 @@ export class NextJsAnalyzer {
     }
     for (const form of forms) {
       if (form.selector) continue;
+      const coveredByExecutableControl =
+        form.fields.length === 0 &&
+        controls.some(
+          (control) =>
+            control.span.filePath === form.span.filePath &&
+            control.span.startLine >= form.span.startLine &&
+            control.span.endLine <= form.span.endLine,
+        );
+      if (coveredByExecutableControl) continue;
       const bindings = form.routeBindings ?? [];
       if (
         bindings.length > 0 &&
         bindings.every(
-          (route) => (formsByRoute.get(route.pathPattern)?.length ?? 0) === 1,
+          (route) =>
+            !route.pathPattern.includes("*") &&
+            (formsByRoute.get(route.pathPattern)?.length ?? 0) === 1,
         )
       ) {
         form.selector = "form";
@@ -244,6 +268,7 @@ export class NextJsAnalyzer {
       routeHandlers,
       forms,
       links: dedupeLinks(links),
+      controls: dedupeControls(controls),
       zodSchemas,
       authSignals,
       warnings,
@@ -369,6 +394,26 @@ function dedupeLinks(links: StaticAnalysis["links"]): StaticAnalysis["links"] {
   for (const link of links) {
     const key = `${link.href}\u0000${link.span.filePath}\u0000${link.span.startLine}`;
     deduped.set(key, link);
+  }
+  return [...deduped.values()];
+}
+
+function dedupeControls(
+  controls: NonNullable<StaticAnalysis["controls"]>,
+): NonNullable<StaticAnalysis["controls"]> {
+  const deduped = new Map<
+    string,
+    NonNullable<StaticAnalysis["controls"]>[number]
+  >();
+  for (const control of controls) {
+    const routes = control.routeBindings
+      .map((route) => route.pathPattern)
+      .sort()
+      .join("\u0000");
+    deduped.set(
+      `${control.selector ?? `button:${control.accessibleName ?? ""}`}\u0000${routes}`,
+      control,
+    );
   }
   return [...deduped.values()];
 }

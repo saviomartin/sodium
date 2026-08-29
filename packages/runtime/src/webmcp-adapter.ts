@@ -47,7 +47,8 @@ export function toWebMcpDescriptor(
 /**
  * WebMCP has no destructive/confirmation annotations yet, so consequential
  * tools carry an explicit notice in the description — the one field every
- * agent reads. The customer's backend still enforces real confirmation.
+ * agent reads. Required confirmation is enforced by the hosted loader before
+ * it invokes the application's existing browser behavior.
  */
 function describeForAgent(tool: PublishedTool): string {
   const notices: string[] = [];
@@ -88,12 +89,6 @@ export function createToolRegistrar(
   const shouldBeActive = (tool: PublishedTool): boolean => {
     const win = doc.defaultView;
     const path = win?.location?.pathname ?? "/";
-    if (
-      tool.handler.kind === "bridge" &&
-      !win?.__sodiumBridge?.handlers.has(tool.handler.bridgeKey)
-    ) {
-      return false;
-    }
     return tool.routes.some((route) => {
       if (!matchesPathPattern(route.pathPattern, path)) return false;
       if (route.requiresSelector && !doc.querySelector(route.requiresSelector))

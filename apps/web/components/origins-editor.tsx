@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateSiteOriginsAction } from "@/lib/actions";
+import { trackProductEvent } from "@/lib/product-analytics";
 import { inputClass, secondaryButtonClass } from "./ui";
 import { useRepositorySettingsState } from "./repository-settings-state";
 
@@ -37,6 +38,10 @@ export function OriginsEditor({
         }
         setOrigins(next);
         setSaved(true);
+        trackProductEvent({
+          name: "Allowed Origins Updated",
+          properties: { count: next.length },
+        });
         router.refresh();
       } finally {
         endEdit();

@@ -4,8 +4,17 @@
 
 - [ ] Generate a production Ed25519 manifest keypair (`node packages/runtime/scripts/gen-dev-keys.mjs` as a template — store the private key in your secret manager, never in the repo). Set `MANIFEST_SIGNING_KEY_ID` + `MANIFEST_SIGNING_PRIVATE_KEY`; build the loader with `SODIUM_MANIFEST_JWKS` containing the matching public JWK(s). The app refuses to boot in production with the committed dev key.
 - [ ] Plan key rotation: the loader pins a JWK **set** — ship new+old, re-sign, then retire the old key with the next loader version.
-- [ ] GitHub App private key and webhook secret in env/KMS only; confirm they never appear in logs or generated PRs.
+- [ ] GitHub App private key and webhook secret in env/KMS only; confirm they never appear in logs.
 - [ ] `SUPABASE_SECRET_KEY` is server-only (web server + worker). Rotate any key that ever reached a client bundle.
+- [ ] Stripe Production uses a restricted `rk_live_…` key, the live $49/month repository Price, the repository-only Portal configuration, and a Secret `STRIPE_WEBHOOK_SECRET`. Development/Preview must use test objects only.
+
+## Stripe billing
+
+- [ ] Webhook `/api/webhooks/stripe` uses API `2026-08-26.dahlia` and only the documented Checkout, Subscription, and Invoice lifecycle events. Verify a signed live delivery after deployment.
+- [ ] Checkout grants no access on its return URL. Verify webhook fulfillment, duplicate-event idempotency, delayed payment, cancellation-at-period-end, `past_due` retry access, and `unpaid` revocation.
+- [ ] Verify two repositories under one user have separate Stripe Customers and subscriptions; canceling one must not affect the other.
+- [ ] Stripe Tax remains disabled until Foundative has an active tax registration for every configured jurisdiction.
+- [ ] `/api/internal/billing/reconcile` runs every six hours with `CRON_SECRET` and reports zero failed rows.
 
 ## Supabase
 
@@ -30,7 +39,7 @@
 
 ## GitHub
 
-- [ ] App registered per docs/github-app.md with the minimal permission set (contents rw, pull requests rw, metadata ro).
+- [ ] App registered per docs/github-app.md with the minimal permission set (contents read-only, metadata read-only).
 - [ ] Webhook endpoint reachable; deliveries page checked after launch; redelivery runbook written (GitHub does not auto-retry).
 - [ ] Verify webhook secret rotation procedure (GitHub supports two active secrets via app settings + env rollover).
 

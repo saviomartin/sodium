@@ -40,8 +40,12 @@ export const orderSchema = z.object({
 });
 `,
 
-    "app/layout.tsx": `export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en"><body>{children}</body></html>;
+    "app/layout.tsx": `import { signOut } from "./actions";
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <html lang="en"><body>
+    <form action={signOut}><button type="submit">Global sign out</button></form>
+    {children}
+  </body></html>;
 }
 `,
     "app/page.tsx": `import Link from "next/link";
@@ -90,6 +94,21 @@ export default function ContactPage() {
       <button type="submit">Send</button>
     </form>
   );
+}
+`,
+    "app/account/page.tsx": `import { cancelOrder, signOut } from "../actions";
+export default function AccountPage() {
+  return <main>
+    <form id="sign-out-form" action={signOut}><button type="submit">Sign out</button></form>
+    <form action={signOut}><button type="submit">Log out everywhere</button></form>
+    <button id="cancel-order" onClick={() => cancelOrder({ orderId: "ord_page_owned" })}>Cancel order</button>
+    <form id="security-form" action={updateSecurity}>
+      <input name="password" type="password" />
+      <input name="avatar" type="file" />
+      <input name="otp" autoComplete="one-time-code" />
+      <input name="displayName" />
+    </form>
+  </main>;
 }
 `,
     "app/actions.ts": `"use server";

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { WebAnalytics } from "@/components/web-analytics";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,7 +15,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        {children}
+        <WebAnalytics />
+      </body>
     </html>
   );
 }

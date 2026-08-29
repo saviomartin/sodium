@@ -46,7 +46,13 @@ function ConnectGithubButton({
   className?: string;
 }) {
   return (
-    <ActionForm action={connectGithubAction}>
+    <ActionForm
+      action={connectGithubAction}
+      submitEvent={{
+        name: "GitHub Connection Started",
+        properties: { intent },
+      }}
+    >
       <input type="hidden" name="intent" value={intent} />
       <SubmitButton className={className} pendingText="Opening GitHub…">
         {label}
@@ -300,7 +306,15 @@ export async function HomeRepositories({
                     Open
                   </Link>
                 ) : (
-                  <ActionForm action={selectRepositoryAction}>
+                  <ActionForm
+                    action={selectRepositoryAction}
+                    submitEvent={{
+                      name: "Repository Connection Requested",
+                      properties: {
+                        visibility: repository.isPrivate ? "private" : "public",
+                      },
+                    }}
+                  >
                     <input
                       type="hidden"
                       name="installationUuid"

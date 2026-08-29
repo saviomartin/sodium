@@ -2,8 +2,6 @@ import { verifyWebhookSignature } from "@/lib/github";
 import { env, siteUrl } from "@/lib/env";
 import { createServiceClient } from "@/lib/supabase/service";
 import { after } from "next/server";
-import { revalidatePath } from "next/cache";
-import { pullRequestStatusUpdate } from "@/lib/github-pull-request";
 
 /**
  * GitHub webhook receiver. Order of checks, per docs/architecture.md §1.4:
@@ -50,62 +48,9 @@ export async function POST(request: Request) {
   switch (event) {
     case "installation":
       return handleInstallation(service, payload);
-    case "pull_request":
-      return handlePullRequest(service, payload);
     default:
       return Response.json({ ok: true, ignored: event });
   }
-}
-
-async function handlePullRequest(
-  service: Service,
-  payload: Record<string, unknown>,
-) {
-  const update = pullRequestStatusUpdate(payload);
-  if (!update) {
-    return Response.json({
-      ok: true,
-      ignored: "unsupported pull request event",
-    });
-  }
-
-  // Match both GitHub identifiers before touching an integration row. Payload
-  // repository data is untrusted until it resolves to this app installation.
-  const { data: installation } = await service
-    .from("github_installations")
-    .select("id")
-    .eq("installation_id", update.installationId)
-    .maybeSingle();
-  if (!installation) {
-    return Response.json({ ok: true, ignored: "unknown installation" });
-  }
-
-  const { data: repository } = await service
-    .from("repositories")
-    .select("id")
-    .eq("github_repo_id", update.githubRepoId)
-    .eq("installation_id", installation.id)
-    .maybeSingle();
-  if (!repository) {
-    return Response.json({ ok: true, ignored: "unknown repository" });
-  }
-
-  const { error } = await service
-    .from("integration_prs")
-    .update({
-      status: update.status,
-      ...(update.url ? { url: update.url } : {}),
-      ...(update.branch ? { branch: update.branch } : {}),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("repository_id", repository.id)
-    .eq("pr_number", update.prNumber);
-  if (error) {
-    return Response.json({ error: "PR status update failed" }, { status: 500 });
-  }
-
-  revalidatePath(`/repos/${repository.id}`);
-  return Response.json({ ok: true, status: update.status });
 }
 
 type Service = ReturnType<typeof createServiceClient>;

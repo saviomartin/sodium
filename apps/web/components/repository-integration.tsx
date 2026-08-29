@@ -1,24 +1,15 @@
 import type { ToolManifest } from "@sodium/contracts";
 import type { getPublication } from "@/lib/queries";
 import { siteUrl } from "@/lib/env";
-import {
-  generateIntegrationPrAction,
-  publishSiteAction,
-  rollbackManifestAction,
-} from "@/lib/actions";
-import { ActionForm, SubmitButton } from "./action-form";
+import { publishSiteAction, rollbackManifestAction } from "@/lib/actions";
 import { ConfirmAction } from "./confirm-action";
 import { CopySnippet } from "./copy-snippet";
 import { OriginsEditor } from "./origins-editor";
-import { RepositoryLiveRefresh } from "./repository-live-refresh";
-import { Card, secondaryButtonClass } from "./ui";
+import { Card } from "./ui";
 
 type Publication = Awaited<ReturnType<typeof getPublication>>;
 
 interface RepositoryIntegrationProps {
-  repo: {
-    default_branch: string;
-  };
   site: {
     id: string;
     site_id: string;
@@ -26,24 +17,13 @@ interface RepositoryIntegrationProps {
     current_manifest_id: string | null;
   };
   publication: Publication;
-  hasBridgeTools: boolean;
 }
 
-const PR_STATUS_STYLES: Record<string, string> = {
-  open: "bg-green-50 text-green-700",
-  merged: "bg-green-50 text-green-700",
-  failed: "bg-red-50 text-red-700",
-  pending: "bg-amber-50 text-amber-800",
-  closed: "bg-neutral-100 text-neutral-600",
-};
-
 export function RepositoryIntegration({
-  repo,
   site,
   publication,
-  hasBridgeTools,
 }: RepositoryIntegrationProps) {
-  const { contracts, manifests, deployments, prs, usage } = publication;
+  const { contracts, manifests, deployments, usage } = publication;
   const activeContracts = contracts.filter(
     (contract) => contract.status === "active",
   );
@@ -64,8 +44,6 @@ export function RepositoryIntegration({
     JSON.stringify(draftToolNames) !== JSON.stringify(liveToolNames) ||
     JSON.stringify(draftOrigins) !== JSON.stringify(liveOrigins);
   const lastLoaderReady = usage.find((event) => event.event === "loader_ready");
-  const prPending = prs.some((pr) => pr.status === "pending");
-  const prOpen = prs.some((pr) => pr.status === "open");
   const publicUrl = siteUrl();
   const snippet =
     '<script src="' +
@@ -83,10 +61,6 @@ export function RepositoryIntegration({
 
   return (
     <section aria-labelledby="install-access-title" className="space-y-3">
-      <RepositoryLiveRefresh
-        active={prPending || prOpen}
-        intervalMs={prPending ? 2000 : 10000}
-      />
       <header>
         <h2
           id="install-access-title"
@@ -95,8 +69,8 @@ export function RepositoryIntegration({
           Install &amp; access
         </h2>
         <p className="mt-1 text-sm text-neutral-500 text-pretty">
-          Add the loader once, choose where it can run, or generate the reviewed
-          integration required by private server actions.
+          Add the loader once and choose where it can run. Every published tool
+          executes through this script with no customer integration code.
         </p>
       </header>
 
@@ -135,90 +109,6 @@ export function RepositoryIntegration({
           />
         </Card>
 
-        <Card title="Integration PR">
-          <p className="mb-3 text-sm text-neutral-600 text-pretty">
-            {hasBridgeTools
-              ? "Adds the loader plus reviewed bindings to your existing server actions."
-              : "Adds the exact loader snippet above to your app shell."}{" "}
-            It never pushes directly to {repo.default_branch}.
-          </p>
-          {activeContracts.length === 0 ? (
-            <p className="text-sm text-neutral-500 text-pretty">
-              Enable at least one proposed tool to generate the integration.
-            </p>
-          ) : prPending ? (
-            <p role="status" className="text-sm text-amber-800">
-              PR generation is queued.
-            </p>
-          ) : (
-            <ActionForm
-              action={generateIntegrationPrAction}
-              successMessage="PR generation queued."
-            >
-              <input type="hidden" name="siteId" value={site.id} />
-              <SubmitButton
-                className={secondaryButtonClass}
-                pendingText="Queueing…"
-              >
-                {prOpen
-                  ? "Regenerate integration PR"
-                  : "Generate integration PR"}
-              </SubmitButton>
-            </ActionForm>
-          )}
-
-          {prs.length > 0 ? (
-            <ul className="mt-4 space-y-2 border-t border-neutral-100 pt-3 text-sm">
-              {prs.map((pr) => (
-                <li
-                  key={pr.id}
-                  className="flex items-start justify-between gap-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={
-                          "inline-flex rounded px-1.5 py-0.5 text-xs font-medium " +
-                          (PR_STATUS_STYLES[pr.status] ??
-                            PR_STATUS_STYLES.closed)
-                        }
-                      >
-                        {pr.status}
-                      </span>
-                      {pr.branch !== "pending" ? (
-                        <span className="font-mono text-xs break-all">
-                          {pr.branch}
-                        </span>
-                      ) : null}
-                    </div>
-                    {pr.error ? (
-                      <p className="mt-1 text-xs text-red-700 text-pretty">
-                        {(pr.error as { message?: string }).message}
-                      </p>
-                    ) : null}
-                  </div>
-                  {pr.url ? (
-                    pr.url.startsWith("http") ? (
-                      <a
-                        href={pr.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-blue-700 hover:underline"
-                      >
-                        {pr.pr_number ? "Open #" + pr.pr_number : "Open PR"} ↗
-                      </a>
-                    ) : (
-                      <span className="font-mono text-xs text-neutral-500 break-all">
-                        {pr.url}
-                      </span>
-                    )
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </Card>
-
         <Card title="Runtime status">
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
@@ -253,6 +143,13 @@ export function RepositoryIntegration({
                 triggerVariant={hasUnpublishedChanges ? "primary" : "secondary"}
                 blockWhileEdits
                 fields={{ siteId: site.id }}
+                successEvent={{
+                  name: "Manifest Published",
+                  properties: {
+                    mode: current ? "republish" : "first_publish",
+                    toolCount: activeContracts.length,
+                  },
+                }}
               />
               <p className="mt-2 text-xs text-neutral-500">
                 {hasUnpublishedChanges
@@ -315,6 +212,10 @@ export function RepositoryIntegration({
                                 fields={{
                                   siteId: site.id,
                                   manifestId: manifest.id,
+                                }}
+                                successEvent={{
+                                  name: "Manifest Rolled Back",
+                                  properties: { version: manifest.version },
                                 }}
                               />
                             ) : null}

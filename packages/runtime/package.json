@@ -1,13 +1,9 @@
 {
   "name": "@sodium/runtime",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "type": "module",
   "private": true,
   "exports": {
-    "./bridge": {
-      "types": "./src/bridge.ts",
-      "default": "./src/bridge.ts"
-    },
     "./loader-src": "./src/loader.ts",
     "./dist/agent.js": "./dist/agent.js"
   },

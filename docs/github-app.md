@@ -24,11 +24,10 @@ GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App*
 
 **Permissions** (the minimum for the implemented workflow):
 
-- Repository → **Contents: Read and write** (tarball download for analysis; branch + commit creation for integration PRs)
-- Repository → **Pull requests: Read and write** (opening the integration PR)
+- Repository → **Contents: Read-only** (tarball download for analysis)
 - Metadata: Read-only (added automatically)
 
-**Events**: `push`, `pull_request` (`installation` events are always delivered).
+**Events**: `push` (`installation` events are always delivered).
 
 ## 2. Keys and environment
 
@@ -43,12 +42,12 @@ NEXT_PUBLIC_GITHUB_APP_SLUG=<app slug from the app URL>
 
 Set the first three for **both** `apps/web` and `apps/worker` (the worker mints
 its own installation tokens). Keys live in env/KMS only — never in the
-database, logs, or generated pull requests.
+database or logs.
 
 ## 3. Local webhook development
 
 The development App keeps webhooks disabled by default. Manual analysis,
-repository access, and integration PRs still work end to end. To test push
+repository access still works end to end. To test push
 delivery specifically, enable the development webhook and use smee:
 
 ```bash

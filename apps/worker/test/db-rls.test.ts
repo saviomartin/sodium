@@ -140,6 +140,16 @@ async function seedTenants(tx: Tx): Promise<Tenants> {
     values (${acme!.id}, ${installation!.id}, 10001, 'foundative', 'test-shop', 'foundative/test-shop', 'main')
     returning id
   `;
+  await tx`
+    insert into repository_billing (
+      repository_id, org_id, purchased_by, stripe_customer_id,
+      stripe_subscription_id, stripe_price_id, status
+    ) values (
+      ${repo!.id}, ${acme!.id}, ${alice},
+      ${`cus_rls_${suffix}`}, ${`sub_rls_${suffix}`}, ${`price_rls_${suffix}`},
+      'active'
+    )
+  `;
   const publicSiteId = `site_${suffix.padEnd(8, "0").slice(0, 16)}`;
   const [site] = await tx<{ id: string }[]>`
     insert into sites (org_id, repository_id, site_id, allowed_origins)
@@ -275,6 +285,27 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         /manifest publication/,
         (x) =>
           x`update action_candidates set status = 'published' where id = ${candidateId}`,
+      );
+    });
+  });
+
+  it("keeps unpaid candidates and site settings read-only", async () => {
+    await withRollback(async (tx) => {
+      const t = await seedTenants(tx);
+      const candidateId = await seedCandidate(tx, t);
+      await tx`delete from repository_billing where repository_id = ${t.acmeRepo}`;
+      await actAs(tx, t.alice);
+      expect(
+        await tx`update action_candidates set review_note = 'blocked' where id = ${candidateId} returning id`,
+      ).toHaveLength(0);
+      expect(
+        await tx`update sites set allowed_origins = '{https://blocked.example}' where id = ${t.acmeSite} returning id`,
+      ).toHaveLength(0);
+      await expectError(
+        tx,
+        /subscription required/,
+        (x) =>
+          x`select public.set_candidates_enabled(array[${candidateId}]::uuid[], ${t.acmeSite}, true)`,
       );
     });
   });
@@ -557,11 +588,73 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     });
   });
 
+  it("allows one successful free analysis and requires a repo subscription after it", async () => {
+    await withRollback(async (tx) => {
+      const t = await seedTenants(tx);
+      await tx`delete from repository_billing where repository_id = ${t.acmeRepo}`;
+      await actAs(tx, t.alice);
+      const [first] = await tx<{ request_analysis: string }[]>`
+        select public.request_analysis(${t.acmeRepo}, ${"1".repeat(40)})
+      `;
+      await actAsService(tx);
+      await tx`
+        update analysis_runs
+        set status = 'succeeded', finished_at = now()
+        where id = ${first!.request_analysis}
+      `;
+      const [repository] = await tx<
+        { free_analysis_consumed_at: string | null }[]
+      >`
+        select free_analysis_consumed_at from repositories where id = ${t.acmeRepo}
+      `;
+      expect(repository!.free_analysis_consumed_at).toBeTruthy();
+
+      await actAs(tx, t.alice);
+      await expectError(
+        tx,
+        /subscription required/,
+        (x) =>
+          x`select public.request_analysis(${t.acmeRepo}, ${"2".repeat(40)})`,
+      );
+    });
+  });
+
+  it("gates automatic push analysis per repository", async () => {
+    await withRollback(async (tx) => {
+      const t = await seedTenants(tx);
+      await tx`delete from repository_billing where repository_id = ${t.acmeRepo}`;
+      const [first] = await tx<
+        { request_push_analysis: { runId: string; enqueued: string[] } }[]
+      >`
+        select public.request_push_analysis(
+          'delivery-free-1', ${t.githubRepoId}, ${t.installationId},
+          ${"3".repeat(40)}, 'refs/heads/main'
+        )
+      `;
+      expect(first!.request_push_analysis.enqueued).toEqual(["analysis.stage"]);
+      await tx`
+        update analysis_runs set status = 'succeeded', finished_at = now()
+        where id = ${first!.request_push_analysis.runId}
+      `;
+      const [second] = await tx<
+        { request_push_analysis: { ignored?: string } }[]
+      >`
+        select public.request_push_analysis(
+          'delivery-free-2', ${t.githubRepoId}, ${t.installationId},
+          ${"4".repeat(40)}, 'refs/heads/main'
+        )
+      `;
+      expect(second!.request_push_analysis.ignored).toBe(
+        "subscription required",
+      );
+    });
+  });
+
   it("publish_manifest (service path) flips the site atomically and keeps history", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       const manifest = {
-        manifestVersion: 1,
+        manifestVersion: 2,
         siteId: t.publicSiteId,
         tools: [],
       };

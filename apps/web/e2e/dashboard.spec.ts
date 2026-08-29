@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
+import Stripe from "stripe";
 import type { ActionContract } from "@sodium/contracts";
-import { adminClient, readState, signIn } from "./helpers";
+import { adminClient, loadWebEnv, readState, signIn } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
 const state = () => readState();
 
 const submitContact: ActionContract = {
-  contractVersion: 1,
+  contractVersion: 2,
   actionId: "act_0123456789abcdef",
   name: "submit_contact",
   title: "Submit contact",
@@ -22,7 +23,18 @@ const submitContact: ActionContract = {
     required: ["email", "message"],
     additionalProperties: false,
   },
-  output: { description: "Contact form submission acknowledgement." },
+  output: {
+    description: "Contact form submission acknowledgement.",
+    schema: {
+      type: "object",
+      properties: {
+        ok: { type: "boolean", const: true },
+        submitted: { type: "boolean", const: true },
+      },
+      required: ["ok", "submitted"],
+      additionalProperties: false,
+    },
+  },
   evidence: [
     {
       kind: "source",
@@ -47,7 +59,7 @@ const submitContact: ActionContract = {
   confidence: 0.91,
 };
 
-async function provisionRepository(userId: string) {
+async function provisionRepository(userId: string, paid = true) {
   const admin = adminClient();
   const { data: membership, error: membershipError } = await admin
     .from("org_memberships")
@@ -85,6 +97,22 @@ async function provisionRepository(userId: string) {
     .select("id")
     .single();
   if (repositoryError || !repository) throw repositoryError;
+
+  if (paid) {
+    const { error: billingError } = await admin
+      .from("repository_billing")
+      .insert({
+        repository_id: repository.id,
+        org_id: membership.org_id,
+        purchased_by: userId,
+        stripe_customer_id: `cus_e2e${String(unique).slice(-8)}`,
+        stripe_subscription_id: `sub_e2e${String(unique).slice(-8)}`,
+        stripe_price_id: `price_e2e${String(unique).slice(-8)}`,
+        status: "active",
+        cancel_at_period_end: false,
+      });
+    if (billingError) throw billingError;
+  }
 
   const { data: site, error: siteError } = await admin
     .from("sites")
@@ -236,7 +264,7 @@ test("analysis returns to the repo and edits publish explicitly", async ({
     timeout: 10_000,
   });
   await expect(
-    page.getByRole("link", { name: "Submit contact" }),
+    page.getByRole("button", { name: "Submit contact" }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Install & access" }),
@@ -257,12 +285,16 @@ test("analysis returns to the repo and edits publish explicitly", async ({
     name: "Enable Submit contact",
   });
   await enableToggle.check();
-  await expect(
-    page.getByRole("checkbox", { name: "Disable Submit contact" }),
-  ).toBeChecked({ timeout: 15_000 });
+  const enabledToolToggle = page.getByRole("checkbox", {
+    name: "Disable Submit contact",
+  });
+  await expect(enabledToolToggle).toBeChecked({ timeout: 15_000 });
+  // The checkbox updates optimistically. Wait for the server action and RSC
+  // refresh to finish before asserting the server-derived publication state.
+  await expect(enabledToolToggle).toBeEnabled({ timeout: 15_000 });
   await expect(
     page.getByText("Unpublished tool or origin changes are ready."),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await page.getByRole("button", { name: "Publish now" }).click();
   await page.getByRole("button", { name: "Publish manifest" }).click();
   await expect(
@@ -404,40 +436,27 @@ test("analysis returns to the repo and edits publish explicitly", async ({
     })
     .toBe("rollback");
 
-  await page.getByRole("button", { name: "Generate integration PR" }).click();
-  await expect(page.getByText(/PR generation (is )?queued/)).toBeVisible({
-    timeout: 15_000,
-  });
-  const { data: integrationPr } = await seeded.admin
-    .from("integration_prs")
-    .select("id, status")
-    .eq("site_id", seeded.siteId)
-    .single();
-  expect(integrationPr?.status).toBe("pending");
-  const prUrl = "https://github.com/foundative/webmcp-fixture-shop/pull/123";
-  await seeded.admin
-    .from("integration_prs")
-    .update({
-      status: "open",
-      branch: "sodium/integration-e2e",
-      pr_number: 123,
-      url: prUrl,
-    })
-    .eq("id", integrationPr!.id);
-  // The repository page reconciles background PR status without a reload.
-  await expect(page.getByRole("link", { name: "Open #123 ↗" })).toHaveAttribute(
-    "href",
-    prUrl,
-    { timeout: 10_000 },
-  );
-
-  await page.getByRole("link", { name: "Submit contact" }).click();
-  await expect(page.getByText("available", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /approve|publish|reject/i }),
-  ).toHaveCount(0);
+    page.getByText(/Every published tool executes through this script/),
+  ).toBeVisible();
+  await expect(page.getByText(/Integration PR/)).toHaveCount(0);
 
-  await page.goto(`/repos/${seeded.repositoryId}`);
+  await page.getByRole("button", { name: "Submit contact" }).click();
+  const toolDialog = page.getByRole("dialog", { name: "Submit contact" });
+  await expect(toolDialog).toBeVisible();
+  await expect(
+    toolDialog.getByText("available", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    toolDialog.getByRole("heading", { name: "Source evidence" }),
+  ).toBeVisible();
+  await expect(
+    toolDialog.getByRole("button", { name: /approve|publish|reject/i }),
+  ).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/repos/${seeded.repositoryId}$`));
+  await toolDialog.getByRole("button", { name: "Close" }).click();
+  await expect(toolDialog).not.toBeVisible();
+
   const disableToggle = page.getByRole("checkbox", {
     name: "Disable Submit contact",
   });
@@ -463,12 +482,14 @@ test("analysis returns to the repo and edits publish explicitly", async ({
   await expect
     .poll(async () => {
       const response = await page.request.get(`/api/m/${seeded.sitePublicId}`);
-      const currentEnvelope = (await response.json()) as { payload: string };
+      if (!response.ok()) return -1;
+      const currentEnvelope = (await response.json()) as { payload?: unknown };
+      if (typeof currentEnvelope.payload !== "string") return -1;
       const currentManifest = JSON.parse(
         Buffer.from(currentEnvelope.payload, "base64url").toString("utf8"),
       ) as { tools: unknown[] };
       return currentManifest.tools.length;
-    })
+    }, { timeout: 15_000 })
     .toBe(0);
 
   const removedPublishPage = await page.goto(
@@ -525,6 +546,147 @@ test("legacy empty analyses require reanalysis instead of claiming no tools exis
   await expect(
     page.getByText("No executable tools found", { exact: true }),
   ).toHaveCount(0);
+});
+
+test("one free analysis stays readable while repository capabilities are paywalled", async ({
+  page,
+}) => {
+  const { users } = state();
+  await signIn(page, users.owner.email);
+  const seeded = await provisionRepository(users.owner.id, false);
+  await seeded.admin
+    .from("analysis_runs")
+    .update({
+      status: "succeeded",
+      stage: "validate",
+      stage_statuses: {
+        clone: { status: "succeeded" },
+        static: { status: "succeeded" },
+        synthesize: { status: "succeeded", proposed: 1 },
+        validate: { status: "succeeded", total: 1 },
+      },
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", seeded.runId);
+
+  await page.goto(`/repos/${seeded.repositoryId}`);
+  await expect(
+    page.getByRole("button", { name: "Submit contact" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", { name: "Enable Submit contact" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("heading", { name: "Install & access" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Agent analytics" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Run analysis now" }),
+  ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Enable tools" }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Unlock AI capabilities" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("$49", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("/ month / repository")).toBeVisible();
+  await expect(
+    dialog.getByRole("button", {
+      name: "Unlock AI capabilities for your site →",
+    }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText(/unlocks only foundative\/webmcp-fixture-shop/),
+  ).toBeVisible();
+});
+
+test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
+  test.skip(
+    process.env.RUN_STRIPE_E2E !== "1",
+    "set RUN_STRIPE_E2E=1 for the external Stripe sandbox flow",
+  );
+  const { users } = state();
+  await signIn(page, users.owner.email);
+  const seeded = await provisionRepository(users.owner.id, false);
+  const env = loadWebEnv();
+  const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
+    apiVersion: "2026-08-26.dahlia" as Stripe.LatestApiVersion,
+  });
+
+  try {
+    await seeded.admin
+      .from("analysis_runs")
+      .update({
+        status: "succeeded",
+        stage: "validate",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", seeded.runId);
+    await page.goto(`/repos/${seeded.repositoryId}`);
+    await page.getByRole("button", { name: "Enable tools" }).first().click();
+    await page
+      .getByRole("button", {
+        name: "Unlock AI capabilities for your site →",
+      })
+      .click();
+    await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
+
+    await page.getByLabel("Card number").fill("4242424242424242");
+    await page.getByLabel("Expiration").fill("1234");
+    await page.getByRole("textbox", { name: "CVC" }).fill("123");
+    const name = page.getByLabel("Cardholder name");
+    if (await name.isVisible()) await name.fill("Sodium QA");
+    const postalCode = page.getByLabel(/ZIP|postal code/i);
+    if (await postalCode.isVisible()) await postalCode.fill("10001");
+    await page.getByRole("button", { name: /subscribe|pay/i }).click();
+
+    await page.waitForURL(
+      new RegExp(`/repos/${seeded.repositoryId}\\?checkout=success`),
+      { timeout: 60_000 },
+    );
+    await expect(page.getByText("Subscription active.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole("checkbox", { name: "Enable Submit contact" }),
+    ).toBeEnabled();
+
+    const { data: billing } = await seeded.admin
+      .from("repository_billing")
+      .select("status, stripe_subscription_id, stripe_customer_id")
+      .eq("repository_id", seeded.repositoryId)
+      .single();
+    expect(billing?.status).toBe("active");
+    expect(billing?.stripe_subscription_id).toMatch(/^sub_/);
+  } finally {
+    const { data: billing } = await seeded.admin
+      .from("repository_billing")
+      .select("stripe_subscription_id, stripe_customer_id")
+      .eq("repository_id", seeded.repositoryId)
+      .maybeSingle();
+    if (billing?.stripe_subscription_id) {
+      const subscription = await stripe.subscriptions.retrieve(
+        billing.stripe_subscription_id,
+      );
+      if (subscription.status !== "canceled") {
+        await stripe.subscriptions.cancel(billing.stripe_subscription_id, {
+          prorate: false,
+        });
+      }
+    }
+    if (billing?.stripe_customer_id) {
+      await stripe.customers.del(billing.stripe_customer_id);
+    }
+    await seeded.admin
+      .from("stripe_webhook_events")
+      .delete()
+      .eq("repository_id", seeded.repositoryId);
+    await seeded.admin
+      .from("repository_billing")
+      .delete()
+      .eq("repository_id", seeded.repositoryId);
+  }
 });
 
 test("Settings deletes all account data but no GitHub repository", async ({

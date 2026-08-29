@@ -19,15 +19,6 @@ import { GithubAppClient } from "./github";
 export interface RepoProvider {
   resolveHeadSha(spec: RepoHeadSpec): Promise<string>;
   ensureSnapshot(spec: RepoSnapshotSpec): Promise<string>;
-  createPullRequest(
-    spec: PullRequestSpec,
-  ): Promise<{ prNumber: number | null; url: string | null }>;
-  closePullRequest(spec: {
-    installationId: number;
-    owner: string;
-    repo: string;
-    prNumber: number;
-  }): Promise<void>;
 }
 
 export interface RepoHeadSpec {
@@ -43,17 +34,6 @@ export interface RepoSnapshotSpec {
   owner: string;
   repo: string;
   sha: string;
-}
-
-export interface PullRequestSpec {
-  installationId: number;
-  owner: string;
-  repo: string;
-  baseBranch: string;
-  branch: string;
-  title: string;
-  body: string;
-  files: { path: string; content: string }[];
 }
 
 const MAX_EXTRACTED_FILES = 20_000;
@@ -93,25 +73,6 @@ export class GithubRepoProvider implements RepoProvider {
     await extractTarballSafely(tarball, target);
     writeFileSync(join(target, ".sodium-complete"), spec.sha);
     return target;
-  }
-
-  async createPullRequest(spec: PullRequestSpec) {
-    const { prNumber, url } = await this.client.createPullRequest(spec);
-    return { prNumber, url };
-  }
-
-  async closePullRequest(spec: {
-    installationId: number;
-    owner: string;
-    repo: string;
-    prNumber: number;
-  }): Promise<void> {
-    await this.client.closePullRequest(
-      spec.installationId,
-      spec.owner,
-      spec.repo,
-      spec.prNumber,
-    );
   }
 }
 

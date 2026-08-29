@@ -37,7 +37,10 @@ describe("validateContract", () => {
       makeContract({
         riskLevel: "destructive",
         confirmation: "recommended",
-        handler: { kind: "bridge", bridgeKey: "orders.cancel" },
+        handler: {
+          kind: "interaction",
+          steps: [{ kind: "click", selector: "#cancel" }],
+        },
       }),
     );
     expect(result.ok).toBe(false);
@@ -66,7 +69,7 @@ describe("validateContract", () => {
     expect(result.issues.map((i) => i.code)).toContain("handler_risk_mismatch");
   });
 
-  it("rejects destructive automatic form submission", () => {
+  it("accepts destructive form submission when loader confirmation is required", () => {
     const result = validateContract(
       makeContract({
         riskLevel: "destructive",
@@ -74,7 +77,21 @@ describe("validateContract", () => {
         handler: { kind: "form", formSelector: "#delete", fieldMap: {} },
       }),
     );
-    expect(result.issues.map((i) => i.code)).toContain("unsafe_effect");
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects inputs that the handler never consumes", () => {
+    const result = validateContract(
+      makeContract({
+        inputSchema: {
+          type: "object",
+          properties: { ignored: { type: "string" } },
+          required: [],
+          additionalProperties: false,
+        },
+      }),
+    );
+    expect(result.issues.map((issue) => issue.code)).toContain("unused_input");
   });
 
   it("rejects navigate templates with unbound params", () => {
@@ -121,7 +138,10 @@ describe("validateContract", () => {
       makeContract({
         riskLevel: "state_changing",
         confirmation: "required",
-        handler: { kind: "bridge", bridgeKey: "cart.add" },
+        handler: {
+          kind: "interaction",
+          steps: [{ kind: "click", selector: "#add" }],
+        },
         evidence: [],
       }),
     );
@@ -142,13 +162,19 @@ describe("validateContractSet", () => {
 
   it("warns on identical handler targets", () => {
     const a = makeContract({
-      handler: { kind: "bridge", bridgeKey: "cart.add" },
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", selector: "#add" }],
+      },
       riskLevel: "reversible",
     });
     const b = makeContract({
       actionId: "act_ffffffffffffffff",
       name: "add_to_cart_again",
-      handler: { kind: "bridge", bridgeKey: "cart.add" },
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", selector: "#add" }],
+      },
       riskLevel: "reversible",
     });
     const issues = validateContractSet([a, b]);

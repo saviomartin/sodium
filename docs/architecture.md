@@ -133,9 +133,7 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
   ([validating deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries))
 - Content access without executing code: `GET /repos/{o}/{r}/tarball/{ref}` → 302 (link
   expires in ~5 min) with the installation token. No git binary, no submodules, no hooks.
-- PR creation: Git Data API (blobs → tree with `base_tree` → commit → `refs`), then
-  `POST /repos/{o}/{r}/pulls`; commits authored as `<app>[bot]`.
-- **Minimal permissions: `contents: write`, `pull_requests: write`, `metadata: read`**
+- **Minimal permissions: `contents: read`, `metadata: read`**
   (implicit); `installation*` events arrive automatically.
   ([permissions matrix](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps))
 - Keys: GitHub issues PKCS#1 PEM; Node crypto accepts it (convert to PKCS#8 for WebCrypto
@@ -149,9 +147,9 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
 
 ```
 apps/web         Next.js home, repository workspace, Settings, API routes, public manifest + loader endpoints
-apps/worker      background worker: clone → static analysis → AI synthesis → validation; PR generation; sync
+apps/worker      background worker: clone → static analysis → AI wording → validation; sync
 packages/analyzer    framework-neutral analysis engine + Next.js adapter (ts-morph AST, no execution)
-packages/runtime     loader (agent.js), WebMCP adapter, first-party bridge SDK
+packages/runtime     loader (agent.js), WebMCP adapter, declarative execution runtime
 packages/contracts   Zod schemas, DB types, versioned action contracts, deterministic validation, signing
 ```
 
@@ -180,20 +178,21 @@ only the adapter changes.
 Five ordered risk levels: `read_only < reversible < state_changing < destructive <
 financial`. Deterministic floors (enforced in code, not by the model):
 state_changing ⇒ confirmation ≥ recommended; destructive/financial ⇒ confirmation =
-required **and** bridge handler only (no automatic form submission). Publication of any
+required. The loader itself presents and enforces required confirmation. Publication of any
 non-read-only tool requires an explicit human approval; nothing state-changing is ever
 auto-published, including during continuous sync (drafts only).
 
 ### D4 — Manifests are data, never code
 
 The published manifest contains only declarative material: JSON-Schema subsets,
-CSS selectors, URL templates, form field maps, bridge keys. The loader has **no eval, no
+CSS selectors, URL templates, form field maps, bounded interaction steps, and constrained
+same-origin request descriptions. The loader has **no eval, no
 Function constructor, no dynamic import of customer code** and rejects manifests that do
 not parse against the strict schema (unknown handler kinds and extra keys fail closed).
-Complex behavior comes from the **bridge SDK**: generated, human-reviewed handlers living
-in the customer's repository, registered at runtime under `bridgeKey`s — so all
-authentication, authorization, validation, idempotency, and consequential confirmation
-run in the customer's own code and backend.
+Interactions operate only uniquely matched, visible, enabled elements. Requests are relative,
+same-origin, credentialed, redirect-blocked, size-capped, and cannot add arbitrary headers.
+Existing application authentication, authorization, validation, and CSRF behavior remain the
+authority. Private server functions with no rendered browser control are not published.
 
 ### D5 — Signed manifests, pinned loader
 
@@ -280,11 +279,11 @@ immutable, and rollback is one click to any previously approved version.
 
 ### D10 — What ships to the customer
 
-The loader alone supports source-grounded navigation and approved form submission
-(never destructive or financial forms). When enabled tools bind to exported server
-actions, the generated integration PR also adds a small, reviewable client component
-that registers those exact actions under declarative bridge keys. PRs go to a new
-branch and never push directly to the default branch.
+The loader alone supports source-grounded navigation, extraction, form submission,
+bounded browser interactions, and source-verified same-origin requests. Installation is
+exactly one script tag. No generated PR, customer SDK, bridge registration, or additional
+application code is required. Capabilities that cannot be executed safely from the browser
+are excluded instead of being published as unavailable tools.
 
 ### D11 — Honest capability claims
 

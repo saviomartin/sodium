@@ -11,6 +11,9 @@ const e2eSigningKey = JSON.parse(
   ),
 ) as { privateKeyPem: string };
 
+const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+const automationBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 300_000,
@@ -19,25 +22,30 @@ export default defineConfig({
   reporter: process.env.CI ? "line" : "list",
   globalSetup: "./e2e/global-setup",
   use: {
-    baseURL: "http://localhost:3100",
+    baseURL: externalBaseUrl ?? "http://localhost:3100",
+    extraHTTPHeaders: automationBypass
+      ? { "x-vercel-protection-bypass": automationBypass }
+      : undefined,
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command:
-      "node ../../packages/runtime/scripts/build.mjs && corepack pnpm exec next build && corepack pnpm exec next start --port 3100",
-    env: {
-      GITHUB_APP_ID: "4758809",
-      GITHUB_APP_PRIVATE_KEY: "e2e-placeholder-".padEnd(120, "x"),
-      NEXT_DIST_DIR: ".next-e2e",
-      NEXT_PUBLIC_GITHUB_APP_SLUG: "sodium-local-development",
-      NEXT_PUBLIC_SODIUM_ENVIRONMENT: "development",
-      SITE_URL: "http://localhost:3100",
-      MANIFEST_SIGNING_KEY_ID: "e2e-test",
-      MANIFEST_SIGNING_PRIVATE_KEY: e2eSigningKey.privateKeyPem,
-    },
-    port: 3100,
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  webServer: externalBaseUrl
+    ? undefined
+    : {
+        command:
+          "node ../../packages/runtime/scripts/build.mjs && corepack pnpm exec next build && corepack pnpm exec next start --port 3100",
+        env: {
+          GITHUB_APP_ID: "4758809",
+          GITHUB_APP_PRIVATE_KEY: "e2e-placeholder-".padEnd(120, "x"),
+          NEXT_DIST_DIR: ".next-e2e",
+          NEXT_PUBLIC_GITHUB_APP_SLUG: "sodium-local-development",
+          NEXT_PUBLIC_SODIUM_ENVIRONMENT: "development",
+          SITE_URL: "http://localhost:3100",
+          MANIFEST_SIGNING_KEY_ID: "e2e-test",
+          MANIFEST_SIGNING_PRIVATE_KEY: e2eSigningKey.privateKeyPem,
+        },
+        port: 3100,
+        reuseExistingServer: false,
+        timeout: 120_000,
+      },
 });

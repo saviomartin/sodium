@@ -36,7 +36,7 @@ export function makeManifest(
   overrides: Partial<ToolManifest> = {},
 ): ToolManifest {
   return {
-    manifestVersion: 1,
+    manifestVersion: 2,
     siteId: "site_abcd1234efgh",
     origins: ["http://localhost:4000"],
     version: 1,

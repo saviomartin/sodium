@@ -4,6 +4,10 @@ import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/lib/actions";
+import {
+  trackProductEvent,
+  type ProductAnalyticsEvent,
+} from "@/lib/product-analytics";
 import { buttonClass, dangerButtonClass, secondaryButtonClass } from "./ui";
 import { useRepositorySettingsState } from "./repository-settings-state";
 
@@ -51,6 +55,7 @@ export function ConfirmAction({
   triggerVariant = "primary",
   blockWhileEdits = false,
   fields,
+  successEvent,
 }: {
   action: ServerAction;
   trigger: string;
@@ -61,6 +66,7 @@ export function ConfirmAction({
   triggerVariant?: "primary" | "secondary";
   blockWhileEdits?: boolean;
   fields: Record<string, string>;
+  successEvent?: ProductAnalyticsEvent;
 }) {
   const { editPending } = useRepositorySettingsState();
   const blocked = blockWhileEdits && editPending;
@@ -68,7 +74,10 @@ export function ConfirmAction({
   const [state, formAction] = useActionState(
     async (prev: ActionResult | null, formData: FormData) => {
       const result = await action(prev, formData);
-      if (result.ok) setOpen(false);
+      if (result.ok) {
+        if (successEvent) trackProductEvent(successEvent);
+        setOpen(false);
+      }
       return result;
     },
     null,

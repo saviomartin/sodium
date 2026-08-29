@@ -30,13 +30,25 @@ export async function GET(
   const service = createServiceClient();
   const { data: site } = await service
     .from("sites")
-    .select("id, current_manifest_id")
+    .select("id, current_manifest_id, repository_id")
     .eq("site_id", siteId)
     .maybeSingle();
   if (!site?.current_manifest_id) {
     return Response.json(
       { error: "no published manifest" },
       { status: 404, headers: CORS_HEADERS },
+    );
+  }
+
+  const { data: billing } = await service
+    .from("repository_billing")
+    .select("status")
+    .eq("repository_id", site.repository_id)
+    .maybeSingle();
+  if (!billing || !["active", "trialing", "past_due"].includes(billing.status)) {
+    return Response.json(
+      { error: "repository subscription required" },
+      { status: 402, headers: CORS_HEADERS },
     );
   }
 

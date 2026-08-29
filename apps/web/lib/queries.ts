@@ -1,4 +1,5 @@
 import "server-only";
+import { ActionContractSchema } from "@sodium/contracts";
 import { createClient } from "./supabase/server";
 import {
   normalizeAgentAnalytics,
@@ -68,11 +69,25 @@ export async function getRepository(repoId: string) {
   const { data, error } = await supabase
     .from("repositories")
     .select(
-      "id, org_id, full_name, owner, name, default_branch, github_repo_id, installation_id",
+      "id, org_id, full_name, owner, name, default_branch, github_repo_id, installation_id, free_analysis_consumed_at",
     )
     .eq("id", repoId)
     .maybeSingle();
   if (error) throw new Error(`Could not load repository: ${error.message}`);
+  return data;
+}
+
+export async function getRepositoryBilling(repoId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("repository_billing")
+    .select(
+      "status, cancel_at_period_end, current_period_end, stripe_customer_id, stripe_subscription_id, stripe_checkout_expires_at",
+    )
+    .eq("repository_id", repoId)
+    .maybeSingle();
+  if (error)
+    throw new Error(`Could not load repository billing: ${error.message}`);
   return data;
 }
 
@@ -161,36 +176,48 @@ export async function getEvalSummaries(
   return summaries;
 }
 
-export async function getCandidate(candidateId: string) {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("action_candidates")
-    .select("*, analysis_runs(id, repository_id)")
-    .eq("id", candidateId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not load proposed tool: ${error.message}`);
-  return data;
+export interface CandidateEvalRun {
+  name: string;
+  passed: boolean;
+  details: unknown;
+  created_at: string;
 }
 
-export async function getEvalRuns(candidateId: string) {
+export async function getEvalRunsForCandidates(candidateIds: string[]) {
+  const grouped = new Map<string, CandidateEvalRun[]>();
+  if (candidateIds.length === 0) return grouped;
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("eval_runs")
-    .select("name, passed, details, created_at")
-    .eq("candidate_id", candidateId)
+    .select("candidate_id, name, passed, details, created_at")
+    .in("candidate_id", candidateIds)
     .order("created_at", { ascending: false });
   if (error)
     throw new Error(`Could not load tool evaluations: ${error.message}`);
-  return data ?? [];
+
+  for (const row of data ?? []) {
+    const evals = grouped.get(row.candidate_id) ?? [];
+    evals.push({
+      name: row.name,
+      passed: row.passed,
+      details: row.details,
+      created_at: row.created_at,
+    });
+    grouped.set(row.candidate_id, evals);
+  }
+  return grouped;
 }
 
 /** Everything rendered by the repository's install and availability area. */
 export async function getPublication(siteUuid: string) {
   const supabase = await createClient();
-  const [contracts, manifests, deployments, prs, usage] = await Promise.all([
+  const [contracts, manifests, deployments, usage] = await Promise.all([
     supabase
       .from("tool_contracts")
-      .select("id, action_id, name, status, latest_version_id, created_at")
+      .select(
+        "id, action_id, name, status, latest_version_id, created_at, contract_versions!tool_contracts_latest_version_id_fkey(contract)",
+      )
       .eq("site_id", siteUuid)
       .order("name"),
     supabase
@@ -206,14 +233,6 @@ export async function getPublication(siteUuid: string) {
       .order("created_at", { ascending: false })
       .limit(20),
     supabase
-      .from("integration_prs")
-      .select(
-        "id, status, pr_number, url, branch, error, created_at, updated_at",
-      )
-      .eq("site_id", siteUuid)
-      .order("created_at", { ascending: false })
-      .limit(10),
-    supabase
       .from("usage_events")
       .select("event, data, created_at")
       .eq("site_id", siteUuid)
@@ -221,18 +240,19 @@ export async function getPublication(siteUuid: string) {
       .limit(30),
   ]);
   const failed =
-    contracts.error ??
-    manifests.error ??
-    deployments.error ??
-    prs.error ??
-    usage.error;
+    contracts.error ?? manifests.error ?? deployments.error ?? usage.error;
   if (failed)
     throw new Error(`Could not load publication state: ${failed.message}`);
+  const currentContracts = (contracts.data ?? []).filter((row) => {
+    const version = row.contract_versions as unknown as {
+      contract?: unknown;
+    } | null;
+    return ActionContractSchema.safeParse(version?.contract).success;
+  });
   return {
-    contracts: contracts.data ?? [],
+    contracts: currentContracts,
     manifests: manifests.data ?? [],
     deployments: deployments.data ?? [],
-    prs: prs.data ?? [],
     usage: usage.data ?? [],
   };
 }
