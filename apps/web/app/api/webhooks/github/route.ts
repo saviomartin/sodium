@@ -7,7 +7,7 @@ import { after } from "next/server";
  * GitHub webhook receiver. Order of checks, per docs/architecture.md §1.4:
  *  1. HMAC signature over the RAW body (timing-safe)
  *  2. delivery-id idempotency (X-GitHub-Delivery is stable across redeliveries)
- *  3. repository AND installation ownership against our records
+ *  3. repository ownership against our OAuth connection records
  * Only then is work enqueued; processing is async and this handler responds
  * fast. Payload content is untrusted data throughout.
  */
@@ -45,12 +45,7 @@ export async function POST(request: Request) {
   const claim = await claimDelivery(service, deliveryId, event);
   if (claim instanceof Response) return claim;
 
-  switch (event) {
-    case "installation":
-      return handleInstallation(service, payload);
-    default:
-      return Response.json({ ok: true, ignored: event });
-  }
+  return Response.json({ ok: true, ignored: event });
 }
 
 type Service = ReturnType<typeof createServiceClient>;
@@ -75,12 +70,10 @@ async function handlePush(
   deliveryId: string,
 ) {
   const repository = payload.repository as { id?: number } | undefined;
-  const installation = payload.installation as { id?: number } | undefined;
   const commitSha = typeof payload.after === "string" ? payload.after : "";
   const ref = typeof payload.ref === "string" ? payload.ref : "";
   if (
     !repository?.id ||
-    !installation?.id ||
     !/^[a-f0-9]{40}$/.test(commitSha) ||
     commitSha === "0".repeat(40)
   ) {
@@ -92,7 +85,6 @@ async function handlePush(
   const { data, error } = await service.rpc("request_push_analysis", {
     p_delivery_id: deliveryId,
     p_github_repo_id: repository.id,
-    p_installation_id: installation.id,
     p_commit_sha: commitSha,
     p_ref: ref,
   });
@@ -120,27 +112,4 @@ async function handlePush(
     });
   }
   return Response.json(data);
-}
-
-async function handleInstallation(
-  service: Service,
-  payload: Record<string, unknown>,
-) {
-  const action = typeof payload.action === "string" ? payload.action : "";
-  const installation = payload.installation as { id?: number } | undefined;
-  if (!installation?.id)
-    return Response.json({ ok: true, ignored: "malformed installation event" });
-
-  if (action === "deleted" || action === "suspend") {
-    await service
-      .from("github_installations")
-      .update({ suspended_at: new Date().toISOString() })
-      .eq("installation_id", installation.id);
-  } else if (action === "unsuspend") {
-    await service
-      .from("github_installations")
-      .update({ suspended_at: null })
-      .eq("installation_id", installation.id);
-  }
-  return Response.json({ ok: true });
 }

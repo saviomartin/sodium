@@ -42,7 +42,7 @@ export interface RunRow {
   repo_owner: string;
   repo_name: string;
   default_branch: string;
-  installation_id: number;
+  github_connection_id: string;
 }
 
 export async function loadRun(sql: Sql, runId: string): Promise<RunRow | null> {
@@ -51,12 +51,11 @@ export async function loadRun(sql: Sql, runId: string): Promise<RunRow | null> {
            r.stage_statuses, c.sha,
            repo.full_name as repo_full_name, repo.owner as repo_owner, repo.name as repo_name,
            repo.default_branch,
-           gi.installation_id
+           repo.github_connection_id
     from analysis_runs r
     join repository_commits c on c.id = r.commit_id
     join repositories repo on repo.id = r.repository_id
-    join github_installations gi on gi.id = repo.installation_id
-    where r.id = ${runId}
+    where r.id = ${runId} and repo.github_connection_id is not null
   `;
   return rows[0] ?? null;
 }

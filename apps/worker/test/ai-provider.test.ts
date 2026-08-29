@@ -216,8 +216,6 @@ describe("AI model configuration", () => {
       SUPABASE_SECRET_KEY: "x".repeat(24),
       SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
       SODIUM_PUBLIC_URL: "http://localhost:3000",
-      GITHUB_APP_ID: "4758809",
-      GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
     });
     expect(parsed.AI_MODEL).toBe("openai/gpt-5.6-terra");
     expect(parsed.AI_FALLBACK_MODEL).toBe("anthropic/claude-sonnet-5");
@@ -231,8 +229,6 @@ describe("AI model configuration", () => {
         SUPABASE_SECRET_KEY: "x".repeat(24),
         SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
         SODIUM_PUBLIC_URL: "http://localhost:3000",
-        GITHUB_APP_ID: "4758809",
-        GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
         AI_MODEL: "gpt-5.6-terra",
       }),
     ).toThrow("provider/model format");
@@ -246,8 +242,6 @@ describe("AI model configuration", () => {
         SUPABASE_SECRET_KEY: "x".repeat(24),
         SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
         SODIUM_PUBLIC_URL: "http://localhost:3000",
-        GITHUB_APP_ID: "4758809",
-        GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
       }),
     ).toThrow("Supabase environment mismatch");
   });
@@ -260,8 +254,6 @@ describe("AI model configuration", () => {
       SUPABASE_URL: "https://laqlbydlawieccohknsj.supabase.co",
       SUPABASE_SECRET_KEY: "x".repeat(24),
       SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
-      GITHUB_APP_ID: "4758809",
-      GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
     });
     expect(parsed.SODIUM_PUBLIC_URL).toBe(
       "https://sodium-git-feature-foundative.vercel.app",
@@ -277,8 +269,6 @@ describe("AI model configuration", () => {
         SUPABASE_SECRET_KEY: "x".repeat(24),
         SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
         SODIUM_PUBLIC_URL: "http://localhost:3000",
-        GITHUB_APP_ID: "4758809",
-        GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
       }),
     ).toThrow("Vercel environment mismatch");
   });

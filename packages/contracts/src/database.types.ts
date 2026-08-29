@@ -406,43 +406,88 @@ export type Database = {
           },
         ]
       }
-      github_installations: {
+      github_connections: {
         Row: {
-          account_login: string
-          account_type: string
+          access_token_secret_id: string
           created_at: string
           created_by: string
+          github_email: string | null
+          github_login: string
+          github_user_id: number
           id: string
-          installation_id: number
           org_id: string
-          suspended_at: string | null
+          refresh_token_secret_id: string | null
+          scopes: string[]
+          updated_at: string
         }
         Insert: {
-          account_login: string
-          account_type?: string
+          access_token_secret_id: string
           created_at?: string
           created_by: string
+          github_email?: string | null
+          github_login: string
+          github_user_id: number
           id?: string
-          installation_id: number
           org_id: string
-          suspended_at?: string | null
+          refresh_token_secret_id?: string | null
+          scopes?: string[]
+          updated_at?: string
         }
         Update: {
-          account_login?: string
-          account_type?: string
+          access_token_secret_id?: string
           created_at?: string
           created_by?: string
+          github_email?: string | null
+          github_login?: string
+          github_user_id?: number
           id?: string
-          installation_id?: number
           org_id?: string
-          suspended_at?: string | null
+          refresh_token_secret_id?: string | null
+          scopes?: string[]
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "github_installations_org_id_fkey"
+            foreignKeyName: "github_connections_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      github_repository_hooks: {
+        Row: {
+          created_at: string
+          github_hook_id: number
+          org_id: string
+          repository_id: string
+        }
+        Insert: {
+          created_at?: string
+          github_hook_id: number
+          org_id: string
+          repository_id: string
+        }
+        Update: {
+          created_at?: string
+          github_hook_id?: number
+          org_id?: string
+          repository_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "github_repository_hooks_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "github_repository_hooks_repository_id_fkey"
+            columns: ["repository_id"]
+            isOneToOne: true
+            referencedRelation: "repositories"
             referencedColumns: ["id"]
           },
         ]
@@ -630,9 +675,9 @@ export type Database = {
           default_branch: string
           free_analysis_consumed_at: string | null
           full_name: string
+          github_connection_id: string | null
           github_repo_id: number
           id: string
-          installation_id: string
           is_private: boolean
           name: string
           org_id: string
@@ -643,9 +688,9 @@ export type Database = {
           default_branch?: string
           free_analysis_consumed_at?: string | null
           full_name: string
+          github_connection_id?: string | null
           github_repo_id: number
           id?: string
-          installation_id: string
           is_private?: boolean
           name: string
           org_id: string
@@ -656,9 +701,9 @@ export type Database = {
           default_branch?: string
           free_analysis_consumed_at?: string | null
           full_name?: string
+          github_connection_id?: string | null
           github_repo_id?: number
           id?: string
-          installation_id?: string
           is_private?: boolean
           name?: string
           org_id?: string
@@ -666,10 +711,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "repositories_installation_id_fkey"
-            columns: ["installation_id"]
+            foreignKeyName: "repositories_github_connection_id_fkey"
+            columns: ["github_connection_id"]
             isOneToOne: false
-            referencedRelation: "github_installations"
+            referencedRelation: "github_connections"
             referencedColumns: ["id"]
           },
           {
@@ -1072,6 +1117,14 @@ export type Database = {
         Args: { p_days?: number; p_site_id: string }
         Returns: Json
       }
+      get_github_connection_credentials: {
+        Args: { p_connection_id: string }
+        Returns: {
+          access_token: string
+          github_login: string
+          refresh_token: string
+        }[]
+      }
       publish_manifest: {
         Args: {
           p_action?: string
@@ -1092,7 +1145,6 @@ export type Database = {
           p_commit_sha: string
           p_delivery_id: string
           p_github_repo_id: number
-          p_installation_id: number
           p_ref: string
         }
         Returns: Json
@@ -1104,6 +1156,19 @@ export type Database = {
           p_site_id: string
         }
         Returns: number
+      }
+      upsert_github_connection: {
+        Args: {
+          p_access_token: string
+          p_created_by: string
+          p_github_email: string
+          p_github_login: string
+          p_github_user_id: number
+          p_org_id: string
+          p_refresh_token: string
+          p_scopes: string[]
+        }
+        Returns: string
       }
     }
     Enums: {

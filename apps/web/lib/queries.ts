@@ -69,7 +69,7 @@ export async function getRepository(repoId: string) {
   const { data, error } = await supabase
     .from("repositories")
     .select(
-      "id, org_id, full_name, owner, name, default_branch, github_repo_id, installation_id, free_analysis_consumed_at",
+      "id, org_id, full_name, owner, name, default_branch, github_repo_id, github_connection_id, free_analysis_consumed_at",
     )
     .eq("id", repoId)
     .maybeSingle();
@@ -298,15 +298,14 @@ export async function getCompatFindings(repoId: string) {
   return data ?? [];
 }
 
-export async function getInstallations() {
+export async function getGithubConnection() {
   const supabase = await createClient();
   const { data, error } = await supabase
-    .from("github_installations")
-    .select(
-      "id, org_id, installation_id, account_login, account_type, suspended_at, created_at",
-    )
-    .order("created_at", { ascending: false });
+    .from("github_connections")
+    .select("id, org_id, github_login, github_email, scopes, created_at")
+    .limit(1)
+    .maybeSingle();
   if (error)
-    throw new Error(`Could not load GitHub installations: ${error.message}`);
-  return data ?? [];
+    throw new Error(`Could not load GitHub connection: ${error.message}`);
+  return data;
 }

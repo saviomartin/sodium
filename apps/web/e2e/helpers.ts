@@ -23,6 +23,7 @@ export function loadWebEnv(): Record<string, string> {
     if (!existsSync(file)) continue;
     Object.assign(env, parse(readFileSync(file, "utf8")));
   }
+  Object.assign(env, process.env);
   return env;
 }
 

@@ -32,12 +32,12 @@ export async function handleSyncCompare(
       org_id: string;
       owner: string;
       name: string;
-      installation_id: number;
+      github_connection_id: string;
     }[]
   >`
-    select r.id, r.org_id, r.owner, r.name, gi.installation_id
-    from repositories r join github_installations gi on gi.id = r.installation_id
-    where r.id = ${repositoryId}
+    select r.id, r.org_id, r.owner, r.name, r.github_connection_id
+    from repositories r
+    where r.id = ${repositoryId} and r.github_connection_id is not null
   `;
   const repo = repos[0];
   if (!repo) return { kind: "fatal", reason: "repository not found" };
@@ -63,10 +63,10 @@ export async function handleSyncCompare(
     return { kind: "done" };
   }
 
-  const provider = selectRepoProvider(ctx.env);
+  const provider = selectRepoProvider(ctx);
   const snapshotDir = await provider.ensureSnapshot({
     runId: `sync-${deliveryId}`.slice(0, 60),
-    installationId: repo.installation_id,
+    connectionId: repo.github_connection_id,
     owner: repo.owner,
     repo: repo.name,
     sha: commitSha,
@@ -235,9 +235,7 @@ export function compareManifestToAnalysis(
               !analysis.forms.some((form) => form.selector === selector),
           );
         const missingAccessible = tool.handler.steps
-          .filter(
-            (step) => step.kind === "click" && "role" in step,
-          )
+          .filter((step) => step.kind === "click" && "role" in step)
           .map((step) => ("name" in step ? step.name : ""))
           .filter((name) => name && !accessibleButtons.has(name));
         missing.push(...missingAccessible.map((name) => `button:${name}`));

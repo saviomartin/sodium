@@ -1,41 +1,37 @@
-import { App, Octokit } from "octokit";
-import type { WorkerEnv } from "../env";
+import { Octokit } from "octokit";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-/**
- * GitHub App access. Installation IDs are stored; installation tokens are
- * minted on demand (1-hour lifetime), scoped to the target repository and the
- * minimum permissions for the operation, and never persisted.
- */
-export class GithubAppClient {
-  private readonly app: App;
+interface StoredCredentials {
+  access_token: string;
+}
 
-  constructor(env: WorkerEnv) {
-    if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
-      throw new Error("GitHub App credentials are not configured");
+/** GitHub OAuth access loaded from Supabase Vault for each repository request. */
+export class GithubOauthClient {
+  constructor(private readonly supabase: SupabaseClient) {}
+
+  private async octokit(connectionId: string): Promise<Octokit> {
+    const { data, error } = await this.supabase.rpc(
+      "get_github_connection_credentials",
+      { p_connection_id: connectionId },
+    );
+    const credentials = (data as StoredCredentials[] | null)?.[0];
+    if (error || !credentials?.access_token) {
+      throw new Error("GitHub connection credentials are unavailable");
     }
-    this.app = new App({
-      appId: env.GITHUB_APP_ID,
-      privateKey: env.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    });
-  }
-
-  async installationOctokit(installationId: number): Promise<Octokit> {
-    return (await this.app.getInstallationOctokit(
-      installationId,
-    )) as unknown as Octokit;
+    return new Octokit({ auth: credentials.access_token });
   }
 
   /**
-   * Downloads the tarball of one commit — repository code is data, never
-   * executed; no git binary, no hooks, no submodules.
+   * Downloads one commit as data. Repository code is never executed; no git
+   * binary, hooks, or submodules are involved.
    */
   async downloadTarball(
-    installationId: number,
+    connectionId: string,
     owner: string,
     repo: string,
     ref: string,
   ): Promise<Uint8Array> {
-    const octokit = await this.installationOctokit(installationId);
+    const octokit = await this.octokit(connectionId);
     const response = await octokit.request(
       "GET /repos/{owner}/{repo}/tarball/{ref}",
       {
@@ -49,12 +45,12 @@ export class GithubAppClient {
   }
 
   async resolveHeadSha(
-    installationId: number,
+    connectionId: string,
     owner: string,
     repo: string,
     ref: string,
   ): Promise<string> {
-    const octokit = await this.installationOctokit(installationId);
+    const octokit = await this.octokit(connectionId);
     const { data } = await octokit.request(
       "GET /repos/{owner}/{repo}/commits/{ref}",
       { owner, repo, ref },

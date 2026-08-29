@@ -89,7 +89,7 @@ interface Tenants {
   globexOrg: string;
   acmeRepo: string;
   githubRepoId: number;
-  installationId: number;
+  connectionId: string;
   acmeSite: string;
   publicSiteId: string;
 }
@@ -130,14 +130,21 @@ async function seedTenants(tx: Tx): Promise<Tenants> {
   await tx`insert into org_memberships (org_id, user_id, role)
     values (${acme!.id}, ${carol}, 'member')`;
 
-  const installationId = Math.floor(Math.random() * 2_000_000_000) + 1;
-  const [installation] = await tx<{ id: string }[]>`
-    insert into github_installations (org_id, installation_id, account_login, account_type, created_by)
-    values (${acme!.id}, ${installationId}, 'foundative', 'Organization', ${alice}) returning id
+  const [secret] = await tx<{ id: string }[]>`
+    select vault.create_secret(${"gho_" + "x".repeat(36)}, ${`rls-github-${suffix}`}) as id
+  `;
+  const [connection] = await tx<{ id: string }[]>`
+    insert into github_connections (
+      org_id, github_user_id, github_login, github_email, scopes,
+      access_token_secret_id, created_by
+    ) values (
+      ${acme!.id}, 1001, 'foundative', 'alice@example.com',
+      '{repo,user:email}', ${secret!.id}, ${alice}
+    ) returning id
   `;
   const [repo] = await tx<{ id: string }[]>`
-    insert into repositories (org_id, installation_id, github_repo_id, owner, name, full_name, default_branch)
-    values (${acme!.id}, ${installation!.id}, 10001, 'foundative', 'test-shop', 'foundative/test-shop', 'main')
+    insert into repositories (org_id, github_connection_id, github_repo_id, owner, name, full_name, default_branch)
+    values (${acme!.id}, ${connection!.id}, 10001, 'foundative', 'test-shop', 'foundative/test-shop', 'main')
     returning id
   `;
   await tx`
@@ -164,7 +171,7 @@ async function seedTenants(tx: Tx): Promise<Tenants> {
     globexOrg: globex!.id,
     acmeRepo: repo!.id,
     githubRepoId: 10001,
-    installationId,
+    connectionId: connection!.id,
     acmeSite: site!.id,
     publicSiteId,
   };
@@ -444,7 +451,7 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         tx,
         /permission denied/,
         (x) =>
-          x`select public.request_push_analysis('delivery-auth', ${t.githubRepoId}, ${t.installationId}, ${"a".repeat(40)}, 'refs/heads/main')`,
+          x`select public.request_push_analysis('delivery-auth', ${t.githubRepoId}, ${"a".repeat(40)}, 'refs/heads/main')`,
       );
     });
   });
@@ -458,7 +465,7 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         { request_push_analysis: Record<string, unknown> }[]
       >`
         select public.request_push_analysis(
-          'delivery-main-1', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+          'delivery-main-1', ${t.githubRepoId}, ${sha}, 'refs/heads/main'
         )
       `;
       const firstResult = first!.request_push_analysis;
@@ -470,7 +477,7 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         { request_push_analysis: Record<string, unknown> }[]
       >`
         select public.request_push_analysis(
-          'delivery-main-1', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+          'delivery-main-1', ${t.githubRepoId}, ${sha}, 'refs/heads/main'
         )
       `;
       expect(duplicateDelivery!.request_push_analysis.duplicate).toBe(true);
@@ -479,7 +486,7 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         { request_push_analysis: Record<string, unknown> }[]
       >`
         select public.request_push_analysis(
-          'delivery-main-2', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+          'delivery-main-2', ${t.githubRepoId}, ${sha}, 'refs/heads/main'
         )
       `;
       expect(sameCommit!.request_push_analysis.existing).toBe(true);
@@ -514,45 +521,40 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     });
   });
 
-  it("ignores non-main, deleted, unknown, and suspended pushes", async () => {
+  it("ignores non-main, deleted, unknown, and unavailable pushes", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       const sha = "f".repeat(40);
 
       const cases = [
-        ["delivery-feature", t.installationId, sha, "refs/heads/feature"],
-        [
-          "delivery-deleted",
-          t.installationId,
-          "0".repeat(40),
-          "refs/heads/main",
-        ],
-        ["delivery-unknown", t.installationId + 1, sha, "refs/heads/main"],
+        ["delivery-feature", t.githubRepoId, sha, "refs/heads/feature"],
+        ["delivery-deleted", t.githubRepoId, "0".repeat(40), "refs/heads/main"],
+        ["delivery-unknown", t.githubRepoId + 1, sha, "refs/heads/main"],
       ] as const;
-      for (const [delivery, installation, commit, ref] of cases) {
+      for (const [delivery, githubRepoId, commit, ref] of cases) {
         const [row] = await tx<
           { request_push_analysis: { ignored?: string } }[]
         >`
           select public.request_push_analysis(
-            ${delivery}, ${t.githubRepoId}, ${installation}, ${commit}, ${ref}
+            ${delivery}, ${githubRepoId}, ${commit}, ${ref}
           )
         `;
         expect(row!.request_push_analysis.ignored).toBeTruthy();
       }
 
       await tx`
-        update github_installations
-        set suspended_at = now()
-        where installation_id = ${t.installationId}
+        update repositories
+        set github_connection_id = null
+        where id = ${t.acmeRepo}
       `;
-      const [suspended] = await tx<
+      const [unavailable] = await tx<
         { request_push_analysis: { ignored?: string } }[]
       >`
         select public.request_push_analysis(
-          'delivery-suspended', ${t.githubRepoId}, ${t.installationId}, ${sha}, 'refs/heads/main'
+          'delivery-unavailable', ${t.githubRepoId}, ${sha}, 'refs/heads/main'
         )
       `;
-      expect(suspended!.request_push_analysis.ignored).toBeTruthy();
+      expect(unavailable!.request_push_analysis.ignored).toBeTruthy();
       expect(
         await tx`select id from analysis_runs where repository_id = ${t.acmeRepo}`,
       ).toHaveLength(0);
@@ -627,8 +629,8 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         { request_push_analysis: { runId: string; enqueued: string[] } }[]
       >`
         select public.request_push_analysis(
-          'delivery-free-1', ${t.githubRepoId}, ${t.installationId},
-          ${"3".repeat(40)}, 'refs/heads/main'
+          'delivery-free-1', ${t.githubRepoId}, ${"3".repeat(40)},
+          'refs/heads/main'
         )
       `;
       expect(first!.request_push_analysis.enqueued).toEqual(["analysis.stage"]);
@@ -640,8 +642,8 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         { request_push_analysis: { ignored?: string } }[]
       >`
         select public.request_push_analysis(
-          'delivery-free-2', ${t.githubRepoId}, ${t.installationId},
-          ${"4".repeat(40)}, 'refs/heads/main'
+          'delivery-free-2', ${t.githubRepoId}, ${"4".repeat(40)},
+          'refs/heads/main'
         )
       `;
       expect(second!.request_push_analysis.ignored).toBe(
