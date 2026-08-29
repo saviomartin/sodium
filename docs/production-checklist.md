@@ -24,7 +24,7 @@
 - [ ] Dedicated production project; separate project (or branch) for previews. `supabase link` + `pnpm db:push` per environment; never edit schema through the dashboard.
 - [ ] Run `supabase db advisors` (CLI ≥ 2.81) after every migration and resolve findings.
 - [ ] `pnpm db:test` (RLS suite) green against the production schema before first launch.
-- [ ] Auth: GitHub OAuth is the only sign-in. Run `pnpm supabase:auth:production`; use production GitHub OAuth credentials, not the local ones.
+- [ ] Auth: GitHub OAuth is the only sign-in. Development and Production use the same Sodium OAuth App but isolated Supabase projects. Run both `pnpm supabase:auth:*` commands, then `pnpm env:verify`.
 - [ ] Storage: confirm the `artifacts` bucket stays private; set retention for crawl artifacts.
 - [ ] Queues: monitor `pgmq.q_sodium_jobs` depth and the archive table (poison messages land there) — alert on growth.
 - [ ] Backups/PITR enabled; test a restore.
@@ -39,7 +39,7 @@
 
 ## GitHub
 
-- [ ] OAuth App registered as **Sodium** per docs/github-oauth.md; verify one consent requests `repo user:email` and lands directly on the repository picker.
+- [ ] The single OAuth App is registered as **Sodium** per docs/github-oauth.md, with both exact Supabase callback URIs and wildcard matching disabled; verify one consent requests `repo user:email` and lands directly on the repository picker.
 - [ ] Webhook endpoint reachable; deliveries page checked after launch; redelivery runbook written (GitHub does not auto-retry).
 - [ ] Verify repository webhook secret rotation and redelivery procedure.
 

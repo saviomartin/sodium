@@ -37,8 +37,8 @@ production:
 
 | Runtime                    | Supabase project     | GitHub OAuth App | Public origin                      |
 | -------------------------- | -------------------- | ---------------- | ---------------------------------- |
-| Local / Vercel Development | `sodium-development` | development      | `http://localhost:3000`            |
-| Vercel Preview             | `sodium-development` | development      | deployment-specific `VERCEL_URL`   |
+| Local / Vercel Development | `sodium-development` | Sodium           | `http://localhost:3000`            |
+| Vercel Preview             | `sodium-development` | Sodium           | deployment-specific `VERCEL_URL`   |
 | Production                 | `sodium`             | Sodium           | `https://sodium-webmcp.vercel.app` |
 
 The app validates these project refs at startup. A local or Preview build
@@ -47,6 +47,7 @@ pointed at production Supabase exits instead of starting.
 ```bash
 corepack pnpm install
 corepack pnpm env:pull
+corepack pnpm env:verify
 corepack pnpm db:push
 corepack pnpm dev
 ```
@@ -80,9 +81,10 @@ Open `http://localhost:3000`, continue with GitHub, and choose
 # Reapply pending migrations to development only (project-ref guarded)
 corepack pnpm db:push
 
-# Reconcile Auth provider and redirect settings from scoped credentials
+# Reconcile Auth provider and redirect settings from the shared OAuth App
 corepack pnpm supabase:auth:development
 corepack pnpm supabase:auth:production
+corepack pnpm env:verify
 ```
 
 Production Supabase credentials are never copied into the local app files.
@@ -108,8 +110,8 @@ cannot leave completed work stuck on screen.
 
 - Repository archives are downloaded by exact commit and parsed as untrusted
   data. They are never installed, built, or executed.
-- GitHub installation ids are verified server-side; repository form values are
-  never trusted as source metadata.
+- GitHub repository IDs and connection ownership are verified server-side;
+  repository form values are never trusted as source metadata.
 - Every exposed table has RLS. Authorization data stays in database roles, not
   user-editable metadata.
 - Tool changes publish a signed, versioned manifest automatically.
