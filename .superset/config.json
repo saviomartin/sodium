@@ -1,0 +1,7 @@
+{
+  "setup": ["bash .superset/setup.sh"],
+  "teardown": ["bash .superset/teardown.sh"],
+  "run": [
+    "lsof -tiTCP:3000 -sTCP:LISTEN | xargs kill 2>/dev/null || true; pnpm dev"
+  ]
+}
