@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  ActionContractSchema,
   ToolManifestSchema,
   MANIFEST_VERSION,
   type ActionContract,
@@ -47,16 +48,22 @@ export async function publishSiteManifest(
     .order("name");
   if (contractsError) return { ok: false, error: contractsError.message };
 
-  const contracts = (contractRows ?? [])
-    .map(
-      (row) =>
-        (
-          row.contract_versions as unknown as {
-            contract: ActionContract;
-          } | null
-        )?.contract,
-    )
-    .filter((contract): contract is ActionContract => Boolean(contract));
+  const parsedContracts = (contractRows ?? []).map((row) =>
+    ActionContractSchema.safeParse(
+      (row.contract_versions as unknown as { contract?: unknown } | null)
+        ?.contract,
+    ),
+  );
+  if (parsedContracts.some((result) => !result.success)) {
+    return {
+      ok: false,
+      error:
+        "One or more enabled tools use a retired contract. Run analysis again.",
+    };
+  }
+  const contracts = parsedContracts.map(
+    (result) => (result as { success: true; data: ActionContract }).data,
+  );
   const { data: latest } = await service
     .from("manifests")
     .select("version")

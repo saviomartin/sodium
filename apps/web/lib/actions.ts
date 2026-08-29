@@ -22,6 +22,12 @@ import {
   createGithubInstallationState,
 } from "./github-connection";
 import { githubNewInstallationUrl } from "./github-installation-url";
+import { hasPaidRepositoryAccess } from "./billing-state";
+import {
+  cancelSubscriptionsForUser,
+  createRepositoryCheckout,
+  createRepositoryPortal,
+} from "./stripe";
 
 const siteIdAlphabet = customAlphabet(
   "abcdefghijklmnopqrstuvwxyz0123456789",
@@ -116,6 +122,19 @@ export async function deleteAccountAction(): Promise<ActionResult> {
   const workspaceIds = (workspaces ?? []).map((workspace) => workspace.id);
 
   try {
+    // Billing is repository-scoped. Cancel every owned repository subscription
+    // before deleting the rows that map Stripe back to this account.
+    await cancelSubscriptionsForUser(user.id);
+  } catch (error) {
+    return {
+      ok: false,
+      error: `subscriptions could not be canceled; no account data was deleted: ${
+        error instanceof Error ? error.message : "unknown Stripe error"
+      }`,
+    };
+  }
+
+  try {
     const artifactPaths = (
       await Promise.all(
         workspaceIds.map((workspaceId) =>
@@ -193,6 +212,104 @@ async function requireOrgRole(
   if (!data || !roles.includes(data.role as never))
     return { error: "you do not have permission to change this workspace" };
   return { userId };
+}
+
+async function requirePaidRepository(repositoryId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("repository_billing")
+    .select("status")
+    .eq("repository_id", repositoryId)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!hasPaidRepositoryAccess(data?.status)) {
+    return { error: "subscription required" };
+  }
+  return { ok: true as const };
+}
+
+// ---------------------------------------------------------------------------
+// Repository billing
+// ---------------------------------------------------------------------------
+
+export async function startRepositoryCheckoutAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const repositoryId = String(formData.get("repositoryId") ?? "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "not signed in" };
+  const { data: repository } = await supabase
+    .from("repositories")
+    .select("id, org_id, full_name")
+    .eq("id", repositoryId)
+    .maybeSingle();
+  if (!repository) return { ok: false, error: "repository not found" };
+  const gate = await requireOrgRole(repository.org_id, ["owner", "admin"]);
+  if ("error" in gate) return { ok: false, error: gate.error };
+
+  let url: string;
+  try {
+    url = await createRepositoryCheckout({
+      repositoryId: repository.id,
+      orgId: repository.org_id,
+      userId: user.id,
+      email: user.email ?? "",
+      repositoryName: repository.full_name,
+      customerName:
+        String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? "") ||
+        user.email?.split("@")[0] ||
+        "",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error ? error.message : "could not start checkout",
+    };
+  }
+  redirect(url);
+}
+
+export async function openRepositoryBillingPortalAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const repositoryId = String(formData.get("repositoryId") ?? "");
+  const supabase = await createClient();
+  const { data: repository } = await supabase
+    .from("repositories")
+    .select("id, org_id")
+    .eq("id", repositoryId)
+    .maybeSingle();
+  if (!repository) return { ok: false, error: "repository not found" };
+  const gate = await requireOrgRole(repository.org_id, ["owner", "admin"]);
+  if ("error" in gate) return { ok: false, error: gate.error };
+  const { data: billing } = await supabase
+    .from("repository_billing")
+    .select("stripe_customer_id")
+    .eq("repository_id", repositoryId)
+    .maybeSingle();
+  if (!billing) return { ok: false, error: "billing account not found" };
+  let url: string;
+  try {
+    url = await createRepositoryPortal(
+      repositoryId,
+      billing.stripe_customer_id,
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "could not open billing management",
+    };
+  }
+  redirect(url);
 }
 
 async function requirePersonalWorkspace(): Promise<
@@ -406,14 +523,21 @@ export async function requestAnalysisAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const repositoryId = String(formData.get("repositoryId") ?? "");
+  if (!(await currentUserId())) return { ok: false, error: "not signed in" };
   const supabase = await createClient();
-  const { data: repo } = await supabase
+  const { data: repo, error: repoError } = await supabase
     .from("repositories")
     .select(
       "id, org_id, owner, name, default_branch, github_installations(installation_id, suspended_at)",
     )
     .eq("id", repositoryId)
     .maybeSingle();
+  if (repoError) {
+    return {
+      ok: false,
+      error: `Could not load repository: ${repoError.message}`,
+    };
+  }
   if (!repo) return { ok: false, error: "repository not found" };
 
   const installation = repo.github_installations as unknown as {
@@ -427,13 +551,19 @@ export async function requestAnalysisAction(
     };
   }
 
-  const { data: activeRuns } = await supabase
+  const { data: activeRuns, error: activeRunsError } = await supabase
     .from("analysis_runs")
     .select("id, created_at")
     .eq("repository_id", repositoryId)
     .in("status", ["queued", "running"])
     .order("created_at", { ascending: false })
     .limit(1);
+  if (activeRunsError) {
+    return {
+      ok: false,
+      error: `Could not check active analyses: ${activeRunsError.message}`,
+    };
+  }
   const activeRun = activeRuns?.[0];
   if (activeRun) {
     const age = Date.now() - new Date(activeRun.created_at).getTime();
@@ -496,6 +626,18 @@ export async function reviewCandidateAction(
 
   const userId = await currentUserId();
   const supabase = await createClient();
+  const { data: candidate } = await supabase
+    .from("action_candidates")
+    .select("id, analysis_runs!inner(repository_id)")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (!candidate) return { ok: false, error: "candidate not found" };
+  const paid = await requirePaidRepository(
+    (candidate.analysis_runs as unknown as { repository_id: string })
+      .repository_id,
+  );
+  if ("error" in paid) return { ok: false, error: paid.error };
+
   const { error, data } = await supabase
     .from("action_candidates")
     .update({
@@ -505,7 +647,7 @@ export async function reviewCandidateAction(
       reviewed_at: new Date().toISOString(),
     })
     .eq("id", candidateId)
-    .select("id, run_id");
+    .select("id");
   if (error) return { ok: false, error: error.message };
   if (!data || data.length === 0)
     return { ok: false, error: "not permitted (owner or admin role required)" };
@@ -562,6 +704,8 @@ export async function setCandidatesEnabledAction(
   if (!site) return { ok: false, error: "site not found" };
   const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
+  const paid = await requirePaidRepository(site.repository_id);
+  if ("error" in paid) return { ok: false, error: paid.error };
   if (input.enabled && site.allowed_origins.length === 0) {
     return {
       ok: false,
@@ -679,7 +823,7 @@ export async function editCandidateAction(
   const supabase = await createClient();
   const { data: candidate } = await supabase
     .from("action_candidates")
-    .select("id, org_id, status, contract")
+    .select("id, org_id, status, contract, analysis_runs!inner(repository_id)")
     .eq("id", input.candidateId)
     .maybeSingle();
   if (!candidate) return { ok: false, error: "candidate not found" };
@@ -691,6 +835,11 @@ export async function editCandidateAction(
   }
   const gate = await requireOrgRole(candidate.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
+  const paid = await requirePaidRepository(
+    (candidate.analysis_runs as unknown as { repository_id: string })
+      .repository_id,
+  );
+  if ("error" in paid) return { ok: false, error: paid.error };
 
   const contract = ActionContractSchema.parse(candidate.contract);
   if (
@@ -768,6 +917,8 @@ export async function publishSiteAction(
   }
   const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
+  const paid = await requirePaidRepository(site.repository_id);
+  if ("error" in paid) return { ok: false, error: paid.error };
 
   const result = await publishSiteManifest(siteUuid, gate.userId);
   if (!result.ok) return { ok: false, error: result.error };
@@ -790,101 +941,11 @@ export async function rollbackManifestAction(
   if (!site) return { ok: false, error: "site not found" };
   const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
+  const paid = await requirePaidRepository(site.repository_id);
+  if ("error" in paid) return { ok: false, error: paid.error };
 
   const result = await rollbackSiteManifest(siteUuid, manifestId, gate.userId);
   if (!result.ok) return { ok: false, error: result.error };
-  revalidatePath(`/repos/${site.repository_id}`);
-  return { ok: true };
-}
-
-export async function generateIntegrationPrAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult> {
-  const siteUuid = String(formData.get("siteId") ?? "");
-  const supabase = await createClient();
-  const { data: site } = await supabase
-    .from("sites")
-    .select("id, org_id, repository_id")
-    .eq("id", siteUuid)
-    .maybeSingle();
-  if (!site) return { ok: false, error: "site not found" };
-  const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
-  if ("error" in gate) return { ok: false, error: gate.error };
-
-  const service = createServiceClient();
-  const { count: activeCount, error: activeError } = await service
-    .from("tool_contracts")
-    .select("id", { count: "exact", head: true })
-    .eq("site_id", site.id)
-    .eq("status", "active");
-  if (activeError) return { ok: false, error: activeError.message };
-  if (!activeCount) {
-    return {
-      ok: false,
-      error: "enable at least one tool before generating an integration PR",
-    };
-  }
-
-  const { data: existingPr, error: existingPrError } = await service
-    .from("integration_prs")
-    .select("id, status")
-    .eq("site_id", site.id)
-    .in("status", ["pending", "open"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (existingPrError) return { ok: false, error: existingPrError.message };
-  if (existingPr?.status === "pending") {
-    return { ok: true, error: "PR generation is already queued." };
-  }
-
-  const prMutation = existingPr
-    ? service
-        .from("integration_prs")
-        .update({ status: "pending", error: null })
-        .eq("id", existingPr.id)
-    : service.from("integration_prs").insert({
-        repository_id: site.repository_id,
-        org_id: site.org_id,
-        site_id: site.id,
-        branch: "pending",
-        created_by: gate.userId,
-      });
-  const { data: pr, error } = await prMutation.select("id").single();
-  if (error) return { ok: false, error: error.message };
-
-  const { error: enqueueError } = await service.rpc("enqueue_job", {
-    p_message: {
-      type: "publication.generate_pr",
-      publicationId: pr.id,
-      attempt: 0,
-    } as never,
-  });
-  if (enqueueError) {
-    await service
-      .from("integration_prs")
-      .update({
-        status: existingPr ? "open" : "failed",
-        error: {
-          message: `Could not queue PR generation: ${enqueueError.message}`,
-        },
-      })
-      .eq("id", pr.id);
-    revalidatePath(`/repos/${site.repository_id}`);
-    return { ok: false, error: enqueueError.message };
-  }
-
-  await service.from("audit_events").insert({
-    org_id: site.org_id,
-    actor: gate.userId,
-    action: existingPr
-      ? "integration_pr.regeneration_requested"
-      : "integration_pr.requested",
-    subject_type: "integration_pr",
-    subject_id: pr.id,
-    data: {} as never,
-  });
   revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }
@@ -930,6 +991,8 @@ export async function updateSiteOriginsAction(
   if (!site) return { ok: false, error: "site not found" };
   const gate = await requireOrgRole(site.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
+  const paid = await requirePaidRepository(site.repository_id);
+  if ("error" in paid) return { ok: false, error: paid.error };
 
   const { error } = await supabase
     .from("sites")

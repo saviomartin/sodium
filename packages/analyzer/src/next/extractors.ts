@@ -14,6 +14,7 @@ import type { JsonSchemaSubset } from "@sodium/contracts";
 import { excerptOf } from "../workspace";
 import type {
   AuthSignalInfo,
+  ControlInfo,
   FormFieldInfo,
   FormInfo,
   HttpMethod,
@@ -288,6 +289,100 @@ export function extractLinks(
   return links;
 }
 
+export function extractControls(
+  sourceFile: SourceFile,
+  filePath: string,
+  routeBindings: { urlPattern: string; pathPattern: string }[],
+): ControlInfo[] {
+  if (routeBindings.length === 0) return [];
+  const controls: ControlInfo[] = [];
+  const elements: JsxTagElement[] = [
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement),
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.JsxOpeningElement),
+  ];
+  for (const element of elements) {
+    const tag = element.getTagNameNode().getText();
+    if (tag !== "button" && tag !== "Button" && tag !== "input") continue;
+    const onClick = attributeText(element, "onClick");
+    const formAction = attributeText(element, "formAction");
+    const owningForm = element.getAncestors().find((ancestor) => {
+      if (!Node.isJsxElement(ancestor)) return false;
+      return ancestor.getOpeningElement().getTagNameNode().getText() === "form";
+    });
+    const owningFormOpening =
+      owningForm && Node.isJsxElement(owningForm)
+        ? owningForm.getOpeningElement()
+        : undefined;
+    const isSubmitControl =
+      tag === "button" ||
+      (tag === "input" && attributeText(element, "type") === "submit");
+    const formActionExpression =
+      isSubmitControl && owningFormOpening
+        ? attributeText(owningFormOpening, "action")
+        : undefined;
+    if (!onClick && !formAction && !formActionExpression) continue;
+    if (
+      formActionExpression &&
+      !onClick &&
+      !formAction &&
+      owningFormOpening &&
+      controlSelector(owningFormOpening)
+    )
+      continue;
+    const selector = controlSelector(element);
+    const parent = element.getParentIfKind(SyntaxKind.JsxElement);
+    const label =
+      attributeText(element, "aria-label") ??
+      attributeText(element, "value") ??
+      (parent ? staticJsxText(parent) : undefined);
+    if (!label) continue;
+    const accessibleName = label.replace(/\s+/g, " ").trim().slice(0, 160);
+    if (!selector && (tag !== "button" || !accessibleName)) continue;
+    const expression = formAction ?? onClick ?? formActionExpression;
+    const actionName = expression?.match(/[A-Za-z_$][\w$]*/)?.[0];
+    controls.push({
+      span: {
+        filePath,
+        startLine: element.getStartLineNumber(),
+        endLine: element.getEndLineNumber(),
+      },
+      ...(selector ? { selector } : { accessibleName }),
+      label,
+      event: formAction || formActionExpression ? "form_action" : "click",
+      ...(actionName ? { actionName } : {}),
+      routeBindings,
+      excerpt: excerptOf(parent?.getText() ?? element.getText()),
+    });
+  }
+  return controls;
+}
+
+function staticJsxText(element: Node): string | undefined {
+  const text = element
+    .getDescendantsOfKind(SyntaxKind.JsxText)
+    .map((node) => node.getText())
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.slice(0, 160) : undefined;
+}
+
+function controlSelector(element: JsxTagElement): string | undefined {
+  const id = attributeText(element, "id");
+  if (id && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(id)) return `#${id}`;
+  const name = attributeText(element, "name");
+  if (name && /^[a-zA-Z0-9_.:-]+$/.test(name)) return `[name="${name}"]`;
+  for (const attr of ["data-testid", "data-action", "data-tool"]) {
+    const value = attributeText(element, attr);
+    if (value && /^[a-zA-Z0-9_.:-]+$/.test(value))
+      return `[${attr}="${value}"]`;
+  }
+  const aria = attributeText(element, "aria-label");
+  if (aria && /^[a-zA-Z0-9 _.,:'-]+$/.test(aria))
+    return `[aria-label="${aria}"]`;
+  return undefined;
+}
+
 function isSafeLiteralPath(value: string | undefined): value is string {
   return Boolean(
     value &&
@@ -390,6 +485,7 @@ export function extractForms(
   for (const formElement of formElements) {
     const opening = formElement.getOpeningElement();
     const fields: FormFieldInfo[] = [];
+    let hasSensitiveFields = false;
 
     const controls: JsxTagElement[] = [
       ...formElement.getDescendantsOfKind(SyntaxKind.JsxSelfClosingElement),
@@ -406,7 +502,18 @@ export function extractForms(
         tag === "input" ? (attributeText(control, "type") ?? "text") : tag;
       // Hidden values (CSRF tokens, internal ids, honeypots) already belong to
       // the page and must never become agent-controlled tool inputs.
-      if (type === "hidden" || type === "submit") continue;
+      if (type === "password" || type === "file") {
+        hasSensitiveFields = true;
+        continue;
+      }
+      if (["hidden", "submit"].includes(type)) continue;
+      const autocomplete =
+        attributeText(control, "autoComplete") ??
+        attributeText(control, "autocomplete");
+      if (autocomplete === "one-time-code" || /otp|captcha/i.test(name)) {
+        hasSensitiveFields = true;
+        continue;
+      }
       let options: string[] | undefined;
       if (tag === "select") {
         const parent = control.getParentIfKind(SyntaxKind.JsxElement);
@@ -428,8 +535,6 @@ export function extractForms(
         options: options && options.length > 0 ? options : undefined,
       });
     }
-    if (fields.length === 0) continue;
-
     const actionAttr = attributeOf(opening, "action");
     let action: FormInfo["action"] = { kind: "unknown" };
     if (actionAttr) {
@@ -464,6 +569,7 @@ export function extractForms(
       pathPattern: route?.pathPattern,
       ...(selector ? { selector } : {}),
       fields,
+      hasSensitiveFields,
       action,
       excerpt: excerptOf(formElement.getText()),
     });

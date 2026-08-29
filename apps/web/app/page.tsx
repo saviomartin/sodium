@@ -4,7 +4,7 @@ import {
   HomeRepositories,
   RepositoryPanelSkeleton,
 } from "@/components/home-repositories";
-import { buttonClass } from "@/components/ui";
+import { GithubSignInForm } from "@/components/github-sign-in-form";
 import { signInWithGithubAction } from "@/lib/actions";
 import { getAccountContext } from "@/lib/queries";
 
@@ -76,12 +76,10 @@ export default async function Home({
                 One sign-in identifies you and immediately starts repository
                 access. You choose exactly which repositories Sodium can read.
               </p>
-              <form action={signInWithGithubAction} className="mt-5">
-                <input type="hidden" name="next" value={params.next ?? "/"} />
-                <button type="submit" className={buttonClass}>
-                  Continue with GitHub
-                </button>
-              </form>
+              <GithubSignInForm
+                action={signInWithGithubAction}
+                next={params.next ?? "/"}
+              />
               {(params.error || params.deleted) && (
                 <p
                   role={params.error ? "alert" : "status"}

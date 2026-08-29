@@ -197,6 +197,60 @@ describe("forms", () => {
       routeBindings: [{ urlPattern: "/support", pathPattern: "/support" }],
     });
   });
+
+  it("keeps zero-input forms and excludes sensitive agent-controlled fields", () => {
+    const signOut = analysis.forms.find(
+      (form) => form.selector === "#sign-out-form",
+    );
+    expect(signOut).toMatchObject({
+      pathPattern: "/account",
+      fields: [],
+      action: { kind: "server_action", name: "signOut" },
+    });
+    const security = analysis.forms.find(
+      (form) => form.selector === "#security-form",
+    );
+    expect(security?.fields.map((field) => field.name)).toEqual([
+      "displayName",
+    ]);
+    expect(security?.hasSensitiveFields).toBe(true);
+    const globalSignOut = analysis.forms.find(
+      (form) => form.span.filePath === "app/layout.tsx",
+    );
+    expect(globalSignOut?.pathPattern).toBe("/**");
+    expect(globalSignOut?.selector).toBeUndefined();
+  });
+});
+
+describe("browser controls", () => {
+  it("extracts stable controls while preserving page-owned closure values", () => {
+    expect(analysis.controls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          selector: "#cancel-order",
+          label: "Cancel order",
+          actionName: "cancelOrder",
+          routeBindings: [{ urlPattern: "/account", pathPattern: "/account" }],
+        }),
+        expect.objectContaining({
+          accessibleName: "Log out everywhere",
+          label: "Log out everywhere",
+          actionName: "signOut",
+          routeBindings: [{ urlPattern: "/account", pathPattern: "/account" }],
+        }),
+        expect.objectContaining({
+          accessibleName: "Global sign out",
+          actionName: "signOut",
+          routeBindings: [{ urlPattern: "/**", pathPattern: "/**" }],
+        }),
+      ]),
+    );
+    expect(
+      analysis.warnings.filter((warning) =>
+        warning.includes("needs a stable id, name, or action attribute"),
+      ),
+    ).toEqual([]);
+  });
 });
 
 describe("links", () => {

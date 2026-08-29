@@ -3,7 +3,7 @@ import { PublishedToolSchema, type ActionContract } from "@sodium/contracts";
 import { projectTools } from "../lib/project-tools";
 
 const contract: ActionContract = {
-  contractVersion: 1,
+  contractVersion: 2,
   actionId: "act_0123456789abcdef",
   name: "cancel_order",
   title: "Cancel an order",
@@ -21,7 +21,10 @@ const contract: ActionContract = {
   auth: { required: true, roles: [] },
   riskLevel: "destructive",
   confirmation: "required",
-  handler: { kind: "bridge", bridgeKey: "actions.cancel_order" },
+  handler: {
+    kind: "interaction",
+    steps: [{ kind: "click", selector: "#cancel-order" }],
+  },
   confidence: 0.8,
 };
 

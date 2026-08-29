@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   agentSelectionEval,
   descriptionBudgetEval,
+  evidenceTraceabilityEval,
   exampleFromSchema,
+  outputContractEval,
   schemaRoundTripEval,
 } from "../src/evals";
 import type { ActionContract } from "@sodium/contracts";
 
 function contract(overrides: Partial<ActionContract> = {}): ActionContract {
   return {
-    contractVersion: 1,
+    contractVersion: 2,
     actionId: "act_0123456789abcdef",
     name: "list_products",
     title: "List products",
@@ -20,8 +22,30 @@ function contract(overrides: Partial<ActionContract> = {}): ActionContract {
       required: ["category"],
       additionalProperties: false,
     },
-    output: { description: "Product list." },
-    evidence: [],
+    output: {
+      description: "Product list.",
+      schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean", const: true },
+          data: { type: "object", additionalProperties: true },
+        },
+        required: ["ok", "data"],
+        additionalProperties: false,
+      },
+    },
+    evidence: [
+      {
+        kind: "source",
+        primitive: "route",
+        filePath: "app/products/page.tsx",
+        startLine: 1,
+        endLine: 4,
+        snippetSha256: "a".repeat(64),
+        excerpt: "export default function Products() {}",
+        summary: "Products route",
+      },
+    ],
     routes: [{ pathPattern: "/products" }],
     auth: { required: false, roles: [] },
     riskLevel: "read_only",
@@ -78,6 +102,43 @@ describe("descriptionBudgetEval", () => {
       descriptionBudgetEval(contract({ description: "x".repeat(600) })).passed,
     ).toBe(false);
     expect(descriptionBudgetEval(contract()).passed).toBe(true);
+  });
+});
+
+describe("outputContractEval", () => {
+  it("accepts the exact successful runtime envelope", () => {
+    expect(outputContractEval(contract()).passed).toBe(true);
+  });
+
+  it("rejects a schema that omits a runtime field", () => {
+    const result = outputContractEval(
+      contract({
+        output: {
+          description: "Incorrect output.",
+          schema: {
+            type: "object",
+            properties: { ok: { type: "boolean", const: true } },
+            required: ["ok"],
+            additionalProperties: false,
+          },
+        },
+      }),
+    );
+    expect(result.passed).toBe(false);
+  });
+});
+
+describe("evidenceTraceabilityEval", () => {
+  it("accepts handler-matching evidence", () => {
+    expect(evidenceTraceabilityEval(contract()).passed).toBe(true);
+  });
+
+  it("requires auth evidence for an auth claim", () => {
+    expect(
+      evidenceTraceabilityEval(
+        contract({ auth: { required: true, roles: [] } }),
+      ).passed,
+    ).toBe(false);
   });
 });
 

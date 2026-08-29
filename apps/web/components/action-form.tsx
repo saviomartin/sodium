@@ -3,10 +3,14 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/lib/actions";
+import {
+  trackProductEvent,
+  type ProductAnalyticsEvent,
+} from "@/lib/product-analytics";
 import { cn } from "./ui";
 
 /**
- * Small client bridge for server actions: pending state on the submit button
+ * Small client wrapper for server actions: pending state on the submit button
  * and errors rendered next to where the action happens.
  */
 
@@ -20,15 +24,23 @@ export function ActionForm({
   children,
   className,
   successMessage,
+  submitEvent,
 }: {
   action: ServerAction;
   children: React.ReactNode;
   className?: string;
   successMessage?: string;
+  submitEvent?: ProductAnalyticsEvent;
 }) {
   const [state, formAction] = useActionState(action, null);
   return (
-    <form action={formAction} className={className}>
+    <form
+      action={formAction}
+      className={className}
+      onSubmit={() => {
+        if (submitEvent) trackProductEvent(submitEvent);
+      }}
+    >
       {children}
       {state && !state.ok && state.error && (
         <p role="alert" className="mt-2 text-sm text-red-700 text-pretty">

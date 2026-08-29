@@ -48,6 +48,18 @@ function analysis(overrides: Partial<StaticAnalysis> = {}): StaticAnalysis {
       },
     ],
     links: [],
+    controls: [
+      {
+        selector: "#cancel-order",
+        label: "Cancel order",
+        event: "click",
+        actionName: "cancelOrder",
+        routeBindings: [{ urlPattern: "/products", pathPattern: "/products" }],
+        span: { filePath: "app/products/page.tsx", startLine: 6, endLine: 6 },
+        excerpt:
+          '<button id="cancel-order" onClick={cancelOrder}>Cancel order</button>',
+      },
+    ],
     zodSchemas: [],
     authSignals: [],
     warnings: [],
@@ -58,7 +70,7 @@ function analysis(overrides: Partial<StaticAnalysis> = {}): StaticAnalysis {
 
 function manifest(): ToolManifest {
   return {
-    manifestVersion: 1,
+    manifestVersion: 2,
     siteId: "site_fixtureshop01",
     origins: ["http://localhost:4000"],
     version: 1,
@@ -118,7 +130,10 @@ function manifest(): ToolManifest {
         riskLevel: "destructive",
         confirmation: "required",
         routes: [{ pathPattern: "/**" }],
-        handler: { kind: "bridge", bridgeKey: "actions.cancel_order" },
+        handler: {
+          kind: "interaction",
+          steps: [{ kind: "click", selector: "#cancel-order" }],
+        },
       },
     ],
   };
@@ -181,8 +196,8 @@ describe("compareManifestToAnalysis", () => {
     );
   });
 
-  it("flags removed server actions behind bridge keys", () => {
-    const changed = analysis({ serverActions: [] });
+  it("flags removed browser controls", () => {
+    const changed = analysis({ controls: [] });
     const findings = compareManifestToAnalysis(manifest(), changed);
     expect(findings).toContainEqual(
       expect.objectContaining({

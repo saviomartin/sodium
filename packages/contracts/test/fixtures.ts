@@ -5,24 +5,29 @@ export function makeContract(
   overrides: Partial<ActionContract> = {},
 ): ActionContract {
   return {
-    contractVersion: 1,
+    contractVersion: 2,
     actionId: "act_0123456789abcdef",
     name: "list_products",
     title: "List products",
     description: "Reads the visible product catalog from the products page.",
     inputSchema: {
       type: "object",
-      properties: {
-        category: {
-          type: "string",
-          description: "Optional category filter",
-          maxLength: 64,
-        },
-      },
+      properties: {},
       required: [],
       additionalProperties: false,
     },
-    output: { description: "Array of product names and prices." },
+    output: {
+      description: "Array of product names and prices.",
+      schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean", const: true },
+          data: { type: "object", additionalProperties: true },
+        },
+        required: ["ok", "data"],
+        additionalProperties: false,
+      },
+    },
     evidence: [
       {
         kind: "source",
@@ -55,7 +60,7 @@ export function makeManifest(
 ): ToolManifest {
   const contract = makeContract();
   return {
-    manifestVersion: 1,
+    manifestVersion: 2,
     siteId: "site_abcd1234efgh",
     origins: ["http://localhost:4000"],
     version: 1,

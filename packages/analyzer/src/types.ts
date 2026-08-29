@@ -83,6 +83,8 @@ export interface FormInfo {
   /** Source-grounded selector the hosted loader can safely resolve. */
   selector?: string;
   fields: FormFieldInfo[];
+  /** Password, file, OTP, or CAPTCHA controls make partial agent submission unsafe. */
+  hasSensitiveFields?: boolean;
   /** Server action identifier, or a literal action URL. */
   action:
     | { kind: "server_action"; name: string }
@@ -98,6 +100,19 @@ export interface LinkInfo {
   /** Visible or accessible source label when statically recoverable. */
   label?: string;
   /** Pages that render the link, including through imported components. */
+  routeBindings: { urlPattern: string; pathPattern: string }[];
+  excerpt: string;
+}
+
+export interface ControlInfo {
+  span: SourceSpan;
+  /** Stable CSS selector proven from a literal source attribute. */
+  selector?: string;
+  /** Exact accessible name for a native button when no stable selector exists. */
+  accessibleName?: string;
+  label: string;
+  event: "click" | "form_action";
+  actionName?: string;
   routeBindings: { urlPattern: string; pathPattern: string }[];
   excerpt: string;
 }
@@ -127,6 +142,8 @@ export interface StaticAnalysis {
   forms: FormInfo[];
   /** Literal, same-origin navigation affordances rendered by the app. */
   links: LinkInfo[];
+  /** Source-selectable buttons/controls whose existing browser behavior is executable. */
+  controls?: ControlInfo[];
   zodSchemas: ZodSchemaInfo[];
   /** File-level auth signals not tied to a specific primitive. */
   authSignals: AuthSignalInfo[];

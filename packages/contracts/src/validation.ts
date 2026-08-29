@@ -82,6 +82,14 @@ export function validateContract(input: unknown): ContractValidationResult {
         err("output_schema_limits", schemaIssue.message, schemaIssue.path),
       );
     }
+  } else {
+    issues.push(
+      warn(
+        "missing_output_schema",
+        "output description is present but no machine-checkable output schema is attached",
+        "output.schema",
+      ),
+    );
   }
 
   // Risk / confirmation floor.
@@ -162,24 +170,33 @@ function checkHandlerRiskConsistency(
       }
       break;
     case "form":
+    case "interaction":
       if (riskLevel === "read_only") {
         issues.push(
           err(
             "handler_risk_mismatch",
-            "form submission cannot be classified read_only",
-          ),
-        );
-      }
-      if (riskAtLeast(riskLevel, "destructive")) {
-        issues.push(
-          err(
-            "unsafe_effect",
-            "destructive/financial actions must use a bridge handler with backend confirmation, not automatic form submission",
+            `${handler.kind} handlers that operate controls cannot be classified read_only`,
           ),
         );
       }
       break;
-    case "bridge":
+    case "request":
+      if (handler.method === "GET" && riskLevel !== "read_only") {
+        issues.push(
+          err(
+            "handler_risk_mismatch",
+            "GET request handlers must be classified read_only",
+          ),
+        );
+      }
+      if (handler.method !== "GET" && riskLevel === "read_only") {
+        issues.push(
+          err(
+            "handler_risk_mismatch",
+            `${handler.method} request handlers cannot be classified read_only`,
+          ),
+        );
+      }
       break;
   }
   return issues;
@@ -190,12 +207,14 @@ function checkHandlerInputs(contract: ActionContract): ContractIssue[] {
   const props = new Set(Object.keys(contract.inputSchema.properties ?? {}));
   const required = new Set(contract.inputSchema.required ?? []);
   const handler: HandlerBinding = contract.handler;
+  const used = new Set<string>();
 
   if (handler.kind === "navigate") {
     const params = [
       ...handler.urlTemplate.matchAll(/\{([a-zA-Z0-9_]+)\}/g),
     ].map((m) => m[1]!);
     for (const param of params) {
+      used.add(param);
       if (!props.has(param)) {
         issues.push(
           err(
@@ -215,6 +234,7 @@ function checkHandlerInputs(contract: ActionContract): ContractIssue[] {
   }
   if (handler.kind === "form") {
     for (const key of Object.keys(handler.fieldMap)) {
+      used.add(key);
       if (!props.has(key)) {
         issues.push(
           err(
@@ -223,6 +243,79 @@ function checkHandlerInputs(contract: ActionContract): ContractIssue[] {
           ),
         );
       }
+    }
+    const targetOwners = new Map<string, string>();
+    for (const [inputName, target] of Object.entries(handler.fieldMap)) {
+      const owner = targetOwners.get(target);
+      if (owner && owner !== inputName) {
+        issues.push(
+          err(
+            "duplicate_form_target",
+            `inputs "${owner}" and "${inputName}" both map to form field "${target}"`,
+          ),
+        );
+      } else {
+        targetOwners.set(target, inputName);
+      }
+    }
+  }
+  if (handler.kind === "interaction") {
+    for (const step of handler.steps) {
+      if (step.kind === "set" && !props.has(step.input)) {
+        issues.push(
+          err(
+            "unbound_interaction_input",
+            `interaction step references unknown input "${step.input}"`,
+          ),
+        );
+      }
+      if (step.kind === "set") used.add(step.input);
+    }
+  }
+  if (handler.kind === "request") {
+    const templateParams = [
+      ...handler.pathTemplate.matchAll(/\{([a-zA-Z0-9_]+)\}/g),
+    ].map((match) => match[1]!);
+    for (const param of templateParams) {
+      used.add(param);
+      if (!props.has(param))
+        issues.push(
+          err(
+            "unbound_template_param",
+            `pathTemplate references unknown input "${param}"`,
+          ),
+        );
+      else if (!required.has(param))
+        issues.push(
+          err(
+            "optional_template_param",
+            `pathTemplate input "${param}" must be required`,
+          ),
+        );
+    }
+    for (const key of [
+      ...Object.keys(handler.queryMap ?? {}),
+      ...Object.keys(handler.body?.fieldMap ?? {}),
+    ]) {
+      used.add(key);
+      if (!props.has(key))
+        issues.push(
+          err(
+            "unbound_request_field",
+            `request mapping references unknown input "${key}"`,
+          ),
+        );
+    }
+  }
+  for (const property of props) {
+    if (!used.has(property)) {
+      issues.push(
+        err(
+          "unused_input",
+          `input "${property}" is exposed to agents but is not consumed by the ${handler.kind} handler`,
+          `inputSchema.properties.${property}`,
+        ),
+      );
     }
   }
   return issues;
@@ -302,8 +395,10 @@ function handlerTargetKey(handler: HandlerBinding): string | null {
       return `navigate:${handler.urlTemplate}`;
     case "form":
       return `form:${handler.formSelector}`;
-    case "bridge":
-      return `bridge:${handler.bridgeKey}`;
+    case "interaction":
+      return `interaction:${JSON.stringify(handler.steps)}`;
+    case "request":
+      return `request:${handler.method}:${handler.pathTemplate}`;
     case "extract":
       return null;
   }

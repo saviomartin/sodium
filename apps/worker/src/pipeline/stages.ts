@@ -26,7 +26,6 @@ import { selectRepoProvider } from "../providers/repo-provider";
 import {
   selectAiProvider,
   isScriptFormCapability,
-  serverActionInputSchema,
 } from "../providers/ai-provider";
 import {
   assembleContract,
@@ -437,31 +436,16 @@ export function countPotentialCapabilities(analysis: StaticAnalysis): number {
       .map((link) => link.href),
   );
   const forms = analysis.forms.filter(isScriptFormCapability).length;
-  const actionNameCounts = new Map<string, number>();
-  for (const action of analysis.serverActions) {
-    actionNameCounts.set(
-      action.name,
-      (actionNameCounts.get(action.name) ?? 0) + 1,
-    );
-  }
-  const coveredActions = new Set(
-    analysis.forms
-      .filter(
-        (form) =>
-          isScriptFormCapability(form) &&
-          form.action.kind === "server_action" &&
-          actionNameCounts.get(form.action.name) === 1,
-      )
-      .map((form) =>
-        form.action.kind === "server_action" ? form.action.name : "",
-      ),
+  const controls = new Set(
+    (analysis.controls ?? []).map(
+      (control) =>
+        `${control.selector ?? `button:${control.accessibleName ?? ""}`}\u0000${control.routeBindings
+          .map((route) => route.pathPattern)
+          .sort()
+          .join("\u0000")}`,
+    ),
   );
-  const actions = analysis.serverActions.filter(
-    (action) =>
-      !coveredActions.has(action.name) &&
-      serverActionInputSchema(analysis, action) !== null,
-  ).length;
-  return pages.size + links.size + forms + actions;
+  return pages.size + links.size + forms + controls.size;
 }
 
 export function assertCandidateCoverage(

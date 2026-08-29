@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { RiskLevel } from "@sodium/contracts";
 import { setCandidatesEnabledAction } from "@/lib/actions";
+import { trackProductEvent } from "@/lib/product-analytics";
 import { ConfidenceMeter, RiskBadge, cn } from "./ui";
 import { useRepositorySettingsState } from "./repository-settings-state";
+import { ToolDetailsDialog, type ToolDetail } from "./tool-details-dialog";
 
 export interface CandidateRow {
   id: string;
@@ -17,9 +18,9 @@ export interface CandidateRow {
   risk_level: RiskLevel;
   confidence: number;
   status: string;
-  handlerKind: "navigate" | "extract" | "form" | "bridge";
+  scopePaths: string[];
+  detail: ToolDetail;
   enabled: boolean;
-  repoId: string;
 }
 
 function Toggle({
@@ -63,9 +64,11 @@ function Toggle({
 export function ReviewTable({
   candidates,
   siteId,
+  locked = false,
 }: {
   candidates: CandidateRow[];
   siteId: string;
+  locked?: boolean;
 }) {
   const router = useRouter();
   const { beginEdit, endEdit } = useRepositorySettingsState();
@@ -75,6 +78,9 @@ export function ReviewTable({
     ),
   );
   const [error, setError] = useState<string | null>(null);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
+    null,
+  );
   const [pending, startTransition] = useTransition();
   const actionable = candidates.filter(
     (candidate) => candidate.status !== "rejected",
@@ -84,6 +90,9 @@ export function ReviewTable({
   ).length;
   const allEnabled =
     actionable.length > 0 && enabledCount === actionable.length;
+  const selectedCandidate =
+    candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+    null;
 
   function update(candidateIds: string[], nextEnabled: boolean) {
     const previous = { ...enabled };
@@ -105,6 +114,13 @@ export function ReviewTable({
           setError(result.error ?? "Tool availability could not be updated.");
           return;
         }
+        trackProductEvent({
+          name: "Tool Availability Updated",
+          properties: {
+            enabled: nextEnabled,
+            scope: candidateIds.length === 1 ? "single" : "all",
+          },
+        });
         router.refresh();
       } finally {
         endEdit();
@@ -116,7 +132,9 @@ export function ReviewTable({
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-neutral-500 text-pretty">
-          All tools start disabled. Republish after changing your selection.
+          {locked
+            ? "Subscribe to enable, edit, and publish these generated tools."
+            : "All tools start disabled. Republish after changing your selection."}
         </p>
         <span className="text-xs text-neutral-500 tabular-nums">
           {enabledCount} of {actionable.length} available tools enabled
@@ -137,6 +155,7 @@ export function ReviewTable({
           <thead>
             <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
               <th className="py-2 pr-4 font-medium">Tool</th>
+              <th className="py-2 pr-4 font-medium">Scope</th>
               <th className="py-2 pr-4 font-medium">Risk</th>
               <th className="py-2 pr-4 font-medium">Confidence</th>
               <th className="py-2 text-right font-medium">
@@ -144,7 +163,7 @@ export function ReviewTable({
                   Enable all
                   <Toggle
                     checked={allEnabled}
-                    disabled={pending || actionable.length === 0}
+                    disabled={locked || pending || actionable.length === 0}
                     label={
                       allEnabled ? "Disable all tools" : "Enable all tools"
                     }
@@ -162,23 +181,20 @@ export function ReviewTable({
           <tbody className="divide-y divide-neutral-100">
             {candidates.map((candidate) => {
               const isEnabled = Boolean(enabled[candidate.id]);
+              const scopeLabel = candidate.scopePaths.join(", ");
               return (
                 <tr key={candidate.id} className="align-middle">
                   <td className="max-w-xl py-3 pr-4">
-                    <Link
-                      href={`/repos/${candidate.repoId}/candidates/${candidate.id}`}
-                      className="font-medium text-blue-700 hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCandidateId(candidate.id)}
+                      className="rounded-sm text-left font-medium text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
                       {candidate.title}
-                    </Link>
+                    </button>
                     <p className="font-mono text-xs text-neutral-400">
                       {candidate.name}
                     </p>
-                    {candidate.handlerKind === "bridge" ? (
-                      <p className="mt-1 text-xs font-medium text-amber-700">
-                        Reviewed integration PR required
-                      </p>
-                    ) : null}
                     {candidate.status === "rejected" ? (
                       <p className="mt-1 text-xs font-medium text-red-700">
                         Validation failed — open details
@@ -186,6 +202,14 @@ export function ReviewTable({
                     ) : null}
                     <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 text-pretty">
                       {candidate.description}
+                    </p>
+                  </td>
+                  <td className="max-w-56 py-3 pr-4">
+                    <p
+                      className="line-clamp-2 font-mono text-xs text-neutral-700"
+                      title={scopeLabel || undefined}
+                    >
+                      {scopeLabel || "Scope unavailable"}
                     </p>
                   </td>
                   <td className="py-3 pr-4">
@@ -197,7 +221,9 @@ export function ReviewTable({
                   <td className="py-3 text-right">
                     <Toggle
                       checked={isEnabled}
-                      disabled={pending || candidate.status === "rejected"}
+                      disabled={
+                        locked || pending || candidate.status === "rejected"
+                      }
                       label={`${isEnabled ? "Disable" : "Enable"} ${candidate.title}`}
                       onChange={(checked) => update([candidate.id], checked)}
                     />
@@ -208,6 +234,17 @@ export function ReviewTable({
           </tbody>
         </table>
       </div>
+
+      <ToolDetailsDialog
+        tool={selectedCandidate?.detail ?? null}
+        available={
+          selectedCandidate ? Boolean(enabled[selectedCandidate.id]) : false
+        }
+        open={selectedCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCandidateId(null);
+        }}
+      />
     </div>
   );
 }

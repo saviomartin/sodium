@@ -7,7 +7,6 @@ import {
 } from "@sodium/contracts/signing";
 import { ToolManifestSchema } from "@sodium/contracts";
 import { bootstrap } from "../src/loader";
-import { registerBridgeHandlers } from "../src/bridge";
 import type { ModelContextLike, WebMcpToolDescriptor } from "../src/types";
 import { makeManifest, makeTool } from "./manifest-fixture";
 
@@ -156,28 +155,22 @@ describe("bootstrap", () => {
     expect(handle!.registered()).toEqual(["read_account"]);
   });
 
-  it("advertises bridge tools only while their handler is registered", async () => {
+  it("advertises loader-native interaction tools without customer code", async () => {
+    document.body.innerHTML = `<button id="add-to-cart">Add to cart</button>`;
     const manifest = makeManifest({
       tools: [
         makeTool({
           name: "add_to_cart",
           title: "Add to cart",
-          handler: { kind: "bridge", bridgeKey: "actions.add_to_cart" },
+          handler: {
+            kind: "interaction",
+            steps: [{ kind: "click", selector: "#add-to-cart" }],
+          },
         }),
       ],
     });
     const { handle } = await boot(signedEnvelope(manifest));
-    expect(handle!.registered()).toEqual([]);
-
-    const unregister = registerBridgeHandlers({
-      "actions.add_to_cart": async () => ({ added: true }),
-    });
-    await vi.waitFor(() =>
-      expect(handle!.registered()).toEqual(["add_to_cart"]),
-    );
-
-    unregister();
-    await vi.waitFor(() => expect(handle!.registered()).toEqual([]));
+    expect(handle!.registered()).toEqual(["add_to_cart"]);
     handle!.dispose();
   });
 });

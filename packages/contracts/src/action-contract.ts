@@ -7,7 +7,7 @@ import { JsonSchemaSubsetSchema, ToolInputSchemaSchema } from "./json-schema";
 /**
  * Handler bindings describe HOW the runtime executes an approved action.
  * Only declarative data crosses the wire — never JavaScript. Complex actions
- * bind to `bridge` handlers that live in the customer's own repository.
+ * are expressed as bounded interaction recipes or same-origin requests.
  */
 
 export const NavigateHandlerSchema = z
@@ -49,22 +49,120 @@ export const FormHandlerSchema = z
   })
   .strict();
 
-export const BridgeHandlerSchema = z
+const SelectorSchema = z.string().min(1).max(512);
+
+export const InteractionStepSchema = z.union([
+  z
+    .object({
+      kind: z.literal("set"),
+      selector: SelectorSchema,
+      input: z.string().min(1).max(64),
+    })
+    .strict(),
+  z.object({ kind: z.literal("click"), selector: SelectorSchema }).strict(),
+  z
+    .object({
+      kind: z.literal("click"),
+      role: z.literal("button"),
+      name: z.string().min(1).max(160),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("submit"),
+      formSelector: SelectorSchema,
+      submitSelector: SelectorSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("wait_for"),
+      selector: SelectorSchema,
+      state: z.enum(["present", "absent"]),
+      timeoutMs: z.number().int().min(50).max(10_000).default(3_000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("read"),
+      selector: SelectorSchema,
+      output: z.string().min(1).max(64),
+      attribute: z
+        .string()
+        .min(1)
+        .max(64)
+        .regex(/^(?!on)/i)
+        .optional(),
+    })
+    .strict(),
+]);
+
+export const InteractionPostconditionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({ kind: z.literal("selector_present"), selector: SelectorSchema })
+    .strict(),
+  z
+    .object({ kind: z.literal("selector_absent"), selector: SelectorSchema })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("path_matches"),
+      pathPattern: z.string().min(1).max(512).regex(/^\//),
+    })
+    .strict(),
+]);
+
+export const InteractionHandlerSchema = z
   .object({
-    kind: z.literal("bridge"),
-    /** Key the customer's generated action bridge registers, e.g. "orders.cancel". */
-    bridgeKey: z
-      .string()
-      .max(128)
-      .regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/),
+    kind: z.literal("interaction"),
+    steps: z.array(InteractionStepSchema).min(1).max(8),
+    postcondition: InteractionPostconditionSchema.optional(),
   })
   .strict();
+
+export const RequestHandlerSchema = z
+  .object({
+    kind: z.literal("request"),
+    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+    pathTemplate: z
+      .string()
+      .min(1)
+      .max(1024)
+      .regex(/^\/(?!\/)/, "pathTemplate must be a same-origin path"),
+    queryMap: z
+      .record(z.string().min(1).max(64), z.string().min(1).max(128))
+      .optional(),
+    body: z
+      .object({
+        encoding: z.enum(["json", "form"]),
+        fieldMap: z.record(
+          z.string().min(1).max(64),
+          z.string().min(1).max(128),
+        ),
+      })
+      .strict()
+      .optional(),
+    response: z.enum(["json", "text", "status"]),
+  })
+  .strict()
+  .superRefine((handler, ctx) => {
+    if (
+      (handler.method === "GET" || handler.method === "DELETE") &&
+      handler.body
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${handler.method} handlers cannot include a body`,
+      });
+    }
+  });
 
 export const HandlerBindingSchema = z.discriminatedUnion("kind", [
   NavigateHandlerSchema,
   ExtractHandlerSchema,
   FormHandlerSchema,
-  BridgeHandlerSchema,
+  InteractionHandlerSchema,
+  RequestHandlerSchema,
 ]);
 export type HandlerBinding = z.infer<typeof HandlerBindingSchema>;
 
@@ -109,7 +207,7 @@ export const CANDIDATE_STATUSES = [
 export const CandidateStatusSchema = z.enum(CANDIDATE_STATUSES);
 export type CandidateStatus = z.infer<typeof CandidateStatusSchema>;
 
-export const CONTRACT_VERSION = 1;
+export const CONTRACT_VERSION = 2;
 
 /**
  * The transport-neutral action contract. WebMCP is one projection of this

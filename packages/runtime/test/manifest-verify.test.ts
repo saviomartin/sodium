@@ -140,6 +140,75 @@ describe("validateManifest strictness", () => {
     expect(validateManifest(manifest)).toBeNull();
   });
 
+  it("accepts bounded interaction and same-origin request handlers", () => {
+    const manifest = makeManifest({
+      tools: [
+        makeTool({
+          name: "cancel_order",
+          handler: {
+            kind: "interaction",
+            steps: [{ kind: "click", selector: "#cancel-order" }],
+            postcondition: { kind: "selector_absent", selector: "#open-order" },
+          },
+        }),
+        makeTool({
+          name: "sign_out",
+          handler: {
+            kind: "interaction",
+            steps: [{ kind: "click", role: "button", name: "Sign out" }],
+          },
+        }),
+        makeTool({
+          name: "add_to_cart",
+          handler: {
+            kind: "request",
+            method: "POST",
+            pathTemplate: "/api/cart/{productId}",
+            body: { encoding: "json", fieldMap: { quantity: "quantity" } },
+            response: "json",
+          },
+        }),
+      ],
+    });
+    expect(validateManifest(manifest)).not.toBeNull();
+  });
+
+  it("rejects cross-origin and body-bearing GET requests", () => {
+    expect(
+      validateManifest(
+        makeManifest({
+          tools: [
+            makeTool({
+              handler: {
+                kind: "request",
+                method: "POST",
+                pathTemplate: "//evil.example",
+                response: "status",
+              },
+            }),
+          ],
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      validateManifest(
+        makeManifest({
+          tools: [
+            makeTool({
+              handler: {
+                kind: "request",
+                method: "GET",
+                pathTemplate: "/api/items",
+                body: { encoding: "json", fieldMap: {} },
+                response: "json",
+              },
+            }),
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("rejects unknown schema keywords ($ref smuggling)", () => {
     const manifest = makeManifest({
       tools: [
@@ -157,7 +226,7 @@ describe("validateManifest strictness", () => {
     ).toBeNull();
     expect(validateManifest(makeManifest({ version: 0 }))).toBeNull();
     expect(
-      validateManifest(makeManifest({ manifestVersion: 2 as never })),
+      validateManifest(makeManifest({ manifestVersion: 1 as never })),
     ).toBeNull();
   });
 });

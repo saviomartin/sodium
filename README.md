@@ -16,14 +16,14 @@ only as the RLS tenant boundary.
 
 ## Repository layout
 
-| Path                 | Purpose                                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `apps/web`           | Next.js app: home/auth, repository connection, analysis, tool controls, Settings               |
-| `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, AI synthesis, validation, PR generation |
-| `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                                   |
-| `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                             |
-| `packages/runtime`   | Signed manifest loader, WebMCP adapter, action bridge                                          |
-| `supabase`           | Auth-linked personal workspaces, RLS schema, queue, migrations                                 |
+| Path                 | Purpose                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------- |
+| `apps/web`           | Next.js app: home/auth, repository connection, analysis, tool controls, Settings    |
+| `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, AI wording, validation, sync |
+| `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                        |
+| `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                  |
+| `packages/runtime`   | Signed manifest loader, WebMCP adapter, declarative browser/request handlers        |
+| `supabase`           | Auth-linked personal workspaces, RLS schema, queue, migrations                      |
 
 The standalone test application lives at
 [`foundative/webmcp-fixture-shop`](https://github.com/foundative/webmcp-fixture-shop).
@@ -64,6 +64,12 @@ real repository to test the same user flow as production.
 
 GitHub App permissions and callback URLs are documented in
 [`docs/github-app.md`](docs/github-app.md).
+
+Stripe billing uses one Customer and one $49/month subscription per connected
+repository. The first successful repository analysis is free; later manual and
+push-triggered analysis, tool changes, publishing, rollback, and analytics
+require that repository's subscription. Run `stripe listen --forward-to
+localhost:3000/api/webhooks/stripe --latest` for local webhook delivery.
 
 Open `http://localhost:3000`, continue with GitHub, and choose
 `foundative/webmcp-fixture-shop` from the home page.
@@ -107,5 +113,6 @@ cannot leave completed work stuck on screen.
 - Every exposed table has RLS. Authorization data stays in database roles, not
   user-editable metadata.
 - Tool changes publish a signed, versioned manifest automatically.
-- Account deletion removes app rows, stored artifacts, sessions, and the auth
-  identity; it never deletes or modifies the user's GitHub repositories.
+- Account deletion first cancels every repository subscription immediately,
+  then removes app rows, stored artifacts, sessions, and the auth identity. It
+  never deletes or modifies the user's GitHub repositories.

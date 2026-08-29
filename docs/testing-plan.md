@@ -38,7 +38,7 @@ corepack pnpm dev
 6. Keep the page open until all stages finish. Do not reload.
 7. Sleep/background the tab during a second run, then return. The UI must
    reconcile to the database within 2.5 seconds.
-8. Review, approve, publish, roll back, and generate an integration PR.
+8. Review, approve, publish, roll back, and verify the one-script installation.
 
 ## 4. Edge cases
 

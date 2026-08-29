@@ -44,6 +44,13 @@ export function buildPrimitives(analysis: StaticAnalysis): PrimitiveRef[] {
       link as unknown as Record<string, unknown>,
     );
   }
+  for (const control of analysis.controls ?? []) {
+    push(
+      "control",
+      `${control.event} control "${control.label}" (${control.span.filePath})`,
+      control as unknown as Record<string, unknown>,
+    );
+  }
   for (const action of analysis.serverActions) {
     push(
       "server_action",
@@ -57,6 +64,18 @@ export function buildPrimitives(analysis: StaticAnalysis): PrimitiveRef[] {
       `${handler.method} ${handler.urlPattern} in ${handler.span.filePath}`,
       handler as unknown as Record<string, unknown>,
     );
+  }
+  for (const schema of analysis.zodSchemas) {
+    push("zod_schema", `Zod schema ${schema.name} in ${schema.span.filePath}`, {
+      ...schema,
+      excerpt: `${schema.name}: ${JSON.stringify(schema.jsonSchema)}`,
+    } as Record<string, unknown>);
+  }
+  for (const signal of analysis.authSignals) {
+    push("auth_check", `auth check ${signal.kind} in ${signal.span.filePath}`, {
+      ...signal,
+      excerpt: `${signal.kind}: ${signal.detail}`,
+    } as Record<string, unknown>);
   }
   return primitives;
 }
@@ -79,11 +98,19 @@ function evidenceFromPrimitive(primitive: PrimitiveRef): Evidence | null {
         ? "form"
         : primitive.kind === "link"
           ? "route"
-          : primitive.kind;
+          : primitive.kind === "control"
+            ? "ui_event"
+            : primitive.kind;
   return {
     kind: "source",
     primitive: primitiveKind as
-      "route" | "form" | "server_action" | "route_handler",
+      | "route"
+      | "form"
+      | "server_action"
+      | "route_handler"
+      | "zod_schema"
+      | "auth_check"
+      | "ui_event",
     filePath: span.filePath,
     startLine: span.startLine,
     endLine: span.endLine,
@@ -130,10 +157,19 @@ export function assembleContract(
     title: proposal.title,
     description: proposal.description,
     inputSchema: proposal.inputSchema,
-    output: { description: proposal.outputDescription },
+    output: {
+      description: proposal.outputDescription,
+      schema: proposal.outputSchema,
+    },
     evidence,
     routes: proposal.routes,
-    auth: { required: proposal.authRequired, roles: proposal.roles },
+    auth: {
+      required: proposal.authRequired,
+      roles: proposal.roles,
+      ...(proposal.authDetectedFrom
+        ? { detectedFrom: proposal.authDetectedFrom }
+        : {}),
+    },
     riskLevel: proposal.riskLevel,
     confirmation: proposal.confirmation,
     handler: proposal.handler,
@@ -151,8 +187,13 @@ function capabilityTarget(proposal: ProposedTool): string {
         .map((route) => route.pathPattern)
         .sort()
         .join("\u0000")}`;
-    case "bridge":
-      return proposal.handler.bridgeKey;
+    case "interaction":
+      return `${JSON.stringify(proposal.handler.steps)}\u0000${proposal.routes
+        .map((route) => route.pathPattern)
+        .sort()
+        .join("\u0000")}`;
+    case "request":
+      return `${proposal.handler.method}:${proposal.handler.pathTemplate}`;
     case "extract":
       return proposal.handler.fields
         .map(
