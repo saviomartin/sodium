@@ -10,9 +10,11 @@ import { useRepositorySettingsState } from "./repository-settings-state";
 export function OriginsEditor({
   siteId,
   initialOrigins,
+  locked = false,
 }: {
   siteId: string;
   initialOrigins: string[];
+  locked?: boolean;
 }) {
   const router = useRouter();
   const { beginEdit, endEdit } = useRepositorySettingsState();
@@ -96,7 +98,7 @@ export function OriginsEditor({
             type="url"
             className={inputClass}
             placeholder="https://app.example.com"
-            disabled={pending}
+            disabled={locked || pending}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -107,7 +109,7 @@ export function OriginsEditor({
           <button
             type="button"
             className={secondaryButtonClass}
-            disabled={pending}
+            disabled={locked || pending}
             onClick={addOrigin}
           >
             {pending ? "Saving…" : "Add"}
@@ -128,12 +130,14 @@ export function OriginsEditor({
             <button
               type="button"
               className="shrink-0 text-xs font-medium text-neutral-500 hover:text-red-700 disabled:opacity-50"
-              disabled={pending || origins.length === 1}
+              disabled={locked || pending || origins.length === 1}
               aria-label={`Remove ${origin}`}
               title={
-                origins.length === 1
-                  ? "At least one allowed origin is required"
-                  : undefined
+                locked
+                  ? "Subscribe to manage allowed origins"
+                  : origins.length === 1
+                    ? "At least one allowed origin is required"
+                    : undefined
               }
               onClick={() => persist(origins.filter((item) => item !== origin))}
             >

@@ -56,7 +56,13 @@ export function buildAgentPrompt(snippet: string): string {
   ].join("\n");
 }
 
-export function CopySnippet({ snippet }: { snippet: string }) {
+export function CopySnippet({
+  snippet,
+  disabled = false,
+}: {
+  snippet: string;
+  disabled?: boolean;
+}) {
   const [copied, setCopied] = useState<"snippet" | "prompt" | null>(null);
 
   const copy = async (text: string, kind: "snippet" | "prompt") => {
@@ -82,6 +88,7 @@ export function CopySnippet({ snippet }: { snippet: string }) {
         <button
           type="button"
           className={secondaryButtonClass}
+          disabled={disabled}
           onClick={() => copy(snippet, "snippet")}
         >
           {copied === "snippet" ? "Copied" : "Copy snippet"}
@@ -90,6 +97,7 @@ export function CopySnippet({ snippet }: { snippet: string }) {
           type="button"
           className={secondaryButtonClass}
           title="Copy a ready-to-paste instruction for your coding agent"
+          disabled={disabled}
           onClick={() => copy(buildAgentPrompt(snippet), "prompt")}
         >
           <span className="flex items-center gap-1">

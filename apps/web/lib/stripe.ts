@@ -154,7 +154,24 @@ export async function createRepositoryCheckout(
     const existing = await client.checkout.sessions.retrieve(
       current.stripe_checkout_session_id,
     );
-    if (existing.status === "open" && existing.url) return existing.url;
+    if (
+      existing.status === "open" &&
+      existing.url &&
+      existing.allow_promotion_codes
+    ) {
+      return existing.url;
+    }
+    if (existing.status === "open") {
+      // Promotion-code support is fixed when Checkout is created. Retire an
+      // older code-less session instead of reusing it for up to 23 hours after
+      // this feature ships. A concurrent request may expire it first.
+      try {
+        await client.checkout.sessions.expire(existing.id);
+      } catch (error) {
+        const refreshed = await client.checkout.sessions.retrieve(existing.id);
+        if (refreshed.status === "open") throw error;
+      }
+    }
   }
 
   let customerId = current?.stripe_customer_id;
@@ -194,6 +211,7 @@ export async function createRepositoryCheckout(
       mode: "subscription",
       customer: customerId,
       line_items: [{ price: config.priceId, quantity: 1 }],
+      allow_promotion_codes: true,
       client_reference_id: owner.repositoryId,
       success_url: `${siteUrl()}/billing/return?repository_id=${owner.repositoryId}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl()}/repos/${owner.repositoryId}?checkout=canceled`,
@@ -364,7 +382,7 @@ export async function reconcileRepositorySubscriptions() {
           subscriptionId =
             typeof checkout.subscription === "string"
               ? checkout.subscription
-              : checkout.subscription?.id ?? null;
+              : (checkout.subscription?.id ?? null);
         }
         if (!subscriptionId) continue;
         const canonical = canonicalSubscription(

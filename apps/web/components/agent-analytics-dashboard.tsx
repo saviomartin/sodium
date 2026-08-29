@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import type { AgentAnalytics } from "@/lib/agent-analytics";
+import { cn } from "./ui";
 
 const number = new Intl.NumberFormat("en-US");
 
@@ -19,26 +21,49 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
-function RangePicker({ repoId, days }: { repoId: string; days: number }) {
+function RangePicker({
+  repoId,
+  days,
+  locked,
+}: {
+  repoId: string;
+  days: number;
+  locked: boolean;
+}) {
   return (
     <nav
       aria-label="Analytics date range"
       className="flex rounded-md border border-neutral-200 bg-neutral-50 p-0.5"
     >
-      {[7, 30, 90].map((range) => (
-        <Link
-          key={range}
-          href={`/repos/${repoId}?range=${range}d#agent-analytics`}
-          aria-current={range === days ? "page" : undefined}
-          className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-            range === days
-              ? "bg-white text-neutral-950 shadow-sm"
-              : "text-neutral-500 hover:text-neutral-950"
-          }`}
-        >
-          {range}d
-        </Link>
-      ))}
+      {[7, 30, 90].map((range) => {
+        const className = cn(
+          "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+          range === days
+            ? "bg-white text-neutral-950 shadow-sm"
+            : locked
+              ? "text-neutral-400"
+              : "text-neutral-500 hover:text-neutral-950",
+        );
+        return locked ? (
+          <span
+            key={range}
+            aria-current={range === days ? "page" : undefined}
+            aria-disabled="true"
+            className={className}
+          >
+            {range}d
+          </span>
+        ) : (
+          <Link
+            key={range}
+            href={`/repos/${repoId}?range=${range}d#agent-analytics`}
+            aria-current={range === days ? "page" : undefined}
+            className={className}
+          >
+            {range}d
+          </Link>
+        );
+      })}
     </nav>
   );
 }
@@ -207,10 +232,14 @@ export function AgentAnalyticsDashboard({
   repoId,
   managedTools,
   analytics,
+  locked = false,
+  unlockAction,
 }: {
   repoId: string;
   managedTools: string[];
   analytics: AgentAnalytics;
+  locked?: boolean;
+  unlockAction?: ReactNode;
 }) {
   const successRate = analytics.summary.toolCalls
     ? Math.round(
@@ -228,10 +257,20 @@ export function AgentAnalyticsDashboard({
       <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
         <div className="flex flex-wrap items-start justify-between gap-5 border-b border-neutral-100 px-5 py-5 sm:px-6">
           <div>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-emerald-700 uppercase">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                Collecting from agent.js
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wide uppercase",
+                  locked ? "text-blue-700" : "text-emerald-700",
+                )}
+              >
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    locked ? "bg-blue-500" : "bg-emerald-500",
+                  )}
+                />
+                {locked ? "Preview mode" : "Collecting from agent.js"}
               </span>
               <span className="text-xs text-neutral-400">
                 No prompts or page content collected
@@ -245,7 +284,14 @@ export function AgentAnalyticsDashboard({
               tools succeed, and which answer engines send people your way.
             </p>
           </div>
-          <RangePicker repoId={repoId} days={analytics.periodDays} />
+          <div className="flex flex-col items-end gap-3">
+            {locked ? unlockAction : null}
+            <RangePicker
+              repoId={repoId}
+              days={analytics.periodDays}
+              locked={locked}
+            />
+          </div>
         </div>
         <dl className="grid gap-y-5 px-5 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
           <Metric
@@ -274,12 +320,14 @@ export function AgentAnalyticsDashboard({
       {!hasActivity && (
         <section className="rounded-lg border border-blue-200 bg-blue-50 px-5 py-4">
           <p className="text-sm font-semibold text-blue-950">
-            Waiting for the first agent visit
+            {locked
+              ? "Unlock analytics to start collecting"
+              : "Waiting for the first agent visit"}
           </p>
           <p className="mt-1 text-sm leading-6 text-blue-800/80">
-            Data appears automatically after the installed script loads in a
-            compatible WebMCP browser, a tool runs, or someone follows a link
-            from a recognized answer engine.
+            {locked
+              ? "This dashboard will populate after you subscribe, publish the loader, and receive the first compatible agent or answer-engine visit."
+              : "Data appears automatically after the installed script loads in a compatible WebMCP browser, a tool runs, or someone follows a link from a recognized answer engine."}
           </p>
         </section>
       )}
