@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
@@ -23,6 +24,14 @@ const sqlRef: { sql: postgres.Sql | null } = { sql: null };
 
 class Rollback extends Error {}
 
+const atomicAvailabilityMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260829012000_atomic_tool_availability.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
 /** Runs `fn` in a transaction that is ALWAYS rolled back. */
 async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void> {
   await sqlRef
@@ -44,6 +53,15 @@ async function actAs(tx: Tx, userId: string): Promise<void> {
 /** Back to the privileged connection role (service-side code path). */
 async function actAsService(tx: Tx): Promise<void> {
   await tx`reset role`;
+}
+
+async function ensureAtomicAvailabilityFunction(tx: Tx): Promise<void> {
+  const [existing] = await tx<{ exists: boolean }[]>`
+    select to_regprocedure(
+      'public.set_candidates_enabled(uuid[],uuid,boolean)'
+    ) is not null as exists
+  `;
+  if (!existing?.exists) await tx.unsafe(atomicAvailabilityMigration);
 }
 
 /**
@@ -210,19 +228,16 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     });
   });
 
-  it("lets members read but not administer", async () => {
+  it("lets members read but not administer repositories", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await actAs(tx, t.carol);
       expect(
         await tx`select id from repositories where org_id = ${t.acmeOrg}`,
       ).toHaveLength(1);
-      await expectError(
-        tx,
-        /row-level security/,
-        (x) =>
-          x`insert into environments (repository_id, org_id, base_url) values (${t.acmeRepo}, ${t.acmeOrg}, 'https://x.test')`,
-      );
+      expect(
+        await tx`update repositories set name = 'blocked' where id = ${t.acmeRepo} returning id`,
+      ).toHaveLength(0);
     });
   });
 
@@ -326,6 +341,44 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         (x) =>
           x`select public.approve_candidate(${candidateId}, ${t.acmeSite})`,
       );
+    });
+  });
+
+  it("atomically disables and re-enables an approved tool without rejecting it", async () => {
+    await withRollback(async (tx) => {
+      await ensureAtomicAvailabilityFunction(tx);
+      const t = await seedTenants(tx);
+      const candidateId = await seedCandidate(tx, t);
+      await actAs(tx, t.alice);
+
+      await tx`select public.set_candidates_enabled(
+        array[${candidateId}]::uuid[], ${t.acmeSite}, true
+      )`;
+      await tx`select public.set_candidates_enabled(
+        array[${candidateId}]::uuid[], ${t.acmeSite}, false
+      )`;
+      const [disabled] = await tx<
+        { candidate_status: string; contract_status: string }[]
+      >`
+        select candidate.status::text as candidate_status,
+               contract.status::text as contract_status
+        from action_candidates candidate
+        join tool_contracts contract on contract.action_id = candidate.action_id
+        where candidate.id = ${candidateId} and contract.site_id = ${t.acmeSite}
+      `;
+      expect(disabled).toEqual({
+        candidate_status: "approved",
+        contract_status: "retired",
+      });
+
+      await tx`select public.set_candidates_enabled(
+        array[${candidateId}]::uuid[], ${t.acmeSite}, true
+      )`;
+      const [enabled] = await tx<{ status: string }[]>`
+        select status::text as status from tool_contracts
+        where site_id = ${t.acmeSite}
+      `;
+      expect(enabled?.status).toBe("active");
     });
   });
 

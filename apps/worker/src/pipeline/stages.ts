@@ -19,13 +19,15 @@ import {
   finishRun,
   loadRun,
   markStage,
-  readVaultSecret,
   setRunRunning,
 } from "../db";
 import { progressEvent, sendProgress } from "../progress";
 import { selectRepoProvider } from "../providers/repo-provider";
-import { selectCrawler, type CrawledPage } from "../providers/crawler";
-import { selectAiProvider } from "../providers/ai-provider";
+import {
+  selectAiProvider,
+  isScriptFormCapability,
+  serverActionInputSchema,
+} from "../providers/ai-provider";
 import {
   assembleContract,
   buildPrimitives,
@@ -36,14 +38,13 @@ import { log } from "../log";
 import type { JobOutcome } from "../queue";
 
 /**
- * The five resumable pipeline stages. Each is idempotent: it overwrites its
+ * The four resumable pipeline stages. Each is idempotent: it overwrites its
  * own outputs keyed by run id, so pgmq redelivery after a crash is safe.
  */
 
 const STAGE_ORDER: AnalysisStage[] = [
   "clone",
   "static",
-  "crawl",
   "synthesize",
   "validate",
 ];
@@ -139,8 +140,6 @@ async function executeStage(
       return cloneStage(ctx, run);
     case "static":
       return staticStage(ctx, run);
-    case "crawl":
-      return crawlStage(ctx, run);
     case "synthesize":
       return synthesizeStage(ctx, run);
     case "validate":
@@ -215,10 +214,11 @@ async function staticStage(
   });
 
   return {
-    message: `found ${analysis.routes.length} routes, ${analysis.forms.length} forms, ${analysis.serverActions.length} actions, ${analysis.routeHandlers.length} handlers`,
+    message: `found ${analysis.routes.length} routes, ${analysis.links.length} links, ${analysis.forms.length} forms, ${analysis.serverActions.length} actions, ${analysis.routeHandlers.length} handlers`,
     info: {
       routes: analysis.routes.length,
       forms: analysis.forms.length,
+      links: analysis.links.length,
       serverActions: analysis.serverActions.length,
       routeHandlers: analysis.routeHandlers.length,
       zodSchemas: analysis.zodSchemas.length,
@@ -227,100 +227,19 @@ async function staticStage(
   };
 }
 
-// Stage 3: optional authenticated preview crawl (DOM/ARIA first, screenshots second).
-async function crawlStage(
-  ctx: WorkerContext,
-  run: RunRow,
-): Promise<StageDetail> {
-  if (!run.environment_base_url) {
-    await uploadArtifact(
-      ctx,
-      run,
-      "crawl_snapshot",
-      "crawl.json",
-      "[]",
-      "application/json",
-    );
-    return { skipped: true, message: "no preview environment configured" };
-  }
-
-  const analysis = await downloadAnalysis(ctx, run);
-  const staticPaths = analysis.routes
-    .filter((route) => route.kind === "page" && route.params.length === 0)
-    .map((route) => route.urlPattern);
-  const paths = [...new Set(["/", ...staticPaths])];
-
-  const credential = run.environment_credential_secret_id
-    ? await readVaultSecret(ctx.sql, run.environment_credential_secret_id)
-    : null;
-
-  const crawler = selectCrawler(ctx.env, true);
-  const pages = await crawler.crawl({
-    baseUrl: run.environment_base_url,
-    paths,
-    authMode: (run.environment_auth_mode ?? "none") as
-      "none" | "cookie" | "basic",
-    credential,
-  });
-
-  const reachable = pages.filter((page) => page.status !== null);
-  if (pages.length > 0 && reachable.length === 0) {
-    throw new StageError(
-      "preview_unreachable",
-      `preview at ${run.environment_base_url} did not respond`,
-      true,
-    );
-  }
-
-  await ctx.sql`delete from run_artifacts where run_id = ${run.id} and kind in ('crawl_snapshot', 'screenshot')`;
-  for (const [index, page] of pages.entries()) {
-    if (!page.screenshot) continue;
-    await uploadArtifact(
-      ctx,
-      run,
-      "screenshot",
-      `screenshots/${index}.png`,
-      page.screenshot,
-      "image/png",
-      {
-        path: page.path,
-      },
-    );
-  }
-  const serializable = pages.map(({ screenshot, ...rest }) => {
-    void screenshot; // binary data lives in storage, not in the JSON snapshot
-    return rest;
-  });
-  await uploadArtifact(
-    ctx,
-    run,
-    "crawl_snapshot",
-    "crawl.json",
-    JSON.stringify(serializable),
-    "application/json",
-  );
-
-  return {
-    message: `crawled ${reachable.length}/${pages.length} pages`,
-    info: { pages: pages.length, reachable: reachable.length },
-  };
-}
-
-// Stage 4: AI synthesis (or deterministic fixture synthesis) into candidates.
+// Stage 3: AI synthesis (or deterministic fixture synthesis) into candidates.
 async function synthesizeStage(
   ctx: WorkerContext,
   run: RunRow,
 ): Promise<StageDetail> {
   const analysis = await downloadAnalysis(ctx, run);
-  const crawledPages = await downloadCrawl(ctx, run);
-  const primitives = buildPrimitives(analysis, crawledPages);
+  const primitives = buildPrimitives(analysis);
 
   const provider = selectAiProvider(ctx.env);
-  let proposals;
+  let synthesis;
   try {
-    proposals = await provider.proposeTools({
+    synthesis = await provider.proposeTools({
       analysis,
-      crawledPages,
       primitives,
     });
   } catch (error) {
@@ -332,16 +251,33 @@ async function synthesizeStage(
   }
 
   let malformed = 0;
+  const malformedIssues: string[] = [];
   const assembled: AssembledCandidate[] = [];
-  for (const proposal of proposals) {
+  for (const proposal of synthesis.tools) {
     try {
       assembled.push(assembleContract(run.repository_id, proposal, primitives));
-    } catch {
+    } catch (error) {
       malformed++;
+      if (malformedIssues.length < 5) {
+        malformedIssues.push(
+          error instanceof Error
+            ? error.message.slice(0, 300)
+            : "invalid proposal",
+        );
+      }
     }
   }
 
+  const potential = countPotentialCapabilities(analysis);
+  assertCandidateCoverage(
+    potential,
+    synthesis.tools.length,
+    assembled.length,
+    malformedIssues,
+  );
+
   await ctx.sql.begin(async (sql) => {
+    await sql`select id from analysis_runs where id = ${run.id} for update`;
     await sql`delete from action_candidates where run_id = ${run.id}`;
     for (const { contract } of assembled) {
       await sql`
@@ -351,18 +287,44 @@ async function synthesizeStage(
           (${run.id}, ${run.org_id}, ${contract.actionId}, ${contract.name}, ${contract.title},
            ${contract.description}, ${jsonb(sql, contract as unknown as Record<string, unknown>)},
            ${contract.riskLevel}, ${contract.confirmation}, ${contract.confidence}, 'proposed')
-        on conflict (run_id, action_id) do nothing
       `;
+    }
+    const persisted = await sql<{ count: number }[]>`
+      select count(*)::int as count from action_candidates where run_id = ${run.id}
+    `;
+    const count = persisted[0]?.count ?? 0;
+    if (count !== assembled.length) {
+      throw new StageError(
+        "ai_output_invalid",
+        `Persisted ${count} of ${assembled.length} assembled tool candidates`,
+        false,
+      );
     }
   });
 
   return {
-    message: `proposed ${assembled.length} candidate tools`,
-    info: { proposed: assembled.length, malformed },
+    message:
+      synthesis.mode === "ai"
+        ? `AI proposed ${assembled.length} candidate tools`
+        : `proposed ${assembled.length} candidate tools using safe fallback`,
+    info: {
+      proposed: assembled.length,
+      malformed,
+      ...(malformedIssues.length > 0 ? { malformedIssues } : {}),
+      potential,
+      mode: synthesis.mode,
+      model: synthesis.model,
+      attemptedModels: synthesis.attemptedModels,
+      modelErrors: synthesis.modelErrors,
+      usage: synthesis.usage,
+      discarded: synthesis.discarded ?? 0,
+      supplemented: synthesis.supplemented ?? 0,
+      fallbackReason: synthesis.fallbackReason,
+    },
   };
 }
 
-// Stage 5: deterministic validation + evals gate candidates for review.
+// Stage 4: deterministic validation + evals gate candidates for review.
 async function validateStage(
   ctx: WorkerContext,
   run: RunRow,
@@ -374,11 +336,23 @@ async function validateStage(
     id: row.id,
     contract: row.contract as ActionContract,
   }));
+  const proposed = Number(
+    (run.stage_statuses.synthesize as { proposed?: number } | undefined)
+      ?.proposed ?? 0,
+  );
+  if (proposed > 0 && parsed.length === 0) {
+    throw new StageError(
+      "validation_failed",
+      `Synthesis reported ${proposed} candidates but none were available for validation`,
+      false,
+    );
+  }
   const setIssues = validateContractSet(parsed.map((row) => row.contract));
 
   let ready = 0;
   let needsReview = 0;
   let rejected = 0;
+  const readyDrafts: { candidateId: string; contract: ActionContract }[] = [];
 
   for (const row of parsed) {
     const result = validateContract(row.contract);
@@ -408,6 +382,7 @@ async function validateStage(
     } else {
       status = "proposed";
       ready++;
+      readyDrafts.push({ candidateId: row.id, contract: row.contract });
     }
 
     await ctx.sql.begin(async (sql) => {
@@ -427,10 +402,136 @@ async function validateStage(
     });
   }
 
+  const refreshedDrafts = await refreshActiveDraftContracts(
+    ctx,
+    run,
+    readyDrafts,
+  );
+
   return {
     message: `validated ${parsed.length} candidates (${ready} ready, ${needsReview} need review, ${rejected} rejected)`,
-    info: { total: parsed.length, ready, needsReview, rejected },
+    info: {
+      total: parsed.length,
+      ready,
+      needsReview,
+      rejected,
+      refreshedActiveDrafts: refreshedDrafts,
+    },
   };
+}
+
+export function countPotentialCapabilities(analysis: StaticAnalysis): number {
+  const pages = new Set(
+    analysis.routes
+      .filter(
+        (route) =>
+          route.kind === "page" &&
+          route.urlPattern !== "/" &&
+          !route.urlPattern.includes("..."),
+      )
+      .map((route) => route.urlPattern),
+  );
+  const links = new Set(
+    (analysis.links ?? [])
+      .filter((link) => link.href !== "/")
+      .map((link) => link.href),
+  );
+  const forms = analysis.forms.filter(isScriptFormCapability).length;
+  const actionNameCounts = new Map<string, number>();
+  for (const action of analysis.serverActions) {
+    actionNameCounts.set(
+      action.name,
+      (actionNameCounts.get(action.name) ?? 0) + 1,
+    );
+  }
+  const coveredActions = new Set(
+    analysis.forms
+      .filter(
+        (form) =>
+          isScriptFormCapability(form) &&
+          form.action.kind === "server_action" &&
+          actionNameCounts.get(form.action.name) === 1,
+      )
+      .map((form) =>
+        form.action.kind === "server_action" ? form.action.name : "",
+      ),
+  );
+  const actions = analysis.serverActions.filter(
+    (action) =>
+      !coveredActions.has(action.name) &&
+      serverActionInputSchema(analysis, action) !== null,
+  ).length;
+  return pages.size + links.size + forms + actions;
+}
+
+export function assertCandidateCoverage(
+  potential: number,
+  proposed: number,
+  assembled: number,
+  malformedIssues: string[] = [],
+): void {
+  if (potential === 0 || assembled > 0) return;
+  throw new StageError(
+    "ai_output_invalid",
+    proposed > 0
+      ? `All ${proposed} generated tool proposals were invalid${
+          malformedIssues.length > 0 ? `: ${malformedIssues.join("; ")}` : ""
+        }`
+      : `Tool synthesis returned no candidates despite ${potential} source-grounded capabilities`,
+    false,
+  );
+}
+
+async function refreshActiveDraftContracts(
+  ctx: WorkerContext,
+  run: RunRow,
+  drafts: { candidateId: string; contract: ActionContract }[],
+): Promise<number> {
+  return ctx.sql.begin(async (sql) => {
+    let refreshed = 0;
+    for (const draft of drafts) {
+      const contracts = await sql<{ id: string; next_version: number }[]>`
+        select tc.id,
+               (select coalesce(max(history.version), 0) + 1
+                from contract_versions history
+                where history.contract_id = tc.id) as next_version
+        from tool_contracts tc
+        join sites s on s.id = tc.site_id
+        left join contract_versions current on current.id = tc.latest_version_id
+        where s.repository_id = ${run.repository_id}
+          and tc.action_id = ${draft.contract.actionId}
+          and tc.status = 'active'
+          and current.contract is distinct from ${jsonb(
+            sql,
+            draft.contract as unknown as Record<string, unknown>,
+          )}::jsonb
+        for update of tc
+      `;
+      for (const contract of contracts) {
+        const versions = await sql<{ id: string }[]>`
+          insert into contract_versions
+            (contract_id, org_id, version, contract, created_from_candidate)
+          values
+            (${contract.id}, ${run.org_id}, ${contract.next_version},
+             ${jsonb(
+               sql,
+               draft.contract as unknown as Record<string, unknown>,
+             )}::jsonb,
+             ${draft.candidateId})
+          returning id
+        `;
+        const version = versions[0];
+        if (!version) continue;
+        await sql`
+          update tool_contracts
+          set latest_version_id = ${version.id}, name = ${draft.contract.name}
+          where id = ${contract.id}
+        `;
+        refreshed++;
+      }
+    }
+    return refreshed;
+  });
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -472,7 +573,7 @@ function artifactPath(run: RunRow, fileName: string): string {
 async function uploadArtifact(
   ctx: WorkerContext,
   run: RunRow,
-  kind: "analysis_summary" | "crawl_snapshot" | "screenshot",
+  kind: "analysis_summary",
   fileName: string,
   content: string | Uint8Array,
   contentType: string,
@@ -529,18 +630,6 @@ async function downloadAnalysis(
     return new NextJsAnalyzer(new RepoWorkspace(snapshotDir)).analyze();
   }
   return analysis;
-}
-
-async function downloadCrawl(
-  ctx: WorkerContext,
-  run: RunRow,
-): Promise<CrawledPage[]> {
-  const pages = await downloadArtifactJson<CrawledPage[]>(
-    ctx,
-    run,
-    "crawl.json",
-  );
-  return (pages ?? []).map((page) => ({ ...page, screenshot: null }));
 }
 
 /** Re-used by fixture/dev tooling: read a snapshot file safely. */

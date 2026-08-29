@@ -5,12 +5,13 @@ import {
   generateIntegrationPrAction,
   publishSiteAction,
   rollbackManifestAction,
-  updateSiteOriginsAction,
 } from "@/lib/actions";
 import { ActionForm, SubmitButton } from "./action-form";
 import { ConfirmAction } from "./confirm-action";
 import { CopySnippet } from "./copy-snippet";
-import { Card, Field, inputClass, secondaryButtonClass } from "./ui";
+import { OriginsEditor } from "./origins-editor";
+import { RepositoryLiveRefresh } from "./repository-live-refresh";
+import { Card, secondaryButtonClass } from "./ui";
 
 type Publication = Awaited<ReturnType<typeof getPublication>>;
 
@@ -25,6 +26,7 @@ interface RepositoryIntegrationProps {
     current_manifest_id: string | null;
   };
   publication: Publication;
+  hasBridgeTools: boolean;
 }
 
 const PR_STATUS_STYLES: Record<string, string> = {
@@ -39,6 +41,7 @@ export function RepositoryIntegration({
   repo,
   site,
   publication,
+  hasBridgeTools,
 }: RepositoryIntegrationProps) {
   const { contracts, manifests, deployments, prs, usage } = publication;
   const activeContracts = contracts.filter(
@@ -47,8 +50,22 @@ export function RepositoryIntegration({
   const current = manifests.find(
     (manifest) => manifest.id === site.current_manifest_id,
   );
+  const currentContent = current?.manifest as unknown as ToolManifest | null;
+  const draftToolNames = activeContracts
+    .map((contract) => contract.name)
+    .sort();
+  const liveToolNames = (currentContent?.tools ?? [])
+    .map((tool) => tool.name)
+    .sort();
+  const draftOrigins = [...site.allowed_origins].sort();
+  const liveOrigins = [...(currentContent?.origins ?? [])].sort();
+  const hasUnpublishedChanges =
+    !current ||
+    JSON.stringify(draftToolNames) !== JSON.stringify(liveToolNames) ||
+    JSON.stringify(draftOrigins) !== JSON.stringify(liveOrigins);
   const lastLoaderReady = usage.find((event) => event.event === "loader_ready");
   const prPending = prs.some((pr) => pr.status === "pending");
+  const prOpen = prs.some((pr) => pr.status === "open");
   const snippet =
     '<script src="' +
     env.SITE_URL +
@@ -61,10 +78,14 @@ export function RepositoryIntegration({
     activeContracts.length +
     " enabled tool(s) for " +
     site.allowed_origins.join(", ") +
-    ". Tool and origin changes already do this automatically; use this action to refresh availability manually.";
+    ".";
 
   return (
     <section aria-labelledby="install-access-title" className="space-y-3">
+      <RepositoryLiveRefresh
+        active={prPending || prOpen}
+        intervalMs={prPending ? 2000 : 10000}
+      />
       <header>
         <h2
           id="install-access-title"
@@ -73,9 +94,8 @@ export function RepositoryIntegration({
           Install &amp; access
         </h2>
         <p className="mt-1 text-sm text-neutral-500 text-pretty">
-          Add the loader once, choose where it can run, or generate a pull
-          request that installs it for you. Tool and origin changes publish
-          automatically.
+          Add the loader once, choose where it can run, or generate the reviewed
+          integration required by private server actions.
         </p>
       </header>
 
@@ -108,38 +128,18 @@ export function RepositoryIntegration({
         </Card>
 
         <Card title="Allowed origins">
-          <ActionForm
-            action={updateSiteOriginsAction}
-            className="space-y-3"
-            successMessage="Origins saved and availability updated."
-          >
-            <input type="hidden" name="siteId" value={site.id} />
-            <Field
-              label="One origin per line"
-              hint="Use an exact bare origin including its scheme and optional port. Up to 8 origins."
-            >
-              <textarea
-                name="origins"
-                rows={4}
-                required
-                defaultValue={site.allowed_origins.join("\n")}
-                className={inputClass}
-                placeholder={"https://app.example.com\nhttp://localhost:3000"}
-              />
-            </Field>
-            <SubmitButton
-              className={secondaryButtonClass}
-              pendingText="Saving…"
-            >
-              Save origins
-            </SubmitButton>
-          </ActionForm>
+          <OriginsEditor
+            siteId={site.id}
+            initialOrigins={site.allowed_origins}
+          />
         </Card>
 
         <Card title="Integration PR">
           <p className="mb-3 text-sm text-neutral-600 text-pretty">
-            Creates a reviewable pull request with the pinned loader and the
-            first-party action bridge. It never pushes to {repo.default_branch}.
+            {hasBridgeTools
+              ? "Adds the loader plus reviewed bindings to your existing server actions."
+              : "Adds the exact loader snippet above to your app shell."}{" "}
+            It never pushes directly to {repo.default_branch}.
           </p>
           {activeContracts.length === 0 ? (
             <p className="text-sm text-neutral-500 text-pretty">
@@ -159,7 +159,9 @@ export function RepositoryIntegration({
                 className={secondaryButtonClass}
                 pendingText="Queueing…"
               >
-                Generate integration PR
+                {prOpen
+                  ? "Regenerate integration PR"
+                  : "Generate integration PR"}
               </SubmitButton>
             </ActionForm>
           )}
@@ -169,26 +171,31 @@ export function RepositoryIntegration({
               {prs.map((pr) => (
                 <li
                   key={pr.id}
-                  className="flex flex-wrap items-center justify-between gap-2"
+                  className="flex items-start justify-between gap-3"
                 >
-                  <span className="min-w-0">
-                    <span
-                      className={
-                        "mr-2 inline-flex rounded px-1.5 py-0.5 text-xs font-medium " +
-                        (PR_STATUS_STYLES[pr.status] ?? PR_STATUS_STYLES.closed)
-                      }
-                    >
-                      {pr.status}
-                    </span>
-                    <span className="font-mono text-xs break-all">
-                      {pr.branch}
-                    </span>
-                    {pr.error ? (
-                      <span className="ml-2 text-xs text-red-700 text-pretty">
-                        {(pr.error as { message?: string }).message}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={
+                          "inline-flex rounded px-1.5 py-0.5 text-xs font-medium " +
+                          (PR_STATUS_STYLES[pr.status] ??
+                            PR_STATUS_STYLES.closed)
+                        }
+                      >
+                        {pr.status}
                       </span>
+                      {pr.branch !== "pending" ? (
+                        <span className="font-mono text-xs break-all">
+                          {pr.branch}
+                        </span>
+                      ) : null}
+                    </div>
+                    {pr.error ? (
+                      <p className="mt-1 text-xs text-red-700 text-pretty">
+                        {(pr.error as { message?: string }).message}
+                      </p>
                     ) : null}
-                  </span>
+                  </div>
                   {pr.url ? (
                     pr.url.startsWith("http") ? (
                       <a
@@ -214,9 +221,9 @@ export function RepositoryIntegration({
         <Card title="Runtime status">
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-neutral-500">Available tools</dt>
+              <dt className="text-xs text-neutral-500">Published tools</dt>
               <dd className="font-medium tabular-nums">
-                {activeContracts.length}
+                {currentContent?.tools.length ?? 0}
               </dd>
             </div>
             <div>
@@ -233,7 +240,8 @@ export function RepositoryIntegration({
                 "."
               : "No loader activity received yet. Install the snippet and open an allowed origin to verify it."}
           </p>
-          {activeContracts.length > 0 && site.allowed_origins.length > 0 ? (
+          {(activeContracts.length > 0 || current) &&
+          site.allowed_origins.length > 0 ? (
             <div className="mt-4">
               <ConfirmAction
                 action={publishSiteAction}
@@ -241,8 +249,15 @@ export function RepositoryIntegration({
                 title="Publish current tool settings"
                 description={publishDescription}
                 confirmLabel="Publish manifest"
+                triggerVariant={hasUnpublishedChanges ? "primary" : "secondary"}
+                blockWhileEdits
                 fields={{ siteId: site.id }}
               />
+              <p className="mt-2 text-xs text-neutral-500">
+                {hasUnpublishedChanges
+                  ? "Unpublished tool or origin changes are ready."
+                  : "Live settings match your current edits."}
+              </p>
             </div>
           ) : null}
         </Card>

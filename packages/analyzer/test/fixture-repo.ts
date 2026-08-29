@@ -44,9 +44,17 @@ export const orderSchema = z.object({
   return <html lang="en"><body>{children}</body></html>;
 }
 `,
-    "app/page.tsx": `export default function Home() {
-  return <main><h1>Acme Shop</h1></main>;
+    "app/page.tsx": `import Link from "next/link";
+export default function Home() {
+  return <main><h1>Acme Shop</h1><Link href="/products">Browse products</Link><a href="https://example.com">External</a></main>;
 }
+`,
+    "components/FeedbackForm.tsx": `export function FeedbackForm() {
+  return <form id="feedback-form"><input name="message" required /><button>Send</button></form>;
+}
+`,
+    "app/support/page.tsx": `import { FeedbackForm } from "@/components/FeedbackForm";
+export default function SupportPage() { return <FeedbackForm />; }
 `,
     "app/products/page.tsx": `export default async function ProductsPage() {
   return (
@@ -71,6 +79,7 @@ export const orderSchema = z.object({
 export default function ContactPage() {
   return (
     <form action={submitContact}>
+      <input name="csrfToken" type="hidden" value="page-owned" />
       <input name="name" type="text" required placeholder="Your name" />
       <input name="email" type="email" required />
       <select name="topic">
@@ -87,6 +96,12 @@ export default function ContactPage() {
 import { contactSchema, orderSchema } from "../lib/schemas";
 import { redirect } from "next/navigation";
 
+export interface ProfileInput {
+  displayName: string;
+  notifications?: boolean;
+  visibility: "public" | "private";
+}
+
 export async function submitContact(formData: FormData) {
   const parsed = contactSchema.parse(Object.fromEntries(formData));
   await saveMessage(parsed);
@@ -96,6 +111,10 @@ export async function cancelOrder(input: { orderId: string }) {
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
   await db.orders.cancel(input.orderId);
+}
+
+export async function updateProfile(input: ProfileInput) {
+  await db.profiles.update(input);
 }
 `,
     "app/api/orders/route.ts": `import { orderSchema } from "../../../lib/schemas";

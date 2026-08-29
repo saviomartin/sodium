@@ -2,6 +2,8 @@ import type { BridgeContext, BridgeHandler, BridgeRegistry } from "./types";
 
 export type { BridgeContext, BridgeHandler };
 
+export const BRIDGE_CHANGE_EVENT = "sodium:bridge-change";
+
 /**
  * First-party action bridge SDK. Customer code (typically the generated
  * `sodium/bridge.ts` in their repository) registers handlers for approved
@@ -26,7 +28,9 @@ export function registerBridgeHandlers(
     registry.handlers.set(key, handler);
     registeredKeys.push(key);
   }
+  window.dispatchEvent(new Event(BRIDGE_CHANGE_EVENT));
   return () => {
     for (const key of registeredKeys) registry.handlers.delete(key);
+    window.dispatchEvent(new Event(BRIDGE_CHANGE_EVENT));
   };
 }

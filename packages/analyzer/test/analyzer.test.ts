@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   analyzeNextJsRepo,
+  detectAppDir,
   parseAppPath,
   RepoWorkspace,
   type StaticAnalysis,
@@ -46,6 +47,20 @@ describe("parseAppPath", () => {
     });
     expect(parseAppPath("_private/tools").excluded).toBe(true);
     expect(parseAppPath("feed/(.)photo/[id]").excluded).toBe(true);
+  });
+});
+
+describe("Next.js project detection", () => {
+  it("finds a single app inside a monorepo package", () => {
+    expect(
+      detectAppDir([
+        "package.json",
+        "apps/web/package.json",
+        "apps/web/next.config.ts",
+        "apps/web/src/app/layout.tsx",
+        "apps/web/src/app/page.tsx",
+      ]),
+    ).toBe("apps/web/src/app");
   });
 });
 
@@ -108,7 +123,7 @@ describe("route handlers", () => {
 describe("server actions", () => {
   it("finds actions in a 'use server' file", () => {
     const names = analysis.serverActions.map((a) => a.name).sort();
-    expect(names).toEqual(["cancelOrder", "submitContact"]);
+    expect(names).toEqual(["cancelOrder", "submitContact", "updateProfile"]);
   });
 
   it("captures form-data usage and zod parsing", () => {
@@ -125,6 +140,22 @@ describe("server actions", () => {
     expect(kinds).toContain("supabase_get_user");
     expect(kinds).toContain("redirect_guard");
   });
+
+  it("resolves bounded TypeScript aliases into input schemas", () => {
+    const update = analysis.serverActions.find(
+      (action) => action.name === "updateProfile",
+    );
+    expect(update?.parameters?.[0]?.schema).toEqual({
+      type: "object",
+      properties: {
+        displayName: { type: "string" },
+        notifications: { type: "boolean" },
+        visibility: { type: "string", enum: ["public", "private"] },
+      },
+      required: ["displayName", "visibility"],
+      additionalProperties: false,
+    });
+  });
 });
 
 describe("forms", () => {
@@ -135,6 +166,7 @@ describe("forms", () => {
       kind: "server_action",
       name: "submitContact",
     });
+    expect(form?.selector).toBe("form");
     const byName = new Map(form!.fields.map((f) => [f.name, f]));
     expect(byName.get("name")).toMatchObject({
       type: "text",
@@ -151,6 +183,36 @@ describe("forms", () => {
       required: true,
       label: "Message",
     });
+    expect(byName.has("csrfToken")).toBe(false);
+  });
+
+  it("maps forms in imported components back to every rendering page", () => {
+    const form = analysis.forms.find(
+      (candidate) => candidate.span.filePath === "components/FeedbackForm.tsx",
+    );
+    expect(form).toMatchObject({
+      selector: "#feedback-form",
+      urlPattern: "/support",
+      pathPattern: "/support",
+      routeBindings: [{ urlPattern: "/support", pathPattern: "/support" }],
+    });
+  });
+});
+
+describe("links", () => {
+  it("extracts literal same-origin navigation and rejects external links", () => {
+    expect(analysis.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          href: "/products",
+          label: "Browse products",
+          routeBindings: [{ urlPattern: "/", pathPattern: "/" }],
+        }),
+      ]),
+    );
+    expect(analysis.links.some((link) => link.href.startsWith("http"))).toBe(
+      false,
+    );
   });
 });
 

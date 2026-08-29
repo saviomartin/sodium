@@ -5,10 +5,10 @@ WebMCP-enabled application.
 
 The product flow is deliberately short:
 
-1. Continue with GitHub.
-2. Connect a repository through the GitHub App.
-3. Run analysis on the latest default-branch commit.
-4. Enable the proposed tools you want. Availability updates automatically.
+1. Continue with GitHub; first sign-in continues directly into GitHub App access.
+2. Choose a repository from the home page.
+3. Review the latest automatic analysis on the repository page.
+4. Enable the proposed tools you want and publish the ready changes.
 
 There is no organization setup, local repository mode, manual commit SHA, or
 embedded demo application. The database keeps an invisible personal workspace
@@ -18,8 +18,8 @@ only as the RLS tenant boundary.
 
 | Path                 | Purpose                                                                                            |
 | -------------------- | -------------------------------------------------------------------------------------------------- |
-| `apps/web`           | Next.js app: auth, repository connection, analysis, tool controls, Settings                        |
-| `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, crawl, synthesis, validation, PR generation |
+| `apps/web`           | Next.js app: home/auth, repository connection, analysis, tool controls, Settings                   |
+| `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, AI synthesis, validation, PR generation      |
 | `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                                       |
 | `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                                 |
 | `packages/runtime`   | Signed manifest loader, WebMCP adapter, action bridge                                              |
@@ -57,8 +57,8 @@ corepack pnpm --filter @sodium/web dev
 corepack pnpm --filter @sodium/worker dev
 ```
 
-Open `http://localhost:3000`, sign in with GitHub, and connect
-`foundative/webmcp-fixture-shop`.
+Open `http://localhost:3000`, continue with GitHub, and choose
+`foundative/webmcp-fixture-shop` from the home page.
 
 ## Validation
 

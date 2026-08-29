@@ -47,6 +47,7 @@ function analysis(overrides: Partial<StaticAnalysis> = {}): StaticAnalysis {
         excerpt: "",
       },
     ],
+    links: [],
     zodSchemas: [],
     authSignals: [],
     warnings: [],
@@ -140,6 +141,28 @@ describe("compareManifestToAnalysis", () => {
         toolName: "open_products",
       }),
     );
+  });
+
+  it("keeps navigation valid when its source is a literal application link", () => {
+    const changed = analysis({
+      routes: analysis().routes.filter(
+        (route) => route.urlPattern !== "/products",
+      ),
+      links: [
+        {
+          href: "/products?from=home",
+          label: "Browse products",
+          routeBindings: [{ urlPattern: "/", pathPattern: "/" }],
+          span: { filePath: "app/page.tsx", startLine: 5, endLine: 5 },
+          excerpt: '<Link href="/products?from=home">Browse products</Link>',
+        },
+      ],
+    });
+    const findings = compareManifestToAnalysis(manifest(), changed);
+
+    expect(
+      findings.some((finding) => finding.toolName === "open_products"),
+    ).toBe(false);
   });
 
   it("flags renamed form fields as input_changed", () => {

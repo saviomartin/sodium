@@ -1,6 +1,11 @@
 import { verifyEnvelope } from "./manifest-verify";
 import { executeTool } from "./handlers";
-import { createTelemetry, noopTelemetry, type Telemetry } from "./telemetry";
+import {
+  answerEngineAttribution,
+  createTelemetry,
+  noopTelemetry,
+  type Telemetry,
+} from "./telemetry";
 import {
   createToolRegistrar,
   detectModelContext,
@@ -8,6 +13,7 @@ import {
   type ToolRegistrar,
 } from "./webmcp-adapter";
 import type { PublishedTool, ToolManifest } from "./types";
+import { BRIDGE_CHANGE_EVENT } from "./bridge";
 
 /**
  * The loader is the delivery mechanism only. It:
@@ -97,16 +103,24 @@ export async function bootstrap(
     if (config!.debug) win.console?.warn?.(`[sodium] ${message}`);
   };
 
-  // 1. Feature-detect WebMCP; absent → fail harmlessly.
+  const telemetry: Telemetry = config.telemetryUrl
+    ? createTelemetry(config.telemetryUrl, config.siteId, LOADER_VERSION, win)
+    : noopTelemetry;
+  const answerEngine = answerEngineAttribution(doc.referrer, win.location.href);
+  if (answerEngine) {
+    telemetry.event("answer_engine_referral", {
+      engine: answerEngine.engine,
+      method: answerEngine.method,
+    });
+  }
+
+  // 1. Feature-detect WebMCP; absent → fail harmlessly. Answer-engine referral
+  // telemetry above still works in ordinary browsers without WebMCP support.
   const modelContext = detectModelContext(doc);
   if (!modelContext) {
     debug("WebMCP not available in this browser; no tools registered");
     return null;
   }
-
-  const telemetry: Telemetry = config.telemetryUrl
-    ? createTelemetry(config.telemetryUrl, config.siteId, LOADER_VERSION, win)
-    : noopTelemetry;
 
   // 2. Fetch the published manifest envelope.
   const fetchImpl = options.fetchImpl ?? win.fetch.bind(win);
@@ -200,6 +214,8 @@ export async function bootstrap(
   });
 
   const stopNavigation = observeNavigation(win, () => void registrar.sync());
+  const onBridgeChange = () => void registrar.sync();
+  win.addEventListener(BRIDGE_CHANGE_EVENT, onBridgeChange);
 
   // Re-evaluate `requiresSelector` conditions when the DOM changes.
   let mutationObserver: MutationObserver | null = null;
@@ -230,6 +246,7 @@ export async function bootstrap(
     refresh: () => registrar.sync(),
     dispose: () => {
       stopNavigation();
+      win.removeEventListener(BRIDGE_CHANGE_EVENT, onBridgeChange);
       mutationObserver?.disconnect();
       registrar.dispose();
     },

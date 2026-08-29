@@ -55,6 +55,22 @@ async function clearGithubConnectionState(): Promise<void> {
   cookieStore.delete(CONNECTION_COOKIE);
 }
 
+async function createGithubConnectionState(
+  orgId: string,
+  candidateInstallationId?: number,
+): Promise<string> {
+  const state = randomBytes(16).toString("hex");
+  await writeConnectionState({ state, orgId, candidateInstallationId });
+  return state;
+}
+
+/** Starts a fresh installation flow without reusing an existing account. */
+export async function createGithubInstallationState(
+  orgId: string,
+): Promise<string> {
+  return createGithubConnectionState(orgId);
+}
+
 /** Starts a short-lived GitHub OAuth check and returns its consent URL. */
 export async function createGithubAuthorization(
   orgId: string,
@@ -74,6 +90,30 @@ export async function createGithubAuthorization(
   }
   await writeConnectionState({ state, orgId, candidateInstallationId });
   return { state, url: data.url };
+}
+
+/** Reuses the provider token from the initial sign-in to skip another OAuth screen. */
+export async function connectGithubWithProviderToken(
+  orgId: string,
+  providerToken: string,
+): Promise<GithubRecoveryResult> {
+  const state = await createGithubConnectionState(orgId);
+  return recoverGithubConnection(state, providerToken);
+}
+
+/** Binds the App setup callback to the exact installation GitHub returned. */
+export async function recoverGithubInstallationWithProviderToken(
+  expectedState: string,
+  installationId: number,
+  providerToken: string,
+): Promise<GithubRecoveryResult> {
+  const connection = await readGithubConnectionState(expectedState);
+  if (!connection) return { kind: "error", code: "github_state" };
+  await writeConnectionState({
+    ...connection,
+    candidateInstallationId: installationId,
+  });
+  return recoverGithubConnection(expectedState, providerToken);
 }
 
 /**

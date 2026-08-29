@@ -17,10 +17,24 @@ import { GithubAppClient } from "./github";
  * (tarball extraction with entry filtering; no git, no hooks, no symlinks).
  */
 export interface RepoProvider {
+  resolveHeadSha(spec: RepoHeadSpec): Promise<string>;
   ensureSnapshot(spec: RepoSnapshotSpec): Promise<string>;
   createPullRequest(
     spec: PullRequestSpec,
   ): Promise<{ prNumber: number | null; url: string | null }>;
+  closePullRequest(spec: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    prNumber: number;
+  }): Promise<void>;
+}
+
+export interface RepoHeadSpec {
+  installationId: number;
+  owner: string;
+  repo: string;
+  ref: string;
 }
 
 export interface RepoSnapshotSpec {
@@ -55,6 +69,15 @@ export class GithubRepoProvider implements RepoProvider {
     this.client = client ?? new GithubAppClient(env);
   }
 
+  async resolveHeadSha(spec: RepoHeadSpec): Promise<string> {
+    return this.client.resolveHeadSha(
+      spec.installationId,
+      spec.owner,
+      spec.repo,
+      spec.ref,
+    );
+  }
+
   async ensureSnapshot(spec: RepoSnapshotSpec): Promise<string> {
     const target = snapshotDir(this.env, spec.runId, spec.sha);
     if (existsSync(join(target, ".sodium-complete"))) return target;
@@ -75,6 +98,20 @@ export class GithubRepoProvider implements RepoProvider {
   async createPullRequest(spec: PullRequestSpec) {
     const { prNumber, url } = await this.client.createPullRequest(spec);
     return { prNumber, url };
+  }
+
+  async closePullRequest(spec: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    prNumber: number;
+  }): Promise<void> {
+    await this.client.closePullRequest(
+      spec.installationId,
+      spec.owner,
+      spec.repo,
+      spec.prNumber,
+    );
   }
 }
 

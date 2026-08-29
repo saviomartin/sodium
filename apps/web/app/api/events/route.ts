@@ -17,6 +17,7 @@ const EventSchema = z
       "manifest_fetch_failed",
       "manifest_rejected",
       "tool_invoked",
+      "answer_engine_referral",
     ]),
     data: z
       .record(

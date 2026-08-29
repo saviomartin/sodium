@@ -14,7 +14,6 @@ import { cn } from "./ui";
 const STAGE_LABELS: Record<string, string> = {
   clone: "Snapshot repository",
   static: "Static analysis",
-  crawl: "Preview exploration",
   synthesize: "Tool synthesis",
   validate: "Validation & evals",
 };

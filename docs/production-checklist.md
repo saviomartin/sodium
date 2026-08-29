@@ -33,7 +33,7 @@
 
 ## AI
 
-- [ ] `AI_GATEWAY_API_KEY` set; pick the model via `AI_MODEL` (provider/model). Budget alerts on the gateway.
+- [ ] AI Gateway enabled with Vercel OIDC (preferred) or `AI_GATEWAY_API_KEY`; verify `AI_MODEL=openai/gpt-5.6-terra` and `AI_FALLBACK_MODEL=anthropic/claude-sonnet-5`. Budget alerts on the gateway.
 - [ ] Re-confirm prompt-injection posture after any prompt change: repository/page content must stay inside `<untrusted-data>` blocks and outputs must pass `validateContract`.
 
 ## Product safety invariants (verify in staging before each release)

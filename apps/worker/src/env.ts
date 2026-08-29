@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+export const DEFAULT_AI_MODEL = "openai/gpt-5.6-terra";
+export const DEFAULT_AI_FALLBACK_MODEL = "anthropic/claude-sonnet-5";
+const GatewayModelIdSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/,
+    "must use the AI Gateway provider/model format",
+  );
+
 /**
  * Worker environment. Validated at startup — the process refuses to boot on
  * invalid configuration rather than failing mid-job.
@@ -16,13 +25,21 @@ const EnvSchema = z.object({
   SUPABASE_DB_URL: z.string().url(),
   /** Scratch space for cloned repository snapshots. */
   WORK_DIR: z.string().default("/tmp/sodium-worker"),
+  /** Canonical public loader origin written into generated integrations. */
+  SODIUM_PUBLIC_URL: z
+    .string()
+    .url()
+    .default("https://sodium-webmcp.vercel.app"),
 
   GITHUB_APP_ID: z.string().min(1),
   GITHUB_APP_PRIVATE_KEY: z.string().min(100),
 
   // AI synthesis (optional in local development)
   AI_GATEWAY_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default("anthropic/claude-sonnet-4-5"),
+  /** Automatically supplied by Vercel deployments and `vercel env pull`. */
+  VERCEL_OIDC_TOKEN: z.string().optional(),
+  AI_MODEL: GatewayModelIdSchema.default(DEFAULT_AI_MODEL),
+  AI_FALLBACK_MODEL: GatewayModelIdSchema.default(DEFAULT_AI_FALLBACK_MODEL),
 
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -39,8 +56,4 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): WorkerEnv {
     throw new Error(`invalid worker environment:\n${details}`);
   }
   return parsed.data;
-}
-
-export function hasAiCredentials(env: WorkerEnv): boolean {
-  return Boolean(env.AI_GATEWAY_API_KEY);
 }

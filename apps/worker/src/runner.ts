@@ -18,7 +18,11 @@ export function createDispatcher(ctx: WorkerContext) {
           message.deliveryId,
         );
       case "publication.generate_pr":
-        return handleGeneratePr(ctx, message.publicationId);
+        return handleGeneratePr(
+          ctx,
+          message.publicationId,
+          message.attempt,
+        );
     }
   };
 }

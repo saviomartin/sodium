@@ -16,7 +16,12 @@ import { createServiceClient } from "./supabase/service";
 import { publishSiteManifest, rollbackSiteManifest } from "./manifest";
 import { env, hasGithubApp } from "./env";
 import { listInstallationRepos, resolveRepositoryHead } from "./github";
-import { createGithubAuthorization } from "./github-connection";
+import {
+  connectGithubWithProviderToken,
+  createGithubAuthorization,
+  createGithubInstallationState,
+} from "./github-connection";
+import { githubNewInstallationUrl } from "./github-installation-url";
 
 const siteIdAlphabet = customAlphabet(
   "abcdefghijklmnopqrstuvwxyz0123456789",
@@ -35,8 +40,8 @@ export interface ActionResult {
 
 /** Only internal paths are valid post-auth destinations. */
 function safeNext(raw: unknown): string {
-  const next = String(raw ?? "/dashboard");
-  return next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  const next = String(raw ?? "/");
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
 /**
@@ -52,12 +57,13 @@ export async function signInWithGithubAction(
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "github",
     options: {
-      redirectTo: `${env.SITE_URL}/auth/callback?next=${encodeURIComponent(next)}`,
+      redirectTo: `${env.SITE_URL}/auth/callback?setup=github&next=${encodeURIComponent(next)}`,
+      scopes: "read:user user:email read:org",
     },
   });
   if (error || !data?.url) {
     redirect(
-      `/login?error=${encodeURIComponent(error?.message ?? "could not start GitHub sign-in")}`,
+      `/?error=${encodeURIComponent(error?.message ?? "could not start GitHub sign-in")}`,
     );
   }
   redirect(data.url);
@@ -66,7 +72,7 @@ export async function signInWithGithubAction(
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
-  redirect("/login");
+  redirect("/");
 }
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
@@ -163,7 +169,7 @@ export async function deleteAccountAction(): Promise<ActionResult> {
     };
   }
   await supabase.auth.signOut({ scope: "global" });
-  redirect("/login?deleted=1");
+  redirect("/?deleted=1");
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +216,16 @@ async function requirePersonalWorkspace(): Promise<
 // GitHub connection
 // ---------------------------------------------------------------------------
 
-export async function connectGithubAction(): Promise<ActionResult> {
+const GithubConnectionSchema = z.object({
+  intent: z.enum(["connect", "add"]).default("connect"),
+});
+
+export async function connectGithubAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = GithubConnectionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: "invalid GitHub action" };
   const workspace = await requirePersonalWorkspace();
   if ("error" in workspace) return { ok: false, error: workspace.error };
   const gate = await requireOrgRole(workspace.orgId, ["owner", "admin"]);
@@ -222,6 +237,52 @@ export async function connectGithubAction(): Promise<ActionResult> {
         "GitHub App is not configured on this deployment (see README: GitHub App setup)",
     };
   }
+
+  if (parsed.data.intent === "add") {
+    let state: string;
+    try {
+      state = await createGithubInstallationState(workspace.orgId);
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "could not start GitHub installation",
+      };
+    }
+    redirect(githubNewInstallationUrl(env.NEXT_PUBLIC_GITHUB_APP_SLUG, state));
+  }
+
+  // Supabase keeps GitHub's provider token in the authenticated session. It
+  // is still verified against GitHub before any installation is stored.
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (session?.provider_token) {
+    const recovery = await connectGithubWithProviderToken(
+      workspace.orgId,
+      session.provider_token,
+    );
+    if (recovery.kind === "install") {
+      redirect(
+        githubNewInstallationUrl(
+          env.NEXT_PUBLIC_GITHUB_APP_SLUG,
+          recovery.state,
+        ),
+      );
+    }
+    if (recovery.kind === "connected") {
+      redirect(`/?add=1&installation=${recovery.installationId}`);
+    }
+    if (recovery.code === "github_store") {
+      return { ok: false, error: "The GitHub connection could not be saved." };
+    }
+    // Missing scopes and expired provider tokens fall through to a fresh,
+    // explicit GitHub authorization below.
+  }
+
   let authorization: Awaited<ReturnType<typeof createGithubAuthorization>>;
   try {
     authorization = await createGithubAuthorization(workspace.orgId);
@@ -337,110 +398,6 @@ export async function selectRepositoryAction(
 }
 
 // ---------------------------------------------------------------------------
-// Preview environments
-// ---------------------------------------------------------------------------
-
-const EnvironmentSchema = z.object({
-  repositoryId: z.string().uuid(),
-  baseUrl: z.string().url(),
-  authMode: z.enum(["none", "cookie", "basic"]),
-  credential: z.string().max(2048).optional(),
-});
-
-export async function saveEnvironmentAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult> {
-  const parsed = EnvironmentSchema.safeParse({
-    repositoryId: formData.get("repositoryId"),
-    baseUrl: formData.get("baseUrl"),
-    authMode: formData.get("authMode"),
-    credential: formData.get("credential") || undefined,
-  });
-  if (!parsed.success)
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "invalid input",
-    };
-  const input = parsed.data;
-  if (input.authMode !== "none" && !input.credential) {
-    return {
-      ok: false,
-      error: "credential required for the selected auth mode",
-    };
-  }
-
-  const supabase = await createClient();
-  const { data: repo } = await supabase
-    .from("repositories")
-    .select("id, org_id")
-    .eq("id", input.repositoryId)
-    .maybeSingle();
-  if (!repo) return { ok: false, error: "repository not found" };
-  const gate = await requireOrgRole(repo.org_id, ["owner", "admin"]);
-  if ("error" in gate) return { ok: false, error: gate.error };
-
-  const { data: environment, error } = await supabase
-    .from("environments")
-    .insert({
-      repository_id: repo.id,
-      org_id: repo.org_id,
-      base_url: input.baseUrl,
-      auth_mode: input.authMode,
-    })
-    .select("id")
-    .single();
-  if (error) return { ok: false, error: error.message };
-
-  if (input.credential) {
-    const { error: secretError } = await supabase.rpc(
-      "set_preview_credential",
-      {
-        p_environment_id: environment.id,
-        p_secret: input.credential,
-      },
-    );
-    if (secretError)
-      return {
-        ok: false,
-        error: `environment saved, but storing the credential failed: ${secretError.message}`,
-      };
-  }
-
-  // Ensure the preview origin is allowed for the site (used by the loader).
-  const origin = new URL(input.baseUrl).origin;
-  const { data: site } = await supabase
-    .from("sites")
-    .select("id, allowed_origins, current_manifest_id")
-    .eq("repository_id", repo.id)
-    .maybeSingle();
-  if (site && !site.allowed_origins.includes(origin)) {
-    const { error: originError } = await supabase
-      .from("sites")
-      .update({ allowed_origins: [...site.allowed_origins, origin] })
-      .eq("id", site.id);
-    if (originError) {
-      return {
-        ok: false,
-        error: `App URL saved, but allowing its origin failed: ${originError.message}`,
-      };
-    }
-    if (site.current_manifest_id) {
-      const publication = await publishSiteManifest(site.id, gate.userId);
-      if (!publication.ok) {
-        return {
-          ok: false,
-          error: `App URL saved, but availability could not update: ${publication.error}`,
-        };
-      }
-    }
-  }
-
-  revalidatePath(`/repos/${repo.id}`);
-  return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 
@@ -449,8 +406,6 @@ export async function requestAnalysisAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const repositoryId = String(formData.get("repositoryId") ?? "");
-  const environmentId = String(formData.get("environmentId") ?? "") || null;
-
   const supabase = await createClient();
   const { data: repo } = await supabase
     .from("repositories")
@@ -520,7 +475,6 @@ export async function requestAnalysisAction(
     p_repository_id: repositoryId,
     p_commit_sha: sha,
     p_ref: repo.default_branch,
-    p_environment_id: environmentId ?? undefined,
   });
   if (error) return { ok: false, error: error.message };
   redirect(`/repos/${repositoryId}/runs/${runId as string}`);
@@ -582,8 +536,9 @@ const ToolAvailabilitySchema = z.object({
 });
 
 /**
- * The repo-page toggle is the complete review flow: validate ownership, update
- * immutable contract lineage, and immediately publish the resulting tool set.
+ * The repo-page toggle is the complete review flow: validate ownership and
+ * update immutable contract lineage. Publication stays explicit so several
+ * edits can be reviewed and released together.
  */
 export async function setCandidatesEnabledAction(
   candidateIds: string[],
@@ -610,14 +565,14 @@ export async function setCandidatesEnabledAction(
   if (input.enabled && site.allowed_origins.length === 0) {
     return {
       ok: false,
-      error: "Add your app URL before enabling tools.",
+      error: "Add an allowed origin before enabling tools.",
     };
   }
 
   const { data: candidates, error: candidatesError } = await supabase
     .from("action_candidates")
     .select(
-      "id, org_id, run_id, action_id, status, analysis_runs!inner(repository_id)",
+      "id, org_id, run_id, action_id, status, contract, validation_issues, analysis_runs!inner(repository_id)",
     )
     .in("id", input.candidateIds);
   if (candidatesError) return { ok: false, error: candidatesError.message };
@@ -640,93 +595,51 @@ export async function setCandidatesEnabledAction(
     };
   }
 
-  const service = createServiceClient();
   if (input.enabled) {
     for (const candidate of candidates) {
-      if (candidate.status === "approved" || candidate.status === "published") {
-        const { data: existing, error: existingError } = await service
-          .from("tool_contracts")
-          .select("id")
-          .eq("site_id", site.id)
-          .eq("action_id", candidate.action_id)
-          .maybeSingle();
-        if (existingError) return { ok: false, error: existingError.message };
-        if (!existing) {
-          return {
-            ok: false,
-            error: `${candidate.action_id} has no approved contract to enable`,
-          };
-        }
-        const { error } = await service
-          .from("tool_contracts")
-          .update({ status: "active" })
-          .eq("id", existing.id);
-        if (error) return { ok: false, error: error.message };
-        continue;
+      const candidateContract = ActionContractSchema.safeParse(
+        candidate.contract,
+      );
+      if (!candidateContract.success) {
+        return {
+          ok: false,
+          error: "This tool has an invalid contract. Run analysis again.",
+        };
       }
-
       if (candidate.status === "rejected") {
-        const { error } = await service
-          .from("action_candidates")
-          .update({ status: "needs_review" })
-          .eq("id", candidate.id);
-        if (error) return { ok: false, error: error.message };
+        const issue = (
+          candidate.validation_issues as
+            { severity?: string; message?: string }[] | null
+        )?.find((item) => item.severity === "error")?.message;
+        return {
+          ok: false,
+          error: issue
+            ? `This tool failed validation: ${issue}`
+            : "This tool failed validation and cannot be enabled.",
+        };
       } else if (
         candidate.status !== "proposed" &&
-        candidate.status !== "needs_review"
+        candidate.status !== "needs_review" &&
+        candidate.status !== "approved" &&
+        candidate.status !== "published"
       ) {
         return {
           ok: false,
           error: `${candidate.action_id} cannot be enabled from its current state`,
         };
       }
-
-      const { error } = await supabase.rpc("approve_candidate", {
-        p_candidate_id: candidate.id,
-        p_site_id: site.id,
-      });
-      if (error) return { ok: false, error: error.message };
     }
-  } else {
-    const actionIds = candidates.map((candidate) => candidate.action_id);
-    const { error: contractsError } = await service
-      .from("tool_contracts")
-      .update({ status: "retired" })
-      .eq("site_id", site.id)
-      .in("action_id", actionIds);
-    if (contractsError) return { ok: false, error: contractsError.message };
-
-    const { error: candidateError } = await service
-      .from("action_candidates")
-      .update({
-        status: "rejected",
-        reviewed_by: gate.userId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .in("id", input.candidateIds);
-    if (candidateError) return { ok: false, error: candidateError.message };
-
-    const { error: auditError } = await service.from("audit_events").insert({
-      org_id: site.org_id,
-      actor: gate.userId,
-      action: "candidate.disabled",
-      subject_type: "site",
-      subject_id: site.id,
-      data: {
-        candidateIds: input.candidateIds,
-        actionIds,
-      } as never,
-    });
-    if (auditError) return { ok: false, error: auditError.message };
   }
 
-  const publication = await publishSiteManifest(site.id, gate.userId);
-  if (!publication.ok) {
-    return {
-      ok: false,
-      error: `Tool settings changed, but availability could not update: ${publication.error}`,
-    };
-  }
+  const { error: availabilityError } = await supabase.rpc(
+    "set_candidates_enabled",
+    {
+      p_candidate_ids: input.candidateIds,
+      p_site_id: site.id,
+      p_enabled: input.enabled,
+    },
+  );
+  if (availabilityError) return { ok: false, error: availabilityError.message };
 
   revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
@@ -913,29 +826,32 @@ export async function generateIntegrationPrAction(
     };
   }
 
-  const { data: pending, error: pendingError } = await service
+  const { data: existingPr, error: existingPrError } = await service
     .from("integration_prs")
-    .select("id")
+    .select("id, status")
     .eq("site_id", site.id)
-    .eq("status", "pending")
+    .in("status", ["pending", "open"])
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (pendingError) return { ok: false, error: pendingError.message };
-  if (pending) {
+  if (existingPrError) return { ok: false, error: existingPrError.message };
+  if (existingPr?.status === "pending") {
     return { ok: true, error: "PR generation is already queued." };
   }
 
-  const { data: pr, error } = await service
-    .from("integration_prs")
-    .insert({
-      repository_id: site.repository_id,
-      org_id: site.org_id,
-      site_id: site.id,
-      branch: "pending",
-      created_by: gate.userId,
-    })
-    .select("id")
-    .single();
+  const prMutation = existingPr
+    ? service
+        .from("integration_prs")
+        .update({ status: "pending", error: null })
+        .eq("id", existingPr.id)
+    : service.from("integration_prs").insert({
+        repository_id: site.repository_id,
+        org_id: site.org_id,
+        site_id: site.id,
+        branch: "pending",
+        created_by: gate.userId,
+      });
+  const { data: pr, error } = await prMutation.select("id").single();
   if (error) return { ok: false, error: error.message };
 
   const { error: enqueueError } = await service.rpc("enqueue_job", {
@@ -945,12 +861,26 @@ export async function generateIntegrationPrAction(
       attempt: 0,
     } as never,
   });
-  if (enqueueError) return { ok: false, error: enqueueError.message };
+  if (enqueueError) {
+    await service
+      .from("integration_prs")
+      .update({
+        status: existingPr ? "open" : "failed",
+        error: {
+          message: `Could not queue PR generation: ${enqueueError.message}`,
+        },
+      })
+      .eq("id", pr.id);
+    revalidatePath(`/repos/${site.repository_id}`);
+    return { ok: false, error: enqueueError.message };
+  }
 
   await service.from("audit_events").insert({
     org_id: site.org_id,
     actor: gate.userId,
-    action: "integration_pr.requested",
+    action: existingPr
+      ? "integration_pr.regeneration_requested"
+      : "integration_pr.requested",
     subject_type: "integration_pr",
     subject_id: pr.id,
     data: {} as never,
@@ -973,11 +903,15 @@ export async function updateSiteOriginsAction(
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  if (origins.length === 0 || origins.length > 8)
+  const uniqueOrigins = [...new Set(origins)];
+  if (uniqueOrigins.length === 0 || uniqueOrigins.length > 8)
     return { ok: false, error: "provide 1–8 origins" };
-  for (const origin of origins) {
+  for (const origin of uniqueOrigins) {
     try {
       const url = new URL(origin);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        return { ok: false, error: `"${origin}" must use http or https` };
+      }
       if (url.origin !== origin)
         return {
           ok: false,
@@ -999,17 +933,10 @@ export async function updateSiteOriginsAction(
 
   const { error } = await supabase
     .from("sites")
-    .update({ allowed_origins: origins })
+    .update({ allowed_origins: uniqueOrigins })
     .eq("id", site.id);
   if (error) return { ok: false, error: error.message };
 
-  const publication = await publishSiteManifest(site.id, gate.userId);
-  if (!publication.ok) {
-    return {
-      ok: false,
-      error: `Origins saved, but availability could not update: ${publication.error}`,
-    };
-  }
   revalidatePath(`/repos/${site.repository_id}`);
   return { ok: true };
 }

@@ -10,7 +10,6 @@ import { z } from "zod";
 export const ANALYSIS_STAGES = [
   "clone",
   "static",
-  "crawl",
   "synthesize",
   "validate",
 ] as const;
@@ -73,8 +72,6 @@ export const JobErrorSchema = z
       "clone_failed",
       "repo_too_large",
       "parse_failed",
-      "preview_unreachable",
-      "preview_auth_failed",
       "ai_generation_failed",
       "ai_output_invalid",
       "validation_failed",

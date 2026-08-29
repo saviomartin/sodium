@@ -56,9 +56,11 @@ and set the app's webhook URL to the smee channel.
 
 ## 4. Security model recap
 
-- The setup callback's `installation_id` is never trusted: the server
-  verifies the installation against the GitHub API as the app, and binds the
-  callback to the browser session with a `state` cookie.
+- The setup callback's `installation_id` is never trusted: the server verifies
+  the installation against the GitHub API as the app. New installations are
+  bound to the browser session with a `state` cookie; update callbacks without
+  state are accepted only for stored installations visible to the signed-in
+  user through row-level security.
 - Webhooks are verified with `X-Hub-Signature-256` (timing-safe HMAC), deduped
   by `X-GitHub-Delivery`, and checked against stored repository AND
   installation ownership before any work is enqueued.

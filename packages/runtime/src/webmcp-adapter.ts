@@ -86,7 +86,14 @@ export function createToolRegistrar(
   let generation = 0;
 
   const shouldBeActive = (tool: PublishedTool): boolean => {
-    const path = doc.defaultView?.location?.pathname ?? "/";
+    const win = doc.defaultView;
+    const path = win?.location?.pathname ?? "/";
+    if (
+      tool.handler.kind === "bridge" &&
+      !win?.__sodiumBridge?.handlers.has(tool.handler.bridgeKey)
+    ) {
+      return false;
+    }
     return tool.routes.some((route) => {
       if (!matchesPathPattern(route.pathPattern, path)) return false;
       if (route.requiresSelector && !doc.querySelector(route.requiresSelector))

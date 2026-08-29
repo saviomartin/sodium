@@ -23,7 +23,6 @@
     "@supabase/supabase-js": "^2.112.4",
     "ai": "^7.0.83",
     "octokit": "^5.0.5",
-    "playwright": "^1.62.1",
     "postgres": "^3.4.9",
     "tar": "^7.5.22",
     "tsx": "^4.23.12",

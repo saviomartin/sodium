@@ -2,9 +2,11 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { RiskLevel } from "@sodium/contracts";
 import { setCandidatesEnabledAction } from "@/lib/actions";
 import { ConfidenceMeter, RiskBadge, cn } from "./ui";
+import { useRepositorySettingsState } from "./repository-settings-state";
 
 export interface CandidateRow {
   id: string;
@@ -14,6 +16,8 @@ export interface CandidateRow {
   description: string;
   risk_level: RiskLevel;
   confidence: number;
+  status: string;
+  handlerKind: "navigate" | "extract" | "form" | "bridge";
   enabled: boolean;
   repoId: string;
 }
@@ -55,7 +59,7 @@ function Toggle({
   );
 }
 
-/** One decision surface: inspect details or make tools available immediately. */
+/** One decision surface: inspect details or stage tool availability changes. */
 export function ReviewTable({
   candidates,
   siteId,
@@ -63,6 +67,8 @@ export function ReviewTable({
   candidates: CandidateRow[];
   siteId: string;
 }) {
+  const router = useRouter();
+  const { beginEdit, endEdit } = useRepositorySettingsState();
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       candidates.map((candidate) => [candidate.id, candidate.enabled]),
@@ -70,10 +76,14 @@ export function ReviewTable({
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const enabledCount = candidates.filter(
+  const actionable = candidates.filter(
+    (candidate) => candidate.status !== "rejected",
+  );
+  const enabledCount = actionable.filter(
     (candidate) => enabled[candidate.id],
   ).length;
-  const allEnabled = enabledCount === candidates.length;
+  const allEnabled =
+    actionable.length > 0 && enabledCount === actionable.length;
 
   function update(candidateIds: string[], nextEnabled: boolean) {
     const previous = { ...enabled };
@@ -82,15 +92,22 @@ export function ReviewTable({
       ...current,
       ...Object.fromEntries(candidateIds.map((id) => [id, nextEnabled])),
     }));
+    beginEdit();
     startTransition(async () => {
-      const result = await setCandidatesEnabledAction(
-        candidateIds,
-        siteId,
-        nextEnabled,
-      );
-      if (!result.ok) {
-        setEnabled(previous);
-        setError(result.error ?? "Tool availability could not be updated.");
+      try {
+        const result = await setCandidatesEnabledAction(
+          candidateIds,
+          siteId,
+          nextEnabled,
+        );
+        if (!result.ok) {
+          setEnabled(previous);
+          setError(result.error ?? "Tool availability could not be updated.");
+          return;
+        }
+        router.refresh();
+      } finally {
+        endEdit();
       }
     });
   }
@@ -99,10 +116,10 @@ export function ReviewTable({
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-neutral-500 text-pretty">
-          All tools start disabled. Enabled tools are available immediately.
+          All tools start disabled. Republish after changing your selection.
         </p>
         <span className="text-xs text-neutral-500 tabular-nums">
-          {enabledCount} of {candidates.length} available
+          {enabledCount} of {actionable.length} available tools enabled
         </span>
       </div>
 
@@ -127,13 +144,13 @@ export function ReviewTable({
                   Enable all
                   <Toggle
                     checked={allEnabled}
-                    disabled={pending}
+                    disabled={pending || actionable.length === 0}
                     label={
                       allEnabled ? "Disable all tools" : "Enable all tools"
                     }
                     onChange={(checked) =>
                       update(
-                        candidates.map((candidate) => candidate.id),
+                        actionable.map((candidate) => candidate.id),
                         checked,
                       )
                     }
@@ -157,6 +174,16 @@ export function ReviewTable({
                     <p className="font-mono text-xs text-neutral-400">
                       {candidate.name}
                     </p>
+                    {candidate.handlerKind === "bridge" ? (
+                      <p className="mt-1 text-xs font-medium text-amber-700">
+                        Reviewed integration PR required
+                      </p>
+                    ) : null}
+                    {candidate.status === "rejected" ? (
+                      <p className="mt-1 text-xs font-medium text-red-700">
+                        Validation failed — open details
+                      </p>
+                    ) : null}
                     <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 text-pretty">
                       {candidate.description}
                     </p>
@@ -170,7 +197,7 @@ export function ReviewTable({
                   <td className="py-3 text-right">
                     <Toggle
                       checked={isEnabled}
-                      disabled={pending}
+                      disabled={pending || candidate.status === "rejected"}
                       label={`${isEnabled ? "Disable" : "Enable"} ${candidate.title}`}
                       onChange={(checked) => update([candidate.id], checked)}
                     />

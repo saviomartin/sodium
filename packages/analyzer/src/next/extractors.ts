@@ -5,15 +5,19 @@ import {
   type JsxAttribute,
   type JsxOpeningElement,
   type JsxSelfClosingElement,
+  type ParameterDeclaration,
   type SourceFile,
+  type Type,
   type VariableDeclaration,
 } from "ts-morph";
+import type { JsonSchemaSubset } from "@sodium/contracts";
 import { excerptOf } from "../workspace";
 import type {
   AuthSignalInfo,
   FormFieldInfo,
   FormInfo,
   HttpMethod,
+  LinkInfo,
   RouteHandlerInfo,
   ServerActionInfo,
 } from "../types";
@@ -48,7 +52,11 @@ export function fileHasUseServer(sourceFile: SourceFile): boolean {
 interface FunctionLike {
   name: string;
   node: Node;
-  params: { name: string; typeText: string }[];
+  params: {
+    name: string;
+    typeText: string;
+    schema?: JsonSchemaSubset;
+  }[];
   bodyHasUseServer: boolean;
 }
 
@@ -80,12 +88,7 @@ function functionLikeFromDeclaration(fn: FunctionDeclaration): FunctionLike {
   return {
     name: fn.getName() ?? "<anonymous>",
     node: fn,
-    params: fn
-      .getParameters()
-      .map((p) => ({
-        name: p.getName(),
-        typeText: p.getTypeNode()?.getText() ?? "",
-      })),
+    params: fn.getParameters().map(parameterInfo),
     bodyHasUseServer:
       body !== undefined &&
       Node.isBlock(body) &&
@@ -99,12 +102,7 @@ function functionLikeFromVariable(
   const initializer = declaration.getInitializerOrThrow();
   const params =
     Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)
-      ? initializer
-          .getParameters()
-          .map((p) => ({
-            name: p.getName(),
-            typeText: p.getTypeNode()?.getText() ?? "",
-          }))
+      ? initializer.getParameters().map(parameterInfo)
       : [];
   let bodyHasUseServer = false;
   if (
@@ -120,6 +118,109 @@ function functionLikeFromVariable(
     node: declaration.getVariableStatementOrThrow(),
     params,
     bodyHasUseServer,
+  };
+}
+
+function parameterInfo(parameter: ParameterDeclaration): {
+  name: string;
+  typeText: string;
+  schema?: JsonSchemaSubset;
+} {
+  const schema = typeToJsonSchema(parameter.getType(), 0, new Set());
+  return {
+    name: parameter.getName(),
+    typeText: parameter.getTypeNode()?.getText() ?? "",
+    ...(schema ? { schema } : {}),
+  };
+}
+
+function typeToJsonSchema(
+  type: Type,
+  depth: number,
+  seen: Set<string>,
+): JsonSchemaSubset | undefined {
+  if (depth > 4 || type.isAny() || type.isUnknown() || type.isNever()) {
+    return undefined;
+  }
+  if (type.isString()) return { type: "string" };
+  if (type.isNumber()) return { type: "number" };
+  if (type.isBoolean()) return { type: "boolean" };
+  if (type.isStringLiteral()) {
+    const value = type.getLiteralValue();
+    return typeof value === "string"
+      ? { type: "string", const: value }
+      : undefined;
+  }
+  if (type.isNumberLiteral()) {
+    const value = type.getLiteralValue();
+    return typeof value === "number"
+      ? { type: "number", const: value }
+      : undefined;
+  }
+  if (type.isUnion()) {
+    const members = type
+      .getUnionTypes()
+      .filter((member) => !member.isUndefined() && !member.isNull());
+    const stringValues = members.flatMap((member) => {
+      const value = member.isStringLiteral()
+        ? member.getLiteralValue()
+        : undefined;
+      return typeof value === "string" ? [value] : [];
+    });
+    if (stringValues.length === members.length && stringValues.length > 0) {
+      return { type: "string", enum: stringValues };
+    }
+    if (
+      members.length > 0 &&
+      members.every(
+        (member) =>
+          member.isBoolean() ||
+          member.getText() === "true" ||
+          member.getText() === "false",
+      )
+    ) {
+      return { type: "boolean" };
+    }
+    return members.length === 1
+      ? typeToJsonSchema(members[0]!, depth, seen)
+      : undefined;
+  }
+  if (type.isArray()) {
+    const element = type.getArrayElementType();
+    const items = element
+      ? typeToJsonSchema(element, depth + 1, seen)
+      : undefined;
+    return items ? { type: "array", items } : undefined;
+  }
+  if (!type.isObject()) return undefined;
+
+  const identity = type.getText();
+  if (seen.has(identity)) return undefined;
+  const properties = type.getProperties();
+  if (properties.length === 0 || properties.length > 32) return undefined;
+  const nextSeen = new Set(seen).add(identity);
+  const shape: Record<string, JsonSchemaSubset> = {};
+  const required: string[] = [];
+  for (const property of properties) {
+    const declaration =
+      property.getValueDeclaration() ?? property.getDeclarations()[0];
+    if (!declaration || !/^[A-Za-z_$][\w$]*$/.test(property.getName())) {
+      return undefined;
+    }
+    const schema = typeToJsonSchema(
+      property.getTypeAtLocation(declaration),
+      depth + 1,
+      nextSeen,
+    );
+    if (!schema) return undefined;
+    shape[property.getName()] = schema;
+    if (!property.isOptional()) required.push(property.getName());
+  }
+  return {
+    type: "object",
+    properties: shape,
+    required,
+    additionalProperties: false,
   };
 }
 
@@ -139,6 +240,7 @@ export function extractServerActions(
       name: fn.name,
       span: { filePath, startLine, endLine },
       params: fn.params.map((p) => p.name),
+      parameters: fn.params,
       takesFormData:
         firstParam !== undefined &&
         (firstParam.typeText.includes("FormData") ||
@@ -149,6 +251,63 @@ export function extractServerActions(
     });
   }
   return actions;
+}
+
+export function extractLinks(
+  sourceFile: SourceFile,
+  filePath: string,
+  routeBindings: { urlPattern: string; pathPattern: string }[],
+): LinkInfo[] {
+  if (routeBindings.length === 0) return [];
+  const links: LinkInfo[] = [];
+  const elements = sourceFile
+    .getDescendantsOfKind(SyntaxKind.JsxElement)
+    .filter((element) => {
+      const tag = element.getOpeningElement().getTagNameNode().getText();
+      return tag === "a" || tag === "Link";
+    });
+
+  for (const element of elements) {
+    const opening = element.getOpeningElement();
+    const href = attributeText(opening, "href");
+    if (!isSafeLiteralPath(href)) continue;
+    const label =
+      attributeText(opening, "aria-label") ?? visibleJsxText(element.getText());
+    links.push({
+      span: {
+        filePath,
+        startLine: element.getStartLineNumber(),
+        endLine: element.getEndLineNumber(),
+      },
+      href,
+      ...(label ? { label } : {}),
+      routeBindings,
+      excerpt: excerptOf(element.getText()),
+    });
+  }
+  return links;
+}
+
+function isSafeLiteralPath(value: string | undefined): value is string {
+  return Boolean(
+    value &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    value.length <= 1024 &&
+    !/[\\{}\s]/.test(value),
+  );
+}
+
+function visibleJsxText(source: string): string | undefined {
+  const text = source
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\{[^{}]*\}/g, " ")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.slice(0, 160) : undefined;
 }
 
 export function extractRouteHandlers(
@@ -245,9 +404,9 @@ export function extractForms(
       if (!name) continue;
       const type =
         tag === "input" ? (attributeText(control, "type") ?? "text") : tag;
-      if (type === "hidden" || type === "submit") {
-        if (type === "submit") continue;
-      }
+      // Hidden values (CSRF tokens, internal ids, honeypots) already belong to
+      // the page and must never become agent-controlled tool inputs.
+      if (type === "hidden" || type === "submit") continue;
       let options: string[] | undefined;
       if (tag === "select") {
         const parent = control.getParentIfKind(SyntaxKind.JsxElement);
@@ -294,6 +453,7 @@ export function extractForms(
       }
     }
 
+    const selector = formSelector(opening);
     forms.push({
       span: {
         filePath,
@@ -302,10 +462,25 @@ export function extractForms(
       },
       urlPattern: route?.urlPattern,
       pathPattern: route?.pathPattern,
+      ...(selector ? { selector } : {}),
       fields,
       action,
       excerpt: excerptOf(formElement.getText()),
     });
   }
   return forms;
+}
+
+function formSelector(element: JsxTagElement): string | undefined {
+  const id = attributeText(element, "id");
+  if (id && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(id)) return `#${id}`;
+  const name = attributeText(element, "name");
+  if (name && /^[a-zA-Z0-9_.:-]+$/.test(name)) {
+    return `form[name="${name}"]`;
+  }
+  const action = attributeText(element, "action");
+  if (action && /^\/[a-zA-Z0-9_./?=&%-]*$/.test(action)) {
+    return `form[action="${action}"]`;
+  }
+  return undefined;
 }

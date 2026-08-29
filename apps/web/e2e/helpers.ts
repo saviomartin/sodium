@@ -59,7 +59,7 @@ export async function signIn(page: Page, email: string): Promise<void> {
   }
   await page.context().clearCookies();
   await page.goto(
-    `/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink&next=/dashboard`,
+    `/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink&next=/`,
   );
-  await page.waitForURL(/\/(dashboard|connect)$/);
+  await page.waitForURL(/\/$/);
 }

@@ -36,6 +36,13 @@ export interface ServerActionInfo {
   span: SourceSpan;
   /** Parameter names as written. */
   params: string[];
+  /** Parameter names and source-level type text, preserved for safe codegen. */
+  parameters?: {
+    name: string;
+    typeText: string;
+    /** Resolved input shape when TypeScript can prove a bounded JSON schema. */
+    schema?: JsonSchemaSubset;
+  }[];
   /** True when the action's first param is FormData. */
   takesFormData: boolean;
   /** Name of a zod schema parsed inside the action body, if detected. */
@@ -71,12 +78,27 @@ export interface FormInfo {
   /** URL pattern of the page route rendering this form, when resolvable. */
   urlPattern?: string;
   pathPattern?: string;
+  /** Every page route that renders this form, including imported components. */
+  routeBindings?: { urlPattern: string; pathPattern: string }[];
+  /** Source-grounded selector the hosted loader can safely resolve. */
+  selector?: string;
   fields: FormFieldInfo[];
   /** Server action identifier, or a literal action URL. */
   action:
     | { kind: "server_action"; name: string }
     | { kind: "url"; href: string; method: string }
     | { kind: "unknown" };
+  excerpt: string;
+}
+
+export interface LinkInfo {
+  span: SourceSpan;
+  /** Literal same-origin destination found in an anchor or Next.js Link. */
+  href: string;
+  /** Visible or accessible source label when statically recoverable. */
+  label?: string;
+  /** Pages that render the link, including through imported components. */
+  routeBindings: { urlPattern: string; pathPattern: string }[];
   excerpt: string;
 }
 
@@ -103,6 +125,8 @@ export interface StaticAnalysis {
   serverActions: ServerActionInfo[];
   routeHandlers: RouteHandlerInfo[];
   forms: FormInfo[];
+  /** Literal, same-origin navigation affordances rendered by the app. */
+  links: LinkInfo[];
   zodSchemas: ZodSchemaInfo[];
   /** File-level auth signals not tied to a specific primitive. */
   authSignals: AuthSignalInfo[];

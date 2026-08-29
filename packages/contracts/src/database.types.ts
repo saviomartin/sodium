@@ -93,7 +93,6 @@ export type Database = {
         Row: {
           commit_id: string;
           created_at: string;
-          environment_id: string | null;
           error: Json | null;
           finished_at: string | null;
           id: string;
@@ -108,7 +107,6 @@ export type Database = {
         Insert: {
           commit_id: string;
           created_at?: string;
-          environment_id?: string | null;
           error?: Json | null;
           finished_at?: string | null;
           id?: string;
@@ -123,7 +121,6 @@ export type Database = {
         Update: {
           commit_id?: string;
           created_at?: string;
-          environment_id?: string | null;
           error?: Json | null;
           finished_at?: string | null;
           id?: string;
@@ -141,13 +138,6 @@ export type Database = {
             columns: ["commit_id"];
             isOneToOne: false;
             referencedRelation: "repository_commits";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "analysis_runs_environment_id_fkey";
-            columns: ["environment_id"];
-            isOneToOne: false;
-            referencedRelation: "environments";
             referencedColumns: ["id"];
           },
           {
@@ -364,54 +354,6 @@ export type Database = {
             columns: ["run_id"];
             isOneToOne: false;
             referencedRelation: "analysis_runs";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      environments: {
-        Row: {
-          auth_mode: string;
-          base_url: string;
-          created_at: string;
-          credential_secret_id: string | null;
-          id: string;
-          kind: string;
-          org_id: string;
-          repository_id: string;
-        };
-        Insert: {
-          auth_mode?: string;
-          base_url: string;
-          created_at?: string;
-          credential_secret_id?: string | null;
-          id?: string;
-          kind?: string;
-          org_id: string;
-          repository_id: string;
-        };
-        Update: {
-          auth_mode?: string;
-          base_url?: string;
-          created_at?: string;
-          credential_secret_id?: string | null;
-          id?: string;
-          kind?: string;
-          org_id?: string;
-          repository_id?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "environments_org_id_fkey";
-            columns: ["org_id"];
-            isOneToOne: false;
-            referencedRelation: "organizations";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "environments_repository_id_fkey";
-            columns: ["repository_id"];
-            isOneToOne: false;
-            referencedRelation: "repositories";
             referencedColumns: ["id"];
           },
         ];
@@ -1064,6 +1006,10 @@ export type Database = {
         Returns: string;
       };
       enqueue_job: { Args: { p_message: Json }; Returns: number };
+      get_agent_analytics: {
+        Args: { p_days?: number; p_site_id: string };
+        Returns: Json;
+      };
       request_push_analysis: {
         Args: {
           p_commit_sha: string;
@@ -1088,15 +1034,18 @@ export type Database = {
       request_analysis: {
         Args: {
           p_commit_sha: string;
-          p_environment_id?: string;
           p_ref?: string;
           p_repository_id: string;
         };
         Returns: string;
       };
-      set_preview_credential: {
-        Args: { p_environment_id: string; p_secret: string };
-        Returns: undefined;
+      set_candidates_enabled: {
+        Args: {
+          p_candidate_ids: string[];
+          p_enabled: boolean;
+          p_site_id: string;
+        };
+        Returns: number;
       };
     };
     Enums: {

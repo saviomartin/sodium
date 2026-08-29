@@ -12,11 +12,11 @@ export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const rawNext = searchParams.get("next") ?? "/dashboard";
+  const rawNext = searchParams.get("next") ?? "/";
   const next =
     rawNext.startsWith("/") && !rawNext.startsWith("//")
       ? rawNext
-      : "/dashboard";
+      : "/";
 
   if (tokenHash && type) {
     const supabase = await createClient();
@@ -34,15 +34,15 @@ export async function GET(request: NextRequest) {
             ? setupError.message
             : "could not prepare your account";
         return NextResponse.redirect(
-          `${origin}/login?error=${encodeURIComponent(message)}`,
+          `${origin}/?error=${encodeURIComponent(message)}`,
         );
       }
     }
     return NextResponse.redirect(
-      `${origin}/login?error=${encodeURIComponent(error.message)}`,
+      `${origin}/?error=${encodeURIComponent(error.message)}`,
     );
   }
   return NextResponse.redirect(
-    `${origin}/login?error=${encodeURIComponent("invalid confirmation link")}`,
+    `${origin}/?error=${encodeURIComponent("invalid confirmation link")}`,
   );
 }

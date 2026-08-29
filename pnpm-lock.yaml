@@ -117,9 +117,6 @@ importers:
       octokit:
         specifier: ^5.0.5
         version: 5.0.5
-      playwright:
-        specifier: ^1.62.1
-        version: 1.62.1
       postgres:
         specifier: ^3.4.9
         version: 3.4.9

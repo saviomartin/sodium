@@ -5,18 +5,27 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/lib/actions";
 import { buttonClass, dangerButtonClass, secondaryButtonClass } from "./ui";
+import { useRepositorySettingsState } from "./repository-settings-state";
 
 type ServerAction = (
   prev: ActionResult | null,
   formData: FormData,
 ) => Promise<ActionResult>;
 
-function ConfirmSubmit({ label, danger }: { label: string; danger: boolean }) {
+function ConfirmSubmit({
+  label,
+  danger,
+  disabled,
+}: {
+  label: string;
+  danger: boolean;
+  disabled: boolean;
+}) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       aria-busy={pending}
       className={danger ? dangerButtonClass : buttonClass}
     >
@@ -39,6 +48,8 @@ export function ConfirmAction({
   description,
   confirmLabel,
   danger = false,
+  triggerVariant = "primary",
+  blockWhileEdits = false,
   fields,
 }: {
   action: ServerAction;
@@ -47,8 +58,12 @@ export function ConfirmAction({
   description: string;
   confirmLabel: string;
   danger?: boolean;
+  triggerVariant?: "primary" | "secondary";
+  blockWhileEdits?: boolean;
   fields: Record<string, string>;
 }) {
+  const { editPending } = useRepositorySettingsState();
+  const blocked = blockWhileEdits && editPending;
   const [open, setOpen] = useState(false);
   const [state, formAction] = useActionState(
     async (prev: ActionResult | null, formData: FormData) => {
@@ -63,7 +78,14 @@ export function ConfirmAction({
     <div>
       <AlertDialog.Root open={open} onOpenChange={setOpen}>
         <AlertDialog.Trigger
-          className={danger ? dangerButtonClass : buttonClass}
+          disabled={blocked}
+          className={
+            danger
+              ? dangerButtonClass
+              : triggerVariant === "secondary"
+                ? secondaryButtonClass
+                : buttonClass
+          }
         >
           {trigger}
         </AlertDialog.Trigger>
@@ -95,7 +117,11 @@ export function ConfirmAction({
                 >
                   Cancel
                 </AlertDialog.Cancel>
-                <ConfirmSubmit label={confirmLabel} danger={danger} />
+                <ConfirmSubmit
+                  label={confirmLabel}
+                  danger={danger}
+                  disabled={blocked}
+                />
               </div>
             </form>
           </AlertDialog.Content>

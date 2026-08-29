@@ -148,8 +148,8 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
 ### D1 — Monorepo boundaries (pnpm + Turborepo)
 
 ```
-apps/web         Next.js dashboard, repository connection, Settings, API routes, public manifest + loader endpoints
-apps/worker      background worker: clone → static analysis → crawl → AI synthesis → validation; PR generation; sync
+apps/web         Next.js home, repository workspace, Settings, API routes, public manifest + loader endpoints
+apps/worker      background worker: clone → static analysis → AI synthesis → validation; PR generation; sync
 packages/analyzer    framework-neutral analysis engine + Next.js adapter (ts-morph AST, no execution)
 packages/runtime     loader (agent.js), WebMCP adapter, first-party bridge SDK
 packages/contracts   Zod schemas, DB types, versioned action contracts, deterministic validation, signing
@@ -280,19 +280,16 @@ immutable, and rollback is one click to any previously approved version.
 
 ### D10 — What ships to the customer
 
-Simple sites: the loader alone supports three automatic primitives — navigation,
-reading approved structured content (selector extraction), and submitting approved
-forms (never for destructive/financial actions). Complex apps: the generated integration
-PR adds (a) the pinned loader `<script>` in the root layout, (b) a generated action
-bridge binding approved `bridgeKey`s to existing app functions (reusing the app's own
-validation/auth layers), (c) generated tests + manifest metadata, all marked
-`@generated` with a documented regeneration workflow. PRs go to a new branch, never the
-default branch.
+The loader alone supports source-grounded navigation and approved form submission
+(never destructive or financial forms). When enabled tools bind to exported server
+actions, the generated integration PR also adds a small, reviewable client component
+that registers those exact actions under declarative bridge keys. PRs go to a new
+branch and never push directly to the default branch.
 
 ### D11 — Honest capability claims
 
 Published tools are described as "available to compatible WebMCP browser agents while
-the application is open" — never as universal agent support. The dashboard shows the
+the application is open" — never as universal agent support. The repository page shows the
 current Chrome/Edge origin-trial status.
 
 ---

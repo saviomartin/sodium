@@ -34,7 +34,6 @@ export interface RunRow {
   repository_id: string;
   org_id: string;
   commit_id: string;
-  environment_id: string | null;
   status: string;
   stage: string;
   stage_statuses: Record<string, unknown>;
@@ -44,25 +43,19 @@ export interface RunRow {
   repo_name: string;
   default_branch: string;
   installation_id: number;
-  environment_base_url: string | null;
-  environment_auth_mode: string | null;
-  environment_credential_secret_id: string | null;
 }
 
 export async function loadRun(sql: Sql, runId: string): Promise<RunRow | null> {
   const rows = await sql<RunRow[]>`
-    select r.id, r.repository_id, r.org_id, r.commit_id, r.environment_id, r.status, r.stage,
+    select r.id, r.repository_id, r.org_id, r.commit_id, r.status, r.stage,
            r.stage_statuses, c.sha,
            repo.full_name as repo_full_name, repo.owner as repo_owner, repo.name as repo_name,
            repo.default_branch,
-           gi.installation_id,
-           e.base_url as environment_base_url, e.auth_mode as environment_auth_mode,
-           e.credential_secret_id as environment_credential_secret_id
+           gi.installation_id
     from analysis_runs r
     join repository_commits c on c.id = r.commit_id
     join repositories repo on repo.id = r.repository_id
     join github_installations gi on gi.id = repo.installation_id
-    left join environments e on e.id = r.environment_id
     where r.id = ${runId}
   `;
   return rows[0] ?? null;
@@ -177,15 +170,4 @@ export async function setRunRunning(sql: Sql, runId: string): Promise<void> {
     set status = 'running', started_at = coalesce(started_at, now())
     where id = ${runId} and status in ('queued', 'running')
   `;
-}
-
-/** Reads a Vault-stored preview credential over the direct DB connection. */
-export async function readVaultSecret(
-  sql: Sql,
-  secretId: string,
-): Promise<string | null> {
-  const rows = await sql<{ decrypted_secret: string }[]>`
-    select decrypted_secret from vault.decrypted_secrets where id = ${secretId}
-  `;
-  return rows[0]?.decrypted_secret ?? null;
 }

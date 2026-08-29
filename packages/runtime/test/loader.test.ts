@@ -7,6 +7,7 @@ import {
 } from "@sodium/contracts/signing";
 import { ToolManifestSchema } from "@sodium/contracts";
 import { bootstrap } from "../src/loader";
+import { registerBridgeHandlers } from "../src/bridge";
 import type { ModelContextLike, WebMcpToolDescriptor } from "../src/types";
 import { makeManifest, makeTool } from "./manifest-fixture";
 
@@ -153,5 +154,30 @@ describe("bootstrap", () => {
     document.body.innerHTML = `<div data-signed-in></div>`;
     await handle!.refresh();
     expect(handle!.registered()).toEqual(["read_account"]);
+  });
+
+  it("advertises bridge tools only while their handler is registered", async () => {
+    const manifest = makeManifest({
+      tools: [
+        makeTool({
+          name: "add_to_cart",
+          title: "Add to cart",
+          handler: { kind: "bridge", bridgeKey: "actions.add_to_cart" },
+        }),
+      ],
+    });
+    const { handle } = await boot(signedEnvelope(manifest));
+    expect(handle!.registered()).toEqual([]);
+
+    const unregister = registerBridgeHandlers({
+      "actions.add_to_cart": async () => ({ added: true }),
+    });
+    await vi.waitFor(() =>
+      expect(handle!.registered()).toEqual(["add_to_cart"]),
+    );
+
+    unregister();
+    await vi.waitFor(() => expect(handle!.registered()).toEqual([]));
+    handle!.dispose();
   });
 });

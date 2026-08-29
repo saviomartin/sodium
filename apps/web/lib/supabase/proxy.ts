@@ -32,6 +32,7 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic =
     pathname.startsWith("/auth/") ||
+    pathname === "/" ||
     pathname === "/login" ||
     pathname.startsWith("/api/m/") ||
     pathname.startsWith("/api/events") ||
@@ -41,7 +42,7 @@ export async function updateSession(request: NextRequest) {
 
   if (!data?.claims && !isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }

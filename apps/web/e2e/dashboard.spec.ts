@@ -6,40 +6,44 @@ test.describe.configure({ mode: "serial" });
 
 const state = () => readState();
 
-const cancelOrder: ActionContract = {
+const submitContact: ActionContract = {
   contractVersion: 1,
   actionId: "act_0123456789abcdef",
-  name: "cancel_order",
-  title: "Cancel order",
+  name: "submit_contact",
+  title: "Submit contact",
   description:
-    "Cancels a pending order after the signed-in customer confirms the action.",
+    "Submits the public contact form using the same fields a visitor completes.",
   inputSchema: {
     type: "object",
     properties: {
-      orderId: { type: "string" },
-      confirm: { type: "boolean" },
+      email: { type: "string", format: "email" },
+      message: { type: "string" },
     },
-    required: ["orderId", "confirm"],
+    required: ["email", "message"],
     additionalProperties: false,
   },
-  output: { description: "The canceled order id and status." },
+  output: { description: "Contact form submission acknowledgement." },
   evidence: [
     {
       kind: "source",
-      primitive: "server_action",
-      filePath: "app/actions.ts",
-      startLine: 40,
-      endLine: 70,
+      primitive: "form",
+      filePath: "app/contact/page.tsx",
+      startLine: 10,
+      endLine: 30,
       snippetSha256: "a".repeat(64),
-      excerpt: "export async function cancelOrder(input)",
-      summary: "Server action validates and cancels one pending order.",
+      excerpt: '<form id="contact-form" action={submitContact}>',
+      summary: "Public contact form with a stable selector.",
     },
   ],
-  routes: [{ pathPattern: "/orders", requiresSelector: "[data-signed-in]" }],
-  auth: { required: true, roles: [] },
-  riskLevel: "destructive",
-  confirmation: "required",
-  handler: { kind: "bridge", bridgeKey: "actions.cancel_order" },
+  routes: [{ pathPattern: "/contact" }],
+  auth: { required: false, roles: [] },
+  riskLevel: "state_changing",
+  confirmation: "recommended",
+  handler: {
+    kind: "form",
+    formSelector: "#contact-form",
+    fieldMap: { email: "email", message: "message" },
+  },
   confidence: 0.91,
 };
 
@@ -130,14 +134,14 @@ async function provisionRepository(userId: string) {
     .insert({
       run_id: run.id,
       org_id: membership.org_id,
-      action_id: cancelOrder.actionId,
-      name: cancelOrder.name,
-      title: cancelOrder.title,
-      description: cancelOrder.description,
-      contract: cancelOrder,
-      risk_level: cancelOrder.riskLevel,
-      confirmation: cancelOrder.confirmation,
-      confidence: cancelOrder.confidence,
+      action_id: submitContact.actionId,
+      name: submitContact.name,
+      title: submitContact.title,
+      description: submitContact.description,
+      contract: submitContact,
+      risk_level: submitContact.riskLevel,
+      confirmation: submitContact.confirmation,
+      confidence: submitContact.confidence,
       status: "needs_review",
     })
     .select("id")
@@ -147,6 +151,7 @@ async function provisionRepository(userId: string) {
   return {
     admin,
     workspaceId: membership.org_id,
+    githubInstallationId: unique,
     repositoryId: repository.id,
     runId: run.id,
     candidateId: candidate.id,
@@ -155,21 +160,55 @@ async function provisionRepository(userId: string) {
   };
 }
 
-test("analysis returns to the repo and tool toggles publish immediately", async ({
+test("analysis returns to the repo and edits publish explicitly", async ({
   page,
   context,
 }) => {
   const { users } = state();
   await signIn(page, users.owner.email);
 
-  await expect(page).toHaveURL(/\/connect$/);
+  await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("heading", { name: "Connect a GitHub repository" }),
+    page.getByRole("heading", { name: "No GitHub repository connected" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Connect a GitHub repo" }),
   ).toBeVisible();
   await expect(page.getByText(/create.*organization/i)).toHaveCount(0);
+  await page.getByLabel("Open account menu").click();
+  await expect(page.getByText(users.owner.email)).toBeVisible();
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
 
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/$/);
+
   const seeded = await provisionRepository(users.owner.id);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Connected repositories" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", {
+      name: "foundative/webmcp-fixture-shop",
+    }),
+  ).toHaveAttribute("href", `/repos/${seeded.repositoryId}`);
+  await expect(
+    page.getByRole("link", { name: "New repository" }),
+  ).toHaveAttribute("href", "/?add=1");
+
+  await page.getByRole("link", { name: "New repository" }).click();
+  await expect(
+    page.getByRole("heading", { name: "foundative repositories" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add account" })).toBeVisible();
+  await expect(page.locator('input[name="intent"]')).toHaveValue("add");
+  await expect(
+    page.getByRole("link", { name: /Update access/ }),
+  ).toHaveAttribute(
+    "href",
+    `https://github.com/organizations/foundative/settings/installations/${seeded.githubInstallationId}`,
+  );
+
   await page.goto(`/repos/${seeded.repositoryId}/runs/${seeded.runId}`);
   await expect(page.getByText("Static analysis")).toBeVisible();
   await expect(
@@ -184,7 +223,6 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
       stage_statuses: {
         clone: { status: "succeeded", message: "21 files" },
         static: { status: "succeeded", message: "7 routes, 3 actions" },
-        crawl: { status: "skipped", message: "No preview configured" },
         synthesize: { status: "succeeded", message: "1 candidate" },
         validate: { status: "succeeded", message: "1 ready for review" },
       },
@@ -197,7 +235,9 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
   await expect(page).toHaveURL(new RegExp(`/repos/${seeded.repositoryId}$`), {
     timeout: 10_000,
   });
-  await expect(page.getByRole("link", { name: "Cancel order" })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Submit contact" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Install & access" }),
   ).toBeVisible();
@@ -214,22 +254,20 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
   );
 
   const enableToggle = page.getByRole("checkbox", {
-    name: "Enable Cancel order",
+    name: "Enable Submit contact",
   });
   await enableToggle.check();
   await expect(
-    page.getByRole("checkbox", { name: "Disable Cancel order" }),
+    page.getByRole("checkbox", { name: "Disable Submit contact" }),
   ).toBeChecked({ timeout: 15_000 });
-  await expect
-    .poll(async () => {
-      const { data: liveSite } = await seeded.admin
-        .from("sites")
-        .select("current_manifest_id")
-        .eq("repository_id", seeded.repositoryId)
-        .single();
-      return liveSite?.current_manifest_id ?? null;
-    })
-    .not.toBeNull();
+  await expect(
+    page.getByText("Unpublished tool or origin changes are ready."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Publish now" }).click();
+  await page.getByRole("button", { name: "Publish manifest" }).click();
+  await expect(
+    page.getByText("Live settings match your current edits."),
+  ).toBeVisible();
 
   const manifestResponse = await page.request.get(
     `/api/m/${seeded.sitePublicId}`,
@@ -250,42 +288,25 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
   expect(publicManifest).toMatchObject({
     siteId: seeded.sitePublicId,
     origins: ["https://example.com"],
-    tools: [{ name: "cancel_order" }],
+    tools: [{ name: "submit_contact" }],
   });
 
-  const origins = page.getByRole("textbox", {
-    name: "One origin per line",
-  });
-  await origins.fill("https://example.com\nhttps://staging.example.com");
-  await page.getByRole("button", { name: "Save origins" }).click();
+  const origins = page.getByRole("textbox", { name: "Add an origin" });
+  await origins.fill("https://staging.example.com");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(
-    page.getByText("Origins saved and availability updated."),
+    page.getByText("Saved. Republish to make this live."),
   ).toBeVisible({ timeout: 15_000 });
   await expect
     .poll(async () => {
       const { data: liveSite } = await seeded.admin
         .from("sites")
-        .select("allowed_origins, current_manifest_id")
+        .select("allowed_origins")
         .eq("id", seeded.siteId)
         .single();
-      if (!liveSite?.current_manifest_id) return null;
-      const { data: liveManifest } = await seeded.admin
-        .from("manifests")
-        .select("manifest")
-        .eq("id", liveSite.current_manifest_id)
-        .single();
-      return {
-        origins: liveSite.allowed_origins,
-        manifest: liveManifest?.manifest,
-      };
+      return liveSite?.allowed_origins;
     })
-    .toMatchObject({
-      origins: ["https://example.com", "https://staging.example.com"],
-      manifest: {
-        origins: ["https://example.com", "https://staging.example.com"],
-        tools: [{ name: "cancel_order" }],
-      },
-    });
+    .toEqual(["https://example.com", "https://staging.example.com"]);
 
   const { data: beforeRepublish } = await seeded.admin
     .from("manifests")
@@ -308,6 +329,19 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
       return data?.version ?? 0;
     })
     .toBe((beforeRepublish?.version ?? 0) + 1);
+  const republishedResponse = await page.request.get(
+    `/api/m/${seeded.sitePublicId}`,
+  );
+  const republishedEnvelope = (await republishedResponse.json()) as {
+    payload: string;
+  };
+  const republishedManifest = JSON.parse(
+    Buffer.from(republishedEnvelope.payload, "base64url").toString("utf8"),
+  ) as { origins: string[] };
+  expect(republishedManifest.origins).toEqual([
+    "https://example.com",
+    "https://staging.example.com",
+  ]);
 
   await seeded.admin.from("usage_events").insert({
     org_id: seeded.workspaceId,
@@ -315,8 +349,42 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
     event: "loader_ready",
     data: { origin: "https://example.com" },
   });
+  await seeded.admin.from("usage_events").insert([
+    {
+      org_id: seeded.workspaceId,
+      site_id: seeded.siteId,
+      event: "tool_invoked",
+      data: { tool: "submit_contact", ok: true, ms: 84 },
+    },
+    {
+      org_id: seeded.workspaceId,
+      site_id: seeded.siteId,
+      event: "answer_engine_referral",
+      data: { engine: "ChatGPT", method: "campaign" },
+    },
+  ]);
   await page.reload();
   await expect(page.getByText(/Loader last ready/)).toBeVisible();
+
+  const agentAnalytics = page.locator("#agent-analytics");
+  await expect(
+    agentAnalytics.getByRole("heading", { name: "Agent analytics" }),
+  ).toBeVisible();
+  await expect(agentAnalytics.getByText("ChatGPT")).toBeVisible();
+  await expect(agentAnalytics.getByText("submit_contact")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Agent analytics" })).toHaveCount(
+    0,
+  );
+  await expect(
+    agentAnalytics.getByRole("link", { name: "7d" }),
+  ).toHaveAttribute(
+    "href",
+    `/repos/${seeded.repositoryId}?range=7d#agent-analytics`,
+  );
+  const removedAnalyticsPage = await page.request.get(
+    `/repos/${seeded.repositoryId}/analytics`,
+  );
+  expect(removedAnalyticsPage.status()).toBe(404);
 
   await page.getByText("Versions, rollback & activity").click();
   await expect(page.getByText("Loader activity")).toBeVisible();
@@ -356,13 +424,14 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
       url: prUrl,
     })
     .eq("id", integrationPr!.id);
-  await page.reload();
+  // The repository page reconciles background PR status without a reload.
   await expect(page.getByRole("link", { name: "Open #123 ↗" })).toHaveAttribute(
     "href",
     prUrl,
+    { timeout: 10_000 },
   );
 
-  await page.getByRole("link", { name: "Cancel order" }).click();
+  await page.getByRole("link", { name: "Submit contact" }).click();
   await expect(page.getByText("available", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: /approve|publish|reject/i }),
@@ -370,12 +439,37 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
 
   await page.goto(`/repos/${seeded.repositoryId}`);
   const disableToggle = page.getByRole("checkbox", {
-    name: "Disable Cancel order",
+    name: "Disable Submit contact",
   });
   await disableToggle.uncheck();
   await expect(
-    page.getByRole("checkbox", { name: "Enable Cancel order" }),
+    page.getByRole("checkbox", { name: "Enable Submit contact" }),
   ).not.toBeChecked({ timeout: 15_000 });
+  await page.getByRole("checkbox", { name: "Enable Submit contact" }).check();
+  await expect(
+    page.getByRole("checkbox", { name: "Disable Submit contact" }),
+  ).toBeChecked({ timeout: 15_000 });
+  await page
+    .getByRole("checkbox", { name: "Disable Submit contact" })
+    .uncheck();
+  await expect(
+    page.getByRole("checkbox", { name: "Enable Submit contact" }),
+  ).not.toBeChecked({ timeout: 15_000 });
+  await expect(
+    page.getByText("Unpublished tool or origin changes are ready."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Republish now" }).click();
+  await page.getByRole("button", { name: "Publish manifest" }).click();
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/m/${seeded.sitePublicId}`);
+      const currentEnvelope = (await response.json()) as { payload: string };
+      const currentManifest = JSON.parse(
+        Buffer.from(currentEnvelope.payload, "base64url").toString("utf8"),
+      ) as { tools: unknown[] };
+      return currentManifest.tools.length;
+    })
+    .toBe(0);
 
   const removedPublishPage = await page.goto(
     `/repos/${seeded.repositoryId}/publish`,
@@ -384,7 +478,53 @@ test("analysis returns to the repo and tool toggles publish immediately", async 
 
   await page.goto("/settings");
   await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole("button", { name: "Continue with GitHub" }),
+  ).toBeVisible();
+});
+
+test("legacy empty analyses require reanalysis instead of claiming no tools exist", async ({
+  page,
+}) => {
+  const { users } = state();
+  await signIn(page, users.owner.email);
+  const seeded = await provisionRepository(users.owner.id);
+  await seeded.admin
+    .from("action_candidates")
+    .delete()
+    .eq("id", seeded.candidateId);
+  await seeded.admin
+    .from("analysis_runs")
+    .update({
+      status: "succeeded",
+      stage: "validate",
+      stage_statuses: {
+        clone: { status: "succeeded", message: "21 files" },
+        static: {
+          status: "succeeded",
+          message: "7 routes, 3 actions",
+          routes: 7,
+          serverActions: 3,
+        },
+        synthesize: { status: "succeeded", proposed: 0 },
+        validate: { status: "succeeded", total: 0 },
+      },
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", seeded.runId);
+
+  await page.goto(`/repos/${seeded.repositoryId}`);
+  await expect(
+    page.getByText("Reanalysis required", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/discarded every tool/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Run analysis now" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No executable tools found", { exact: true }),
+  ).toHaveCount(0);
 });
 
 test("Settings deletes all account data but no GitHub repository", async ({
@@ -406,7 +546,10 @@ test("Settings deletes all account data but no GitHub repository", async ({
     page.getByText("GitHub repositories stay untouched."),
   ).toBeVisible();
   await page.getByRole("button", { name: "Delete everything" }).click();
-  await expect(page).toHaveURL(/\/login\?deleted=1$/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/\?deleted=1$/, { timeout: 20_000 });
+  await expect(
+    page.getByText("Your Sodium account and its data were deleted."),
+  ).toBeVisible();
 
   const { data: deletedUser } = await admin.auth.admin.getUserById(
     users.outsider.id,

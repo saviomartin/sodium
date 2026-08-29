@@ -6,17 +6,13 @@ import {
   type ActionContract,
   type Evidence,
 } from "@sodium/contracts";
-import type { CrawledPage } from "../providers/crawler";
 import type { PrimitiveRef, ProposedTool } from "../providers/ai-provider";
 
 /**
  * Builds the numbered primitive list shared by AI synthesis (as citable
  * evidence) and by sync comparison (as ground truth).
  */
-export function buildPrimitives(
-  analysis: StaticAnalysis,
-  crawledPages: CrawledPage[],
-): PrimitiveRef[] {
+export function buildPrimitives(analysis: StaticAnalysis): PrimitiveRef[] {
   const primitives: PrimitiveRef[] = [];
   const push = (
     kind: PrimitiveRef["kind"],
@@ -41,6 +37,13 @@ export function buildPrimitives(
       form as unknown as Record<string, unknown>,
     );
   }
+  for (const link of analysis.links ?? []) {
+    push(
+      "link",
+      `link ${link.label ? `"${link.label}" ` : ""}to ${link.href} (${link.span.filePath})`,
+      link as unknown as Record<string, unknown>,
+    );
+  }
   for (const action of analysis.serverActions) {
     push(
       "server_action",
@@ -55,30 +58,11 @@ export function buildPrimitives(
       handler as unknown as Record<string, unknown>,
     );
   }
-  for (const page of crawledPages) {
-    push("crawl_page", `crawled ${page.path} (status ${page.status})`, {
-      path: page.path,
-      title: page.title,
-      forms: page.forms,
-      dataAttributes: page.dataAttributes,
-    });
-  }
   return primitives;
 }
 
 /** Converts a cited primitive into contract evidence. */
 function evidenceFromPrimitive(primitive: PrimitiveRef): Evidence | null {
-  if (primitive.kind === "crawl_page") {
-    const detail = primitive.detail as { path: string; title?: string };
-    return {
-      kind: "crawl",
-      url: detail.path,
-      summary: `Crawled preview page ${detail.path}`.slice(0, 500),
-      accessibilityExcerpt: undefined,
-      screenshotPath: undefined,
-      selector: undefined,
-    };
-  }
   const span = (
     primitive.detail as {
       span?: { filePath: string; startLine: number; endLine: number };
@@ -93,7 +77,9 @@ function evidenceFromPrimitive(primitive: PrimitiveRef): Evidence | null {
       ? "route"
       : primitive.kind === "form"
         ? "form"
-        : primitive.kind;
+        : primitive.kind === "link"
+          ? "route"
+          : primitive.kind;
   return {
     kind: "source",
     primitive: primitiveKind as
@@ -131,11 +117,11 @@ export function assembleContract(
     .filter((e): e is Evidence => e !== null)
     .slice(0, 16);
 
-  const primary = cited[0];
-  const idSource = primary
-    ? [repositoryId, primary.kind, primary.summary]
-    : [repositoryId, "name", proposal.name];
-  const actionId = stableActionId(...idSource);
+  const actionId = stableActionId(
+    repositoryId,
+    proposal.handler.kind,
+    capabilityTarget(proposal),
+  );
 
   const contract = ActionContractSchema.parse({
     contractVersion: CONTRACT_VERSION,
@@ -154,4 +140,26 @@ export function assembleContract(
     confidence: proposal.confidence,
   });
   return { contract, reasoning: proposal.reasoning };
+}
+
+function capabilityTarget(proposal: ProposedTool): string {
+  switch (proposal.handler.kind) {
+    case "navigate":
+      return proposal.handler.urlTemplate;
+    case "form":
+      return `${proposal.handler.formSelector}\u0000${proposal.routes
+        .map((route) => route.pathPattern)
+        .sort()
+        .join("\u0000")}`;
+    case "bridge":
+      return proposal.handler.bridgeKey;
+    case "extract":
+      return proposal.handler.fields
+        .map(
+          (field) =>
+            `${field.name}:${field.selector}:${field.attribute ?? "text"}`,
+        )
+        .sort()
+        .join("\u0000");
+  }
 }

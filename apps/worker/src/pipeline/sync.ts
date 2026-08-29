@@ -134,8 +134,8 @@ export function compareManifestToAnalysis(
   const pagePatterns = new Set(
     analysis.routes.filter((r) => r.kind === "page").map((r) => r.pathPattern),
   );
-  const actionNames = new Set(
-    analysis.serverActions.map((action) => snake(action.name)),
+  const linkTargets = new Set(
+    (analysis.links ?? []).map((link) => link.href.split(/[?#]/, 1)[0] || "/"),
   );
   const filesWithAuth = new Set(
     analysis.authSignals.map((signal) => signal.span.filePath),
@@ -144,8 +144,12 @@ export function compareManifestToAnalysis(
   for (const tool of manifest.tools) {
     switch (tool.handler.kind) {
       case "navigate": {
-        const target = tool.handler.urlTemplate.replace(/\{[^}]+\}/g, "*");
+        const target =
+          tool.handler.urlTemplate
+            .replace(/\{[^}]+\}/g, "*")
+            .split(/[?#]/, 1)[0] || "/";
         if (
+          !linkTargets.has(target) &&
           ![...pagePatterns].some(
             (pattern) =>
               pattern === target || pattern === target.replace(/\/$/, ""),
@@ -207,7 +211,13 @@ export function compareManifestToAnalysis(
       }
       case "bridge": {
         const expected = tool.handler.bridgeKey.replace(/^actions\./, "");
-        if (!actionNames.has(expected)) {
+        const hasMatchingAction = analysis.serverActions.some((action) => {
+          const normalized = snake(action.name);
+          return (
+            expected === normalized || expected.startsWith(`${normalized}_`)
+          );
+        });
+        if (!hasMatchingAction) {
           findings.push({
             kind: "handler_removed",
             severity: "breaking",

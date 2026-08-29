@@ -10,7 +10,9 @@ import { createServiceClient } from "@/lib/supabase/service";
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, OPTIONS",
-  "cache-control": "public, max-age=60, stale-while-revalidate=300",
+  // Settings change only on an explicit publish. Always revalidate here so a
+  // republish takes effect on the very next loader request.
+  "cache-control": "no-store",
 } as const;
 
 export async function GET(
