@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parse } from "dotenv";
 import postgres from "postgres";
 
 /**
@@ -16,7 +17,9 @@ import postgres from "postgres";
  * Requires SUPABASE_DB_URL (skipped otherwise).
  */
 
-const DB_URL = process.env.SUPABASE_DB_URL;
+const DB_URL = process.env.SUPABASE_DB_URL
+  ? parse(`SUPABASE_DB_URL=${process.env.SUPABASE_DB_URL}`).SUPABASE_DB_URL
+  : undefined;
 
 type Tx = postgres.TransactionSql;
 

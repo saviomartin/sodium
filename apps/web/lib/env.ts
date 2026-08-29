@@ -1,6 +1,8 @@
 import "server-only";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
+import { assertGithubAppEnvironment } from "@sodium/contracts";
+import { publicEnv } from "./public-env";
 
 /**
  * Server environment for the dashboard. Validated once at import; the app
@@ -8,10 +10,10 @@ import { z } from "zod";
  * only NEXT_PUBLIC_* values do, and those are non-secret by definition.
  */
 const EnvSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(20),
   SUPABASE_SECRET_KEY: z.string().min(20),
-  SITE_URL: z.string().url().default("http://localhost:3000"),
+  SITE_URL: z.string().url().optional(),
+  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
+  VERCEL_URL: z.string().optional(),
 
   /** Ed25519 manifest signing key: either inline PEM + id, or a JSON key file. */
   MANIFEST_SIGNING_KEY_ID: z.string().optional(),
@@ -33,6 +35,48 @@ if (!parsed.success) {
   );
 }
 export const env = parsed.data;
+
+assertGithubAppEnvironment(
+  publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT,
+  env.GITHUB_APP_ID,
+  env.NEXT_PUBLIC_GITHUB_APP_SLUG,
+);
+
+if (
+  env.VERCEL_ENV &&
+  env.VERCEL_ENV !== publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT
+) {
+  throw new Error(
+    `Vercel environment mismatch: VERCEL_ENV=${env.VERCEL_ENV}, NEXT_PUBLIC_SODIUM_ENVIRONMENT=${publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT}`,
+  );
+}
+
+function exactOrigin(raw: string): string {
+  const url = new URL(raw);
+  if (url.pathname !== "/" || url.search || url.hash) {
+    throw new Error(`site URL must be an origin without a path: ${raw}`);
+  }
+  return url.origin;
+}
+
+/** Canonical origin for callbacks and generated loader URLs. */
+export function siteUrl(): string {
+  if (publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "preview") {
+    if (!env.VERCEL_URL) {
+      throw new Error("VERCEL_URL is required in the preview environment");
+    }
+    return exactOrigin(`https://${env.VERCEL_URL}`);
+  }
+
+  const url = exactOrigin(env.SITE_URL ?? "http://localhost:3000");
+  if (
+    publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "production" &&
+    !url.startsWith("https://")
+  ) {
+    throw new Error("production SITE_URL must use https");
+  }
+  return url;
+}
 
 export interface SigningKey {
   keyId: string;
@@ -62,7 +106,7 @@ export function manifestSigningKey(): SigningKey {
     );
   }
   if (
-    process.env.NODE_ENV === "production" &&
+    publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "production" &&
     cachedKey.keyId.startsWith("dev-insecure")
   ) {
     throw new Error(

@@ -16,14 +16,14 @@ only as the RLS tenant boundary.
 
 ## Repository layout
 
-| Path                 | Purpose                                                                                            |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `apps/web`           | Next.js app: home/auth, repository connection, analysis, tool controls, Settings                   |
-| `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, AI synthesis, validation, PR generation      |
-| `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                                       |
-| `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                                 |
-| `packages/runtime`   | Signed manifest loader, WebMCP adapter, action bridge                                              |
-| `supabase`           | Auth-linked personal workspaces, RLS schema, queue, migrations                                     |
+| Path                 | Purpose                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `apps/web`           | Next.js app: home/auth, repository connection, analysis, tool controls, Settings               |
+| `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, AI synthesis, validation, PR generation |
+| `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                                   |
+| `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                             |
+| `packages/runtime`   | Signed manifest loader, WebMCP adapter, action bridge                                          |
+| `supabase`           | Auth-linked personal workspaces, RLS schema, queue, migrations                                 |
 
 The standalone test application lives at
 [`foundative/webmcp-fixture-shop`](https://github.com/foundative/webmcp-fixture-shop).
@@ -31,34 +31,57 @@ It intentionally contains no Sodium runtime or generated integration.
 
 ## Local setup
 
-Requirements: Node 24+, pnpm 11, Supabase CLI, and a configured GitHub App.
-Local development uses the same hosted Supabase and GitHub paths as production.
+Requirements: Node 24+, pnpm 11, the Vercel CLI, and access to the linked
+`foundative/sodium-webmcp` project. Local development is isolated from
+production:
+
+| Runtime                    | Supabase project     | GitHub App                 | Public origin                      |
+| -------------------------- | -------------------- | -------------------------- | ---------------------------------- |
+| Local / Vercel Development | `sodium-development` | `Sodium Local Development` | `http://localhost:3000`            |
+| Vercel Preview             | `sodium-development` | development credentials    | deployment-specific `VERCEL_URL`   |
+| Production                 | `sodium`             | `sodium-webmcp`            | `https://sodium-webmcp.vercel.app` |
+
+The app validates these project refs at startup. A local or Preview build
+pointed at production Supabase exits instead of starting.
 
 ```bash
 corepack pnpm install
-supabase link --project-ref <project-ref>
+corepack pnpm env:pull
 corepack pnpm db:push
+corepack pnpm dev
 ```
 
-Configure:
+`env:pull` pulls only Vercel's **Development** scope, validates every required
+value, and writes three ignored mode-600 files:
 
-- `apps/web/.env.local`: Supabase public/secret keys, `SITE_URL`, manifest
-  signing key, and GitHub App id/private key/webhook secret/slug.
-- `apps/worker/.env`: Supabase URL/secret/database URL, the same GitHub App
-  id/private key, and optional AI Gateway credentials.
+- `.env`: the minimal Supabase CLI/database variables;
+- `apps/web/.env.local`: localhost Auth, signing, and GitHub App variables;
+- `apps/worker/.env`: the isolated database, GitHub App, and worker variables.
+
+The development database starts empty. `supabase/seed.sql` intentionally
+creates no users, repositories, or demo rows. Sign in with GitHub and connect a
+real repository to test the same user flow as production.
 
 GitHub App permissions and callback URLs are documented in
 [`docs/github-app.md`](docs/github-app.md).
 
-Run:
-
-```bash
-corepack pnpm --filter @sodium/web dev
-corepack pnpm --filter @sodium/worker dev
-```
-
 Open `http://localhost:3000`, continue with GitHub, and choose
 `foundative/webmcp-fixture-shop` from the home page.
+
+## Environment administration
+
+```bash
+# Reapply pending migrations to development only (project-ref guarded)
+corepack pnpm db:push
+
+# Reconcile Auth provider and redirect settings from scoped credentials
+corepack pnpm supabase:auth:development
+corepack pnpm supabase:auth:production
+```
+
+Production Supabase credentials are never copied into the local app files.
+Production Auth accepts only production callbacks; development accepts
+localhost plus the Foundative Vercel Preview pattern.
 
 ## Validation
 

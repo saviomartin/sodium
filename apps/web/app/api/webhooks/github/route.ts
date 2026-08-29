@@ -1,5 +1,5 @@
 import { verifyWebhookSignature } from "@/lib/github";
-import { env } from "@/lib/env";
+import { env, siteUrl } from "@/lib/env";
 import { createServiceClient } from "@/lib/supabase/service";
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
@@ -63,7 +63,10 @@ async function handlePullRequest(
 ) {
   const update = pullRequestStatusUpdate(payload);
   if (!update) {
-    return Response.json({ ok: true, ignored: "unsupported pull request event" });
+    return Response.json({
+      ok: true,
+      ignored: "unsupported pull request event",
+    });
   }
 
   // Match both GitHub identifiers before touching an integration row. Payload
@@ -156,7 +159,7 @@ async function handlePush(
   if (workerSecret) {
     after(async () => {
       try {
-        const response = await fetch(`${env.SITE_URL}/api/internal/worker`, {
+        const response = await fetch(`${siteUrl()}/api/internal/worker`, {
           method: "POST",
           headers: { authorization: `Bearer ${workerSecret}` },
           cache: "no-store",

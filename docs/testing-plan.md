@@ -1,6 +1,8 @@
 # Sodium testing plan
 
-All environments use real Supabase and GitHub App integrations. The standalone
+Development and production use separate, real Supabase projects and separate
+GitHub App credentials. Acceptance QA uses a real GitHub identity and a real
+repository; it never inserts demo rows or seeded accounts. The standalone
 target repository is `foundative/webmcp-fixture-shop`.
 
 ## 1. Automated baseline
@@ -12,17 +14,16 @@ corepack pnpm check-types
 corepack pnpm test
 corepack pnpm db:test
 corepack pnpm build
-corepack pnpm --filter @sodium/web test:e2e
 ```
+
+The Playwright suite is regression coverage, not acceptance proof. Real-user
+acceptance uses the flow below against the empty development project.
 
 ## 2. Start the app
 
 ```bash
-# terminal 1
-corepack pnpm --filter @sodium/web dev
-
-# terminal 2
-corepack pnpm --filter @sodium/worker dev
+corepack pnpm env:pull
+corepack pnpm dev
 ```
 
 ## 3. User flow

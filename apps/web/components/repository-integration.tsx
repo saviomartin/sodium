@@ -1,6 +1,6 @@
 import type { ToolManifest } from "@sodium/contracts";
 import type { getPublication } from "@/lib/queries";
-import { env } from "@/lib/env";
+import { siteUrl } from "@/lib/env";
 import {
   generateIntegrationPrAction,
   publishSiteAction,
@@ -66,13 +66,14 @@ export function RepositoryIntegration({
   const lastLoaderReady = usage.find((event) => event.event === "loader_ready");
   const prPending = prs.some((pr) => pr.status === "pending");
   const prOpen = prs.some((pr) => pr.status === "open");
+  const publicUrl = siteUrl();
   const snippet =
     '<script src="' +
-    env.SITE_URL +
+    publicUrl +
     '/agent/v1.js" data-site="' +
     site.site_id +
     '"></script>';
-  const manifestUrl = env.SITE_URL + "/api/m/" + site.site_id;
+  const manifestUrl = publicUrl + "/api/m/" + site.site_id;
   const publishDescription =
     "Signs and publishes " +
     activeContracts.length +

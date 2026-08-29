@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
-import { env } from "./env";
+import { siteUrl } from "./env";
 import { listAppInstallations, type InstallationInfo } from "./github";
 import { manageableGithubInstallations } from "./github-access";
 import { createClient, currentUserId } from "./supabase/server";
@@ -28,7 +28,7 @@ async function writeConnectionState(value: ConnectionState): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(CONNECTION_COOKIE, JSON.stringify(value), {
     httpOnly: true,
-    secure: env.SITE_URL.startsWith("https://"),
+    secure: siteUrl().startsWith("https://"),
     sameSite: "lax",
     maxAge: 600,
     path: "/",
@@ -81,7 +81,7 @@ export async function createGithubAuthorization(
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "github",
     options: {
-      redirectTo: `${env.SITE_URL}/auth/callback?github_state=${state}`,
+      redirectTo: `${siteUrl()}/auth/callback?github_state=${state}`,
       scopes: "read:user user:email read:org",
     },
   });

@@ -12,13 +12,18 @@
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
+    "env:pull": "node scripts/pull-development-env.mjs",
     "db:push": "node scripts/db-push.mjs",
+    "supabase:auth:development": "node scripts/sync-supabase-auth.mjs development",
+    "supabase:auth:production": "node scripts/sync-supabase-auth.mjs production",
     "db:test": "pnpm --filter @sodium/worker test:db",
-    "db:types": "supabase gen types typescript --linked --schema public > packages/contracts/src/database.types.ts"
+    "db:types": "supabase gen types typescript --project-id laqlbydlawieccohknsj --schema public > packages/contracts/src/database.types.ts"
   },
   "devDependencies": {
+    "dotenv": "16.0.3",
     "postgres": "^3.4.9",
     "prettier": "3.9.6",
+    "supabase": "2.116.0",
     "turbo": "^2.10.12",
     "typescript": "7.0.2"
   }

@@ -14,7 +14,7 @@ import {
 import { createClient, currentUserId } from "./supabase/server";
 import { createServiceClient } from "./supabase/service";
 import { publishSiteManifest, rollbackSiteManifest } from "./manifest";
-import { env, hasGithubApp } from "./env";
+import { env, hasGithubApp, siteUrl } from "./env";
 import { listInstallationRepos, resolveRepositoryHead } from "./github";
 import {
   connectGithubWithProviderToken,
@@ -57,7 +57,7 @@ export async function signInWithGithubAction(
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "github",
     options: {
-      redirectTo: `${env.SITE_URL}/auth/callback?setup=github&next=${encodeURIComponent(next)}`,
+      redirectTo: `${siteUrl()}/auth/callback?setup=github&next=${encodeURIComponent(next)}`,
       scopes: "read:user user:email read:org",
     },
   });

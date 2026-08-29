@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Page } from "@playwright/test";
+import { parse } from "dotenv";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const STATE_PATH = join(here, ".state.json");
@@ -20,10 +21,7 @@ export function loadWebEnv(): Record<string, string> {
   ];
   for (const file of files) {
     if (!existsSync(file)) continue;
-    for (const line of readFileSync(file, "utf8").split("\n")) {
-      const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-      if (match) env[match[1]!] = match[2]!;
-    }
+    Object.assign(env, parse(readFileSync(file, "utf8")));
   }
   return env;
 }
