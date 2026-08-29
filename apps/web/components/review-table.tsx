@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import type { RiskLevel } from "@sodium/contracts";
 import { setCandidatesEnabledAction } from "@/lib/actions";
 import { trackProductEvent } from "@/lib/product-analytics";
+import { usePaywall } from "./repository-paywall";
 import { ConfidenceMeter, RiskBadge, cn } from "./ui";
+import {
+  ArrowRightIcon,
+  CheckIcon,
+  LockKeyIcon,
+  WarningCircleIcon,
+} from "./icons";
 import { useRepositorySettingsState } from "./repository-settings-state";
 import { ToolDetailsDialog, type ToolDetail } from "./tool-details-dialog";
 
@@ -35,7 +42,7 @@ function Toggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="relative inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-neutral-600 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+    <label className="relative inline-flex min-h-6 cursor-pointer items-center gap-2 text-xs font-medium text-neutral-400 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
       <input
         type="checkbox"
         checked={checked}
@@ -47,13 +54,13 @@ function Toggle({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none relative h-5 w-9 rounded-full border",
+          "pointer-events-none relative h-5 w-9 rounded-full border transition-colors",
           checked
-            ? "border-blue-600 bg-blue-600"
-            : "border-neutral-300 bg-neutral-200",
-          "after:absolute after:left-0.5 after:top-0.5 after:size-3.5 after:rounded-full after:bg-white after:content-['']",
+            ? "border-blue-500 bg-blue-500"
+            : "border-white/40 bg-white/25",
+          "after:absolute after:left-0.5 after:top-0.5 after:size-3.5 after:rounded-full after:bg-white after:shadow-sm after:transition-transform after:content-['']",
           checked && "after:translate-x-4",
-          "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-600",
+          "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue-500",
         )}
       />
     </label>
@@ -64,13 +71,13 @@ function Toggle({
 export function ReviewTable({
   candidates,
   siteId,
-  locked = false,
 }: {
   candidates: CandidateRow[];
   siteId: string;
-  locked?: boolean;
 }) {
   const router = useRouter();
+  const { paid, requireSubscription } = usePaywall();
+  const locked = !paid;
   const { beginEdit, endEdit } = useRepositorySettingsState();
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
@@ -95,6 +102,7 @@ export function ReviewTable({
     null;
 
   function update(candidateIds: string[], nextEnabled: boolean) {
+    if (!requireSubscription("enable and publish generated tools")) return;
     const previous = { ...enabled };
     setError(null);
     setEnabled((current) => ({
@@ -131,12 +139,25 @@ export function ReviewTable({
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-neutral-500 text-pretty">
+        <p className="flex items-start gap-1.5 text-xs text-neutral-400 text-pretty">
+          {locked ? (
+            <LockKeyIcon
+              aria-hidden
+              weight="fill"
+              className="mt-px size-3.5 shrink-0 text-blue-400"
+            />
+          ) : (
+            <CheckIcon
+              aria-hidden
+              weight="bold"
+              className="mt-px size-3.5 shrink-0 text-faint"
+            />
+          )}
           {locked
             ? "Subscribe to enable, edit, and publish these generated tools."
             : "All tools start disabled. Republish after changing your selection."}
         </p>
-        <span className="text-xs text-neutral-500 tabular-nums">
+        <span className="text-xs text-neutral-400 tabular-nums">
           {enabledCount} of {actionable.length} available tools enabled
         </span>
       </div>
@@ -144,26 +165,35 @@ export function ReviewTable({
       {error && (
         <p
           role="alert"
-          className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 text-pretty"
+          className="mb-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/15 px-3 py-2 text-sm text-red-400 text-pretty"
         >
+          <WarningCircleIcon
+            aria-hidden
+            weight="fill"
+            className="mt-0.5 size-4 shrink-0"
+          />
           {error}
         </p>
       )}
 
+      {/* A declared minimum keeps the five columns at readable widths and makes
+          the container genuinely scroll instead of crushing them; without it
+          the tool column absorbs the width and pushes the enable toggle — the
+          point of this table — off-screen on a phone. */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[46rem] text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
+            <tr className="border-b border-white/10 text-left text-xs text-neutral-400">
               <th className="py-2 pr-4 font-medium">Tool</th>
               <th className="py-2 pr-4 font-medium">Scope</th>
               <th className="py-2 pr-4 font-medium">Risk</th>
               <th className="py-2 pr-4 font-medium">Confidence</th>
               <th className="py-2 text-right font-medium">
-                <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center gap-2 whitespace-nowrap">
                   Enable all
                   <Toggle
                     checked={allEnabled}
-                    disabled={locked || pending || actionable.length === 0}
+                    disabled={pending || actionable.length === 0}
                     label={
                       allEnabled ? "Disable all tools" : "Enable all tools"
                     }
@@ -178,7 +208,7 @@ export function ReviewTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-neutral-100">
+          <tbody className="divide-y divide-white/[0.07]">
             {candidates.map((candidate) => {
               const isEnabled = Boolean(enabled[candidate.id]);
               const scopeLabel = candidate.scopePaths.join(", ");
@@ -188,25 +218,35 @@ export function ReviewTable({
                     <button
                       type="button"
                       onClick={() => setSelectedCandidateId(candidate.id)}
-                      className="rounded-sm text-left font-medium text-blue-700 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                      className="group inline-flex items-center gap-1 rounded-sm py-0.5 text-left font-medium text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     >
                       {candidate.title}
+                      <ArrowRightIcon
+                        aria-hidden
+                        weight="bold"
+                        className="size-3.5 shrink-0 opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+                      />
                     </button>
-                    <p className="font-mono text-xs text-neutral-400">
+                    <p className="font-mono text-xs text-faint">
                       {candidate.name}
                     </p>
                     {candidate.status === "rejected" ? (
-                      <p className="mt-1 text-xs font-medium text-red-700">
+                      <p className="mt-1 flex items-center gap-1 text-xs font-medium text-red-400">
+                        <WarningCircleIcon
+                          aria-hidden
+                          weight="fill"
+                          className="size-3.5 shrink-0"
+                        />
                         Validation failed — open details
                       </p>
                     ) : null}
-                    <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 text-pretty">
+                    <p className="mt-0.5 line-clamp-2 text-xs text-neutral-400 text-pretty">
                       {candidate.description}
                     </p>
                   </td>
                   <td className="max-w-56 py-3 pr-4">
                     <p
-                      className="line-clamp-2 font-mono text-xs text-neutral-700"
+                      className="line-clamp-2 font-mono text-xs text-neutral-300"
                       title={scopeLabel || undefined}
                     >
                       {scopeLabel || "Scope unavailable"}
@@ -221,9 +261,7 @@ export function ReviewTable({
                   <td className="py-3 text-right">
                     <Toggle
                       checked={isEnabled}
-                      disabled={
-                        locked || pending || candidate.status === "rejected"
-                      }
+                      disabled={pending || candidate.status === "rejected"}
                       label={`${isEnabled ? "Disable" : "Enable"} ${candidate.title}`}
                       onChange={(checked) => update([candidate.id], checked)}
                     />

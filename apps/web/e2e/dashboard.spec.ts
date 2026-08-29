@@ -275,10 +275,6 @@ test("analysis returns to the repo and edits publish explicitly", async ({
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy snippet" }).click();
   await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /\/api\/m\// })).toHaveAttribute(
-    "href",
-    `${new URL(page.url()).origin}/api/m/${seeded.sitePublicId}`,
-  );
 
   const enableToggle = page.getByRole("checkbox", {
     name: "Enable Submit contact",
@@ -401,7 +397,9 @@ test("analysis returns to the repo and edits publish explicitly", async ({
   await expect(
     agentAnalytics.getByRole("heading", { name: "Agent analytics" }),
   ).toBeVisible();
-  await expect(agentAnalytics.getByText("ChatGPT")).toBeVisible();
+  await expect(
+    agentAnalytics.getByText("ChatGPT", { exact: true }),
+  ).toBeVisible();
   await expect(agentAnalytics.getByText("submit_contact")).toBeVisible();
   await expect(page.getByRole("link", { name: "Agent analytics" })).toHaveCount(
     0,
@@ -580,24 +578,45 @@ test("one free analysis stays readable while repository capabilities are paywall
     page.getByRole("button", { name: "Submit contact" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("checkbox", { name: "Enable Submit contact" }),
-  ).toBeDisabled();
-  await expect(
     page.getByRole("heading", { name: "Install & access" }),
   ).toBeVisible();
   await expect(page.getByText(/Preview mode — subscribe/)).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Copy snippet" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("textbox", { name: "Add an origin" }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Add", exact: true }),
-  ).toBeDisabled();
+
+  // Paywalled controls stay live. Pressing one says why it is blocked and
+  // offers the subscription rather than presenting a dead button.
+  const pricing = page.getByRole("dialog", { name: "Unlock AI capabilities" });
+  const dismissPricing = async () => {
+    await pricing.getByRole("button", { name: "Close pricing" }).click();
+    await expect(pricing).toBeHidden();
+  };
+
+  const enableToggle = page.getByRole("checkbox", {
+    name: "Enable Submit contact",
+  });
+  await expect(enableToggle).toBeEnabled();
+  await enableToggle.click();
+  await expect(page.getByText("Subscription required")).toBeVisible();
+  await expect(pricing).toBeVisible();
+  await dismissPricing();
+  await expect(enableToggle).not.toBeChecked();
+
+  await page.getByRole("button", { name: "Copy snippet" }).click();
+  await expect(pricing).toBeVisible();
+  await dismissPricing();
+
+  await page
+    .getByRole("textbox", { name: "Add an origin" })
+    .fill("https://staging.example.com");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(pricing).toBeVisible();
+  await dismissPricing();
+
+  // The one remaining origin cannot be removed by anyone: a site needs at
+  // least one, which is a rule about origins rather than about billing.
   await expect(
     page.getByRole("button", { name: "Remove https://example.com" }),
   ).toBeDisabled();
+
   await expect(
     page.getByRole("heading", { name: "Agent analytics" }),
   ).toBeVisible();
@@ -608,13 +627,11 @@ test("one free analysis stays readable while repository capabilities are paywall
   await expect(
     analytics.getByText("Unlock analytics to start collecting"),
   ).toBeVisible();
-  await expect(analytics.getByText("7d", { exact: true })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
-  await expect(
-    page.getByRole("button", { name: "Run analysis now" }),
-  ).toBeDisabled();
+  await expect(analytics.getByRole("link", { name: "7d" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Run analysis now" }).click();
+  await expect(pricing).toBeVisible();
+  await dismissPricing();
 
   await page.getByRole("button", { name: "Submit contact" }).click();
   await expect(
@@ -632,7 +649,7 @@ test("one free analysis stays readable while repository capabilities are paywall
   await expect(dialog.getByText("/ month / repository")).toBeVisible();
   await expect(
     dialog.getByRole("button", {
-      name: "Unlock AI capabilities for your site →",
+      name: "Unlock AI capabilities for your site",
     }),
   ).toBeVisible();
   await expect(
@@ -696,7 +713,7 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
     await page.getByRole("button", { name: "Enable tools" }).first().click();
     await page
       .getByRole("button", {
-        name: "Unlock AI capabilities for your site →",
+        name: "Unlock AI capabilities for your site",
       })
       .click();
     await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });

@@ -14,7 +14,15 @@ export interface AgentAnalyticsDay {
   date: string;
   agentVisits: number;
   toolCalls: number;
+  /** Of that day's calls. Zero on a day with no calls — never a rate. */
+  successfulCalls: number;
+  p95LatencyMs: number;
   answerEngineVisits: number;
+}
+
+export interface AgentAnalyticsToolDay {
+  date: string;
+  calls: number;
 }
 
 export interface AgentAnalyticsTool {
@@ -24,6 +32,8 @@ export interface AgentAnalyticsTool {
   averageLatencyMs: number;
   p95LatencyMs: number;
   lastUsedAt: string | null;
+  /** Sparse: only the days this tool was actually called. */
+  daily: AgentAnalyticsToolDay[];
 }
 
 export interface AnswerEngineTraffic {
@@ -102,6 +112,8 @@ export function normalizeAgentAnalytics(
         date: stringOrNull(row.date) ?? "",
         agentVisits: numeric(row.agentVisits),
         toolCalls: numeric(row.toolCalls),
+        successfulCalls: numeric(row.successfulCalls),
+        p95LatencyMs: numeric(row.p95LatencyMs),
         answerEngineVisits: numeric(row.answerEngineVisits),
       };
     }),
@@ -114,6 +126,13 @@ export function normalizeAgentAnalytics(
         averageLatencyMs: numeric(row.averageLatencyMs),
         p95LatencyMs: numeric(row.p95LatencyMs),
         lastUsedAt: stringOrNull(row.lastUsedAt),
+        daily: (Array.isArray(row.daily) ? row.daily : []).map((entry) => {
+          const day = object(entry);
+          return {
+            date: stringOrNull(day.date) ?? "",
+            calls: numeric(day.calls),
+          };
+        }),
       };
     }),
     engines: engines.map((item) => {
@@ -125,4 +144,27 @@ export function normalizeAgentAnalytics(
       };
     }),
   };
+}
+
+/**
+ * Guarantees a contiguous day axis. The RPC already returns one row per day,
+ * but the preview and locked states build analytics locally — without this the
+ * chart would collapse to a single point and lose its date labels.
+ */
+export function dailyRange(analytics: AgentAnalytics): AgentAnalyticsDay[] {
+  if (analytics.daily.length > 0) return analytics.daily;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return Array.from({ length: analytics.periodDays }, (_, index) => {
+    const day = new Date(today);
+    day.setUTCDate(day.getUTCDate() - (analytics.periodDays - 1 - index));
+    return {
+      date: day.toISOString().slice(0, 10),
+      agentVisits: 0,
+      toolCalls: 0,
+      successfulCalls: 0,
+      p95LatencyMs: 0,
+      answerEngineVisits: 0,
+    };
+  });
 }
