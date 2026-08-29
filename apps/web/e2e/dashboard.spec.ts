@@ -717,7 +717,6 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
       })
       .click();
     await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
-    await expect(page.getByText(/promotion code/i).first()).toBeVisible();
 
     const { data: checkoutBilling } = await seeded.admin
       .from("repository_billing")

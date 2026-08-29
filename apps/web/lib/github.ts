@@ -2,6 +2,7 @@ import "server-only";
 import { Octokit } from "octokit";
 import { createServiceClient } from "./supabase/service";
 import { env, siteUrl } from "./env";
+import { hasRequiredGithubScopes } from "./github-scopes";
 
 export { verifyWebhookSignature } from "./webhook-verify";
 
@@ -40,7 +41,7 @@ export async function inspectGithubIdentity(
     .split(",")
     .map((scope) => scope.trim())
     .filter(Boolean);
-  if (!scopes.includes("repo") || !scopes.includes("user:email")) {
+  if (!hasRequiredGithubScopes(scopes)) {
     throw new Error("GitHub did not grant private repository and email access");
   }
   return {

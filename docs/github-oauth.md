@@ -6,15 +6,18 @@ picker; there is no second installation step.
 
 ## OAuth App
 
-Create a GitHub OAuth App named **Sodium**. Configure its authorization callback
-URL as the Supabase Auth callback for the matching environment:
+Create one GitHub OAuth App named **Sodium** and reuse it in every environment.
+Register both Supabase Auth callbacks as exact redirect URIs with wildcard
+matching disabled:
 
 - Development: `https://laqlbydlawieccohknsj.supabase.co/auth/v1/callback`
 - Production: `https://wsacbkkbvkcuqgiagxms.supabase.co/auth/v1/callback`
 
 Supabase Auth receives the client ID and secret through
 `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID` and
-`SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET`.
+`SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET`. Development and Preview use the
+development Supabase project; Production stays isolated in the production
+project. Run `pnpm env:verify` after changing any scoped credential.
 
 ## Permissions and storage
 
