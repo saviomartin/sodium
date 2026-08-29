@@ -480,16 +480,23 @@ test("analysis returns to the repo and edits publish explicitly", async ({
   await page.getByRole("button", { name: "Republish now" }).click();
   await page.getByRole("button", { name: "Publish manifest" }).click();
   await expect
-    .poll(async () => {
-      const response = await page.request.get(`/api/m/${seeded.sitePublicId}`);
-      if (!response.ok()) return -1;
-      const currentEnvelope = (await response.json()) as { payload?: unknown };
-      if (typeof currentEnvelope.payload !== "string") return -1;
-      const currentManifest = JSON.parse(
-        Buffer.from(currentEnvelope.payload, "base64url").toString("utf8"),
-      ) as { tools: unknown[] };
-      return currentManifest.tools.length;
-    }, { timeout: 15_000 })
+    .poll(
+      async () => {
+        const response = await page.request.get(
+          `/api/m/${seeded.sitePublicId}`,
+        );
+        if (!response.ok()) return -1;
+        const currentEnvelope = (await response.json()) as {
+          payload?: unknown;
+        };
+        if (typeof currentEnvelope.payload !== "string") return -1;
+        const currentManifest = JSON.parse(
+          Buffer.from(currentEnvelope.payload, "base64url").toString("utf8"),
+        ) as { tools: unknown[] };
+        return currentManifest.tools.length;
+      },
+      { timeout: 15_000 },
+    )
     .toBe(0);
 
   const removedPublishPage = await page.goto(
@@ -578,13 +585,46 @@ test("one free analysis stays readable while repository capabilities are paywall
   ).toBeDisabled();
   await expect(
     page.getByRole("heading", { name: "Install & access" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
+  await expect(page.getByText(/Preview mode — subscribe/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy snippet" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("textbox", { name: "Add an origin" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Add", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Remove https://example.com" }),
+  ).toBeDisabled();
   await expect(
     page.getByRole("heading", { name: "Agent analytics" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
+  const analytics = page.locator("#agent-analytics");
+  await expect(
+    analytics.getByText("Preview mode", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    analytics.getByText("Unlock analytics to start collecting"),
+  ).toBeVisible();
+  await expect(analytics.getByText("7d", { exact: true })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   await expect(
     page.getByRole("button", { name: "Run analysis now" }),
-  ).toHaveCount(0);
+  ).toBeDisabled();
+
+  await page.getByRole("button", { name: "Submit contact" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Submit contact" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Source evidence" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
 
   await page.getByRole("button", { name: "Enable tools" }).first().click();
   const dialog = page.getByRole("dialog", { name: "Unlock AI capabilities" });
@@ -613,8 +653,38 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
   const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
     apiVersion: "2026-08-26.dahlia" as Stripe.LatestApiVersion,
   });
+  let cleanupCustomerId: string | undefined;
 
   try {
+    const staleCustomer = await stripe.customers.create({
+      email: users.owner.email,
+      metadata: { repository_id: seeded.repositoryId },
+    });
+    cleanupCustomerId = staleCustomer.id;
+    const staleSession = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer: staleCustomer.id,
+      line_items: [{ price: env.STRIPE_REPOSITORY_PRICE_ID!, quantity: 1 }],
+      success_url: "https://example.com/success",
+      cancel_url: "https://example.com/cancel",
+    });
+    const { error: staleBillingError } = await seeded.admin
+      .from("repository_billing")
+      .insert({
+        repository_id: seeded.repositoryId,
+        org_id: seeded.workspaceId,
+        purchased_by: users.owner.id,
+        stripe_customer_id: staleCustomer.id,
+        stripe_checkout_session_id: staleSession.id,
+        stripe_checkout_expires_at: new Date(
+          (staleSession.expires_at ?? Math.floor(Date.now() / 1000) + 3600) *
+            1000,
+        ).toISOString(),
+        stripe_price_id: env.STRIPE_REPOSITORY_PRICE_ID!,
+        status: "incomplete",
+      });
+    if (staleBillingError) throw staleBillingError;
+
     await seeded.admin
       .from("analysis_runs")
       .update({
@@ -631,6 +701,25 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
       })
       .click();
     await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
+    await expect(page.getByText(/promotion code/i).first()).toBeVisible();
+
+    const { data: checkoutBilling } = await seeded.admin
+      .from("repository_billing")
+      .select("stripe_checkout_session_id")
+      .eq("repository_id", seeded.repositoryId)
+      .single();
+    expect(checkoutBilling?.stripe_checkout_session_id).toMatch(/^cs_/);
+    expect(checkoutBilling?.stripe_checkout_session_id).not.toBe(
+      staleSession.id,
+    );
+    const [expiredSession, currentSession] = await Promise.all([
+      stripe.checkout.sessions.retrieve(staleSession.id),
+      stripe.checkout.sessions.retrieve(
+        checkoutBilling!.stripe_checkout_session_id!,
+      ),
+    ]);
+    expect(expiredSession.status).toBe("expired");
+    expect(currentSession.allow_promotion_codes).toBe(true);
 
     await page.getByLabel("Card number").fill("4242424242424242");
     await page.getByLabel("Expiration").fill("1234");
@@ -675,8 +764,9 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
         });
       }
     }
-    if (billing?.stripe_customer_id) {
-      await stripe.customers.del(billing.stripe_customer_id);
+    const customerId = billing?.stripe_customer_id ?? cleanupCustomerId;
+    if (customerId) {
+      await stripe.customers.del(customerId);
     }
     await seeded.admin
       .from("stripe_webhook_events")

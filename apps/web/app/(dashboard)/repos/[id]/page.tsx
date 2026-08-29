@@ -98,8 +98,8 @@ export default async function RepositoryPage({
     | undefined;
   const [candidates, publication, analytics] = await Promise.all([
     latestSuccessfulRun ? getCandidates(latestSuccessfulRun.id) : [],
-    paid && site ? getPublication(site.id) : null,
-    paid && site ? getAgentAnalytics(site.id, analyticsDays) : null,
+    site ? getPublication(site.id) : null,
+    site ? getAgentAnalytics(site.id, analyticsDays) : null,
   ]);
   const candidateEvals = await getEvalRunsForCandidates(
     candidates.map((candidate) => candidate.id),
@@ -203,8 +203,17 @@ export default async function RepositoryPage({
                   Run analysis now
                 </SubmitButton>
               </ActionForm>
-            ) : null}
-            {latestSuccessfulRun || paid ? (
+            ) : (
+              <button
+                type="button"
+                className={secondaryButtonClass}
+                disabled
+                title="Subscribe to run another analysis"
+              >
+                Run analysis now
+              </button>
+            )}
+            {site ? (
               <RepositoryBillingControl
                 repositoryId={repo.id}
                 repositoryName={repo.full_name}
@@ -264,36 +273,50 @@ export default async function RepositoryPage({
           )}
         </Card>
 
-        {paid && site && publication ? (
-          <RepositoryIntegration site={site} publication={publication} />
-        ) : rows.length > 0 && !paid ? (
-          <Card title="Enable these tools on your site">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <p className="max-w-2xl text-sm text-neutral-600 text-pretty">
-                Subscribe to configure origins, publish the loader, manage
-                rollbacks, and run automatic analysis for this repository.
-              </p>
-              <RepositoryBillingControl
-                repositoryId={repo.id}
-                repositoryName={repo.full_name}
-                paid={false}
-                status={billing?.status ?? null}
-                cancelAtPeriodEnd={false}
-                currentPeriodEnd={null}
-                checkoutState={checkoutState}
-                label="Enable tools"
-              />
-            </div>
-          </Card>
+        {site && publication ? (
+          <RepositoryIntegration
+            site={site}
+            publication={publication}
+            locked={!paid}
+            unlockAction={
+              !paid ? (
+                <RepositoryBillingControl
+                  repositoryId={repo.id}
+                  repositoryName={repo.full_name}
+                  paid={false}
+                  status={billing?.status ?? null}
+                  cancelAtPeriodEnd={false}
+                  currentPeriodEnd={null}
+                  checkoutState={checkoutState}
+                  label="Unlock install & access"
+                />
+              ) : undefined
+            }
+          />
         ) : null}
 
-        {paid && site ? (
+        {site ? (
           <AgentAnalyticsDashboard
             repoId={repo.id}
             managedTools={(publication?.contracts ?? [])
               .filter((contract) => contract.status === "active")
               .map((contract) => contract.name)}
             analytics={analytics ?? emptyAgentAnalytics(analyticsDays)}
+            locked={!paid}
+            unlockAction={
+              !paid ? (
+                <RepositoryBillingControl
+                  repositoryId={repo.id}
+                  repositoryName={repo.full_name}
+                  paid={false}
+                  status={billing?.status ?? null}
+                  cancelAtPeriodEnd={false}
+                  currentPeriodEnd={null}
+                  checkoutState={checkoutState}
+                  label="Unlock analytics"
+                />
+              ) : undefined
+            }
           />
         ) : null}
 

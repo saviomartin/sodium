@@ -54,6 +54,8 @@ export function ConfirmAction({
   danger = false,
   triggerVariant = "primary",
   blockWhileEdits = false,
+  disabled = false,
+  disabledReason,
   fields,
   successEvent,
 }: {
@@ -65,11 +67,13 @@ export function ConfirmAction({
   danger?: boolean;
   triggerVariant?: "primary" | "secondary";
   blockWhileEdits?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
   fields: Record<string, string>;
   successEvent?: ProductAnalyticsEvent;
 }) {
   const { editPending } = useRepositorySettingsState();
-  const blocked = blockWhileEdits && editPending;
+  const blocked = disabled || (blockWhileEdits && editPending);
   const [open, setOpen] = useState(false);
   const [state, formAction] = useActionState(
     async (prev: ActionResult | null, formData: FormData) => {
@@ -88,6 +92,7 @@ export function ConfirmAction({
       <AlertDialog.Root open={open} onOpenChange={setOpen}>
         <AlertDialog.Trigger
           disabled={blocked}
+          title={disabled ? disabledReason : undefined}
           className={
             danger
               ? dangerButtonClass

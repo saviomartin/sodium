@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ToolManifest } from "@sodium/contracts";
 import type { getPublication } from "@/lib/queries";
 import { siteUrl } from "@/lib/env";
@@ -17,11 +18,15 @@ interface RepositoryIntegrationProps {
     current_manifest_id: string | null;
   };
   publication: Publication;
+  locked?: boolean;
+  unlockAction?: ReactNode;
 }
 
 export function RepositoryIntegration({
   site,
   publication,
+  locked = false,
+  unlockAction,
 }: RepositoryIntegrationProps) {
   const { contracts, manifests, deployments, usage } = publication;
   const activeContracts = contracts.filter(
@@ -61,17 +66,29 @@ export function RepositoryIntegration({
 
   return (
     <section aria-labelledby="install-access-title" className="space-y-3">
-      <header>
-        <h2
-          id="install-access-title"
-          className="text-base font-semibold text-balance"
-        >
-          Install &amp; access
-        </h2>
-        <p className="mt-1 text-sm text-neutral-500 text-pretty">
-          Add the loader once and choose where it can run. Every published tool
-          executes through this script with no customer integration code.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2
+            id="install-access-title"
+            className="text-base font-semibold text-balance"
+          >
+            Install &amp; access
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-neutral-500 text-pretty">
+            Add the loader once and choose where it can run. Every published
+            tool executes through this script with no customer integration code.
+          </p>
+          {locked ? (
+            <p
+              role="status"
+              className="mt-2 text-xs font-medium text-blue-700 text-pretty"
+            >
+              Preview mode — subscribe to configure, copy, publish, or roll
+              back.
+            </p>
+          ) : null}
+        </div>
+        {locked ? unlockAction : null}
       </header>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -80,7 +97,7 @@ export function RepositoryIntegration({
             Add this line to your document head. It only registers the tools
             enabled above and only on an allowed origin.
           </p>
-          <CopySnippet snippet={snippet} />
+          <CopySnippet snippet={snippet} disabled={locked} />
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-neutral-500">Site ID</dt>
@@ -89,14 +106,23 @@ export function RepositoryIntegration({
             <div>
               <dt className="text-xs text-neutral-500">Manifest endpoint</dt>
               <dd className="text-xs break-all">
-                <a
-                  href={manifestUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono text-blue-700 hover:underline"
-                >
-                  {manifestUrl} ↗
-                </a>
+                {locked ? (
+                  <span
+                    aria-disabled="true"
+                    className="font-mono text-neutral-500"
+                  >
+                    {manifestUrl}
+                  </span>
+                ) : (
+                  <a
+                    href={manifestUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-blue-700 hover:underline"
+                  >
+                    {manifestUrl} ↗
+                  </a>
+                )}
               </dd>
             </div>
           </dl>
@@ -106,6 +132,7 @@ export function RepositoryIntegration({
           <OriginsEditor
             siteId={site.id}
             initialOrigins={site.allowed_origins}
+            locked={locked}
           />
         </Card>
 
@@ -125,11 +152,13 @@ export function RepositoryIntegration({
             </div>
           </dl>
           <p className="mt-3 text-sm text-neutral-500 text-pretty">
-            {lastLoaderReady
-              ? "Loader last ready " +
-                new Date(lastLoaderReady.created_at).toLocaleString() +
-                "."
-              : "No loader activity received yet. Install the snippet and open an allowed origin to verify it."}
+            {locked
+              ? "Subscribe to activate the loader and begin receiving runtime activity."
+              : lastLoaderReady
+                ? "Loader last ready " +
+                  new Date(lastLoaderReady.created_at).toLocaleString() +
+                  "."
+                : "No loader activity received yet. Install the snippet and open an allowed origin to verify it."}
           </p>
           {(activeContracts.length > 0 || current) &&
           site.allowed_origins.length > 0 ? (
@@ -142,6 +171,8 @@ export function RepositoryIntegration({
                 confirmLabel="Publish manifest"
                 triggerVariant={hasUnpublishedChanges ? "primary" : "secondary"}
                 blockWhileEdits
+                disabled={locked}
+                disabledReason="Subscribe to publish tools"
                 fields={{ siteId: site.id }}
                 successEvent={{
                   name: "Manifest Published",
@@ -209,6 +240,8 @@ export function RepositoryIntegration({
                                 description="Re-signs this version's exact tool set as a new live version. Nothing is deleted from history."
                                 confirmLabel="Roll back"
                                 danger
+                                disabled={locked}
+                                disabledReason="Subscribe to roll back a manifest"
                                 fields={{
                                   siteId: site.id,
                                   manifestId: manifest.id,
