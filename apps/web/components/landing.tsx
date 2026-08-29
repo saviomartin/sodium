@@ -59,8 +59,8 @@ export function Landing({
               Start with GitHub
             </h2>
             <p className="mt-2 max-w-md text-sm leading-6 text-neutral-400 text-pretty">
-              One sign-in identifies you and immediately starts repository
-              access. You choose exactly which repositories Sodium can read.
+              One GitHub sign-in gives Sodium your email and repository
+              access, then loads your repositories on the next screen.
             </p>
             <GithubSignInForm
               action={signInWithGithubAction}

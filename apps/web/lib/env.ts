@@ -1,7 +1,6 @@
 import "server-only";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import { assertGithubAppEnvironment } from "@sodium/contracts";
 import { publicEnv } from "./public-env";
 
 /**
@@ -20,15 +19,14 @@ const EnvSchema = z.object({
   MANIFEST_SIGNING_PRIVATE_KEY: z.string().optional(),
   MANIFEST_SIGNING_KEY_FILE: z.string().optional(),
 
-  // GitHub App. Optional at build time so configuration errors render in-app.
-  GITHUB_APP_ID: z.string().optional(),
-  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
   CRON_SECRET: z.string().optional(),
-  NEXT_PUBLIC_GITHUB_APP_SLUG: z.string().optional(),
 
   // Optional at build time and required only by the billing entry points.
-  STRIPE_SECRET_KEY: z.string().regex(/^(sk|rk)_(test|live)_/).optional(),
+  STRIPE_SECRET_KEY: z
+    .string()
+    .regex(/^(sk|rk)_(test|live)_/)
+    .optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
   STRIPE_REPOSITORY_PRICE_ID: z.string().startsWith("price_").optional(),
   STRIPE_PORTAL_CONFIGURATION_ID: z.string().startsWith("bpc_").optional(),
@@ -42,12 +40,6 @@ if (!parsed.success) {
   );
 }
 export const env = parsed.data;
-
-assertGithubAppEnvironment(
-  publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT,
-  env.GITHUB_APP_ID,
-  env.NEXT_PUBLIC_GITHUB_APP_SLUG,
-);
 
 if (
   env.VERCEL_ENV &&
@@ -126,8 +118,4 @@ export function manifestSigningKey(): SigningKey {
     );
   }
   return cachedKey;
-}
-
-export function hasGithubApp(): boolean {
-  return Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY);
 }

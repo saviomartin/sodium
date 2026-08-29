@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { extract } from "tar";
 import type { WorkerEnv } from "../env";
-import { GithubAppClient } from "./github";
+import type { WorkerContext } from "../db";
+import { GithubOauthClient } from "./github";
 
 /**
  * Repository access provider. `ensureSnapshot` materializes the source of one
@@ -22,7 +23,7 @@ export interface RepoProvider {
 }
 
 export interface RepoHeadSpec {
-  installationId: number;
+  connectionId: string;
   owner: string;
   repo: string;
   ref: string;
@@ -30,7 +31,7 @@ export interface RepoHeadSpec {
 
 export interface RepoSnapshotSpec {
   runId: string;
-  installationId: number;
+  connectionId: string;
   owner: string;
   repo: string;
   sha: string;
@@ -40,18 +41,18 @@ const MAX_EXTRACTED_FILES = 20_000;
 const MAX_ENTRY_BYTES = 10 * 1024 * 1024;
 
 export class GithubRepoProvider implements RepoProvider {
-  private readonly client: GithubAppClient;
+  private readonly client: GithubOauthClient;
 
   constructor(
     private readonly env: WorkerEnv,
-    client?: GithubAppClient,
+    client: GithubOauthClient,
   ) {
-    this.client = client ?? new GithubAppClient(env);
+    this.client = client;
   }
 
   async resolveHeadSha(spec: RepoHeadSpec): Promise<string> {
     return this.client.resolveHeadSha(
-      spec.installationId,
+      spec.connectionId,
       spec.owner,
       spec.repo,
       spec.ref,
@@ -65,7 +66,7 @@ export class GithubRepoProvider implements RepoProvider {
     mkdirSync(target, { recursive: true });
 
     const tarball = await this.client.downloadTarball(
-      spec.installationId,
+      spec.connectionId,
       spec.owner,
       spec.repo,
       spec.sha,
@@ -76,8 +77,10 @@ export class GithubRepoProvider implements RepoProvider {
   }
 }
 
-export function selectRepoProvider(env: WorkerEnv): RepoProvider {
-  return new GithubRepoProvider(env);
+export function selectRepoProvider(
+  ctx: Pick<WorkerContext, "env" | "supabase">,
+): RepoProvider {
+  return new GithubRepoProvider(ctx.env, new GithubOauthClient(ctx.supabase));
 }
 
 function snapshotDir(env: WorkerEnv, runId: string, sha: string): string {

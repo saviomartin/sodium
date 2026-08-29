@@ -4,7 +4,7 @@
 
 - [ ] Generate a production Ed25519 manifest keypair (`node packages/runtime/scripts/gen-dev-keys.mjs` as a template — store the private key in your secret manager, never in the repo). Set `MANIFEST_SIGNING_KEY_ID` + `MANIFEST_SIGNING_PRIVATE_KEY`; build the loader with `SODIUM_MANIFEST_JWKS` containing the matching public JWK(s). The app refuses to boot in production with the committed dev key.
 - [ ] Plan key rotation: the loader pins a JWK **set** — ship new+old, re-sign, then retire the old key with the next loader version.
-- [ ] GitHub App private key and webhook secret in env/KMS only; confirm they never appear in logs.
+- [ ] GitHub OAuth tokens exist only in Supabase Vault; the webhook secret remains server-only and neither appears in logs.
 - [ ] `SUPABASE_SECRET_KEY` is server-only (web server + worker). Rotate any key that ever reached a client bundle.
 - [ ] Stripe Production uses a restricted `rk_live_…` key, the live $49/month repository Price, the repository-only Portal configuration, and a Secret `STRIPE_WEBHOOK_SECRET`. Development/Preview must use test objects only.
 
@@ -39,9 +39,9 @@
 
 ## GitHub
 
-- [ ] App registered per docs/github-app.md with the minimal permission set (contents read-only, metadata read-only).
+- [ ] OAuth App registered as **Sodium** per docs/github-oauth.md; verify one consent requests `repo user:email` and lands directly on the repository picker.
 - [ ] Webhook endpoint reachable; deliveries page checked after launch; redelivery runbook written (GitHub does not auto-retry).
-- [ ] Verify webhook secret rotation procedure (GitHub supports two active secrets via app settings + env rollover).
+- [ ] Verify repository webhook secret rotation and redelivery procedure.
 
 ## AI
 

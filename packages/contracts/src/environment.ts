@@ -17,15 +17,6 @@ export const SUPABASE_PROJECT_REFS: Record<SodiumEnvironment, string> = {
   production: "wsacbkkbvkcuqgiagxms",
 };
 
-export const GITHUB_APP_IDENTIFIERS: Record<
-  SodiumEnvironment,
-  { appId: string; slug: string }
-> = {
-  development: { appId: "4758809", slug: "sodium-local-development" },
-  preview: { appId: "4758809", slug: "sodium-local-development" },
-  production: { appId: "4749591", slug: "sodium-webmcp" },
-};
-
 export function supabaseProjectRef(url: string): string | null {
   try {
     const hostname = new URL(url).hostname;
@@ -45,24 +36,6 @@ export function assertSupabaseEnvironment(
   if (actual !== expected) {
     throw new Error(
       `Supabase environment mismatch: ${environment} requires project ${expected}, received ${actual ?? "an invalid Supabase URL"}`,
-    );
-  }
-}
-
-export function assertGithubAppEnvironment(
-  environment: SodiumEnvironment,
-  appId: string | undefined,
-  slug?: string,
-): void {
-  const expected = GITHUB_APP_IDENTIFIERS[environment];
-  if (appId !== undefined && appId !== expected.appId) {
-    throw new Error(
-      `GitHub App environment mismatch: ${environment} requires App ID ${expected.appId}, received ${appId}`,
-    );
-  }
-  if (slug !== undefined && slug !== expected.slug) {
-    throw new Error(
-      `GitHub App environment mismatch: ${environment} requires slug ${expected.slug}, received ${slug}`,
     );
   }
 }

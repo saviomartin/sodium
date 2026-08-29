@@ -150,10 +150,10 @@ async function ensureSnapshot(
   ctx: WorkerContext,
   run: RunRow,
 ): Promise<string> {
-  const provider = selectRepoProvider(ctx.env);
+  const provider = selectRepoProvider(ctx);
   return provider.ensureSnapshot({
     runId: run.id,
-    installationId: run.installation_id,
+    connectionId: run.github_connection_id,
     owner: run.repo_owner,
     repo: run.repo_name,
     sha: run.sha,

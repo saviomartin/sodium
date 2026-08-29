@@ -1,7 +1,7 @@
 # Sodium testing plan
 
 Development and production use separate, real Supabase projects and separate
-GitHub App credentials. Acceptance QA uses a real GitHub identity and a real
+GitHub OAuth credentials. Acceptance QA uses a real GitHub identity and a real
 repository; it never inserts demo rows or seeded accounts. The standalone
 target repository is `foundative/webmcp-fixture-shop`.
 
@@ -29,9 +29,8 @@ corepack pnpm dev
 ## 3. User flow
 
 1. Open `http://localhost:3000` and continue with GitHub.
-2. Confirm the first authenticated page is **Connect a GitHub repository**.
-3. Install or update the GitHub App and connect
-   `foundative/webmcp-fixture-shop`.
+2. Confirm the first authenticated page immediately lists repositories.
+3. Connect `foundative/webmcp-fixture-shop` without another GitHub redirect.
 4. Confirm the repository page has one **Run analysis** button and no SHA
    input.
 5. Run analysis. The worker must download the latest `main` commit.
@@ -47,7 +46,7 @@ corepack pnpm dev
   run starts.
 - Realtime disconnect: the page says database sync remains active and still
   reaches the terminal state.
-- Suspended GitHub installation: repository selection and analysis fail with a
+- Revoked GitHub OAuth access: repository selection and analysis fail with a
   reconnect message.
 - Repository access revoked between page load and Connect: the server rejects
   the stale/tampered selection.

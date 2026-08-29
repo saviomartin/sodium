@@ -14,7 +14,7 @@ const consumer = startConsumer(
 );
 log("info", "sodium worker started", {
   concurrency: env.WORKER_CONCURRENCY,
-  github: Boolean(env.GITHUB_APP_ID),
+  github: "oauth_vault",
   ai: "gateway_with_deterministic_fallback",
   aiModel: env.AI_MODEL,
   aiFallbackModel: env.AI_FALLBACK_MODEL,

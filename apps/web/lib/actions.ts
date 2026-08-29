@@ -14,14 +14,12 @@ import {
 import { createClient, currentUserId } from "./supabase/server";
 import { createServiceClient } from "./supabase/service";
 import { publishSiteManifest, rollbackSiteManifest } from "./manifest";
-import { env, hasGithubApp, siteUrl } from "./env";
-import { listInstallationRepos, resolveRepositoryHead } from "./github";
 import {
-  connectGithubWithProviderToken,
-  createGithubAuthorization,
-  createGithubInstallationState,
-} from "./github-connection";
-import { githubNewInstallationUrl } from "./github-installation-url";
+  createRepositoryWebhook,
+  listGithubRepositories,
+  resolveRepositoryHead,
+} from "./github";
+import { siteUrl } from "./env";
 import { hasPaidRepositoryAccess } from "./billing-state";
 import {
   cancelSubscriptionsForUser,
@@ -63,8 +61,8 @@ export async function signInWithGithubAction(
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "github",
     options: {
-      redirectTo: `${siteUrl()}/auth/callback?setup=github&next=${encodeURIComponent(next)}`,
-      scopes: "read:user user:email read:org",
+      redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}`,
+      scopes: "repo user:email",
     },
   });
   if (error || !data?.url) {
@@ -260,7 +258,9 @@ export async function startRepositoryCheckoutAction(
       email: user.email ?? "",
       repositoryName: repository.full_name,
       customerName:
-        String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? "") ||
+        String(
+          user.user_metadata?.full_name ?? user.user_metadata?.name ?? "",
+        ) ||
         user.email?.split("@")[0] ||
         "",
     });
@@ -312,111 +312,12 @@ export async function openRepositoryBillingPortalAction(
   redirect(url);
 }
 
-async function requirePersonalWorkspace(): Promise<
-  { userId: string; orgId: string } | { error: string }
-> {
-  const userId = await currentUserId();
-  if (!userId) return { error: "not signed in" };
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("org_memberships")
-    .select("org_id, role, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true });
-  const membership = data?.find((candidate) => candidate.role === "owner");
-  if (!membership)
-    return { error: "account setup is incomplete; sign out and sign in again" };
-  return { userId, orgId: membership.org_id };
-}
-
 // ---------------------------------------------------------------------------
 // GitHub connection
 // ---------------------------------------------------------------------------
 
-const GithubConnectionSchema = z.object({
-  intent: z.enum(["connect", "add"]).default("connect"),
-});
-
-export async function connectGithubAction(
-  _prev: ActionResult | null,
-  formData: FormData,
-): Promise<ActionResult> {
-  const parsed = GithubConnectionSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { ok: false, error: "invalid GitHub action" };
-  const workspace = await requirePersonalWorkspace();
-  if ("error" in workspace) return { ok: false, error: workspace.error };
-  const gate = await requireOrgRole(workspace.orgId, ["owner", "admin"]);
-  if ("error" in gate) return { ok: false, error: gate.error };
-  if (!hasGithubApp() || !env.NEXT_PUBLIC_GITHUB_APP_SLUG) {
-    return {
-      ok: false,
-      error:
-        "GitHub App is not configured on this deployment (see README: GitHub App setup)",
-    };
-  }
-
-  if (parsed.data.intent === "add") {
-    let state: string;
-    try {
-      state = await createGithubInstallationState(workspace.orgId);
-    } catch (error) {
-      return {
-        ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "could not start GitHub installation",
-      };
-    }
-    redirect(githubNewInstallationUrl(env.NEXT_PUBLIC_GITHUB_APP_SLUG, state));
-  }
-
-  // Supabase keeps GitHub's provider token in the authenticated session. It
-  // is still verified against GitHub before any installation is stored.
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (session?.provider_token) {
-    const recovery = await connectGithubWithProviderToken(
-      workspace.orgId,
-      session.provider_token,
-    );
-    if (recovery.kind === "install") {
-      redirect(
-        githubNewInstallationUrl(
-          env.NEXT_PUBLIC_GITHUB_APP_SLUG,
-          recovery.state,
-        ),
-      );
-    }
-    if (recovery.kind === "connected") {
-      redirect(`/?add=1&installation=${recovery.installationId}`);
-    }
-    if (recovery.code === "github_store") {
-      return { ok: false, error: "The GitHub connection could not be saved." };
-    }
-    // Missing scopes and expired provider tokens fall through to a fresh,
-    // explicit GitHub authorization below.
-  }
-
-  let authorization: Awaited<ReturnType<typeof createGithubAuthorization>>;
-  try {
-    authorization = await createGithubAuthorization(workspace.orgId);
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "could not start GitHub authorization",
-    };
-  }
-  redirect(authorization.url);
-}
-
 const RepoSelectionSchema = z.object({
-  installationUuid: z.string().uuid(),
+  connectionId: z.string().uuid(),
   githubRepoId: z.coerce.number().int().positive(),
 });
 
@@ -429,23 +330,23 @@ export async function selectRepositoryAction(
     return { ok: false, error: "invalid repository selection" };
   const input = parsed.data;
   const supabase = await createClient();
-  const { data: installation } = await supabase
-    .from("github_installations")
-    .select("id, org_id, installation_id, suspended_at")
-    .eq("id", input.installationUuid)
+  const { data: connection } = await supabase
+    .from("github_connections")
+    .select("id, org_id")
+    .eq("id", input.connectionId)
     .maybeSingle();
-  if (!installation || installation.suspended_at) {
+  if (!connection) {
     return {
       ok: false,
       error: "GitHub connection is unavailable; reconnect it and try again",
     };
   }
-  const gate = await requireOrgRole(installation.org_id, ["owner", "admin"]);
+  const gate = await requireOrgRole(connection.org_id, ["owner", "admin"]);
   if ("error" in gate) return { ok: false, error: gate.error };
 
   let available;
   try {
-    available = await listInstallationRepos(installation.installation_id);
+    available = await listGithubRepositories(connection.id);
   } catch {
     return {
       ok: false,
@@ -465,7 +366,7 @@ export async function selectRepositoryAction(
   const { data: existing } = await supabase
     .from("repositories")
     .select("id")
-    .eq("org_id", installation.org_id)
+    .eq("org_id", connection.org_id)
     .eq("github_repo_id", selected.githubRepoId)
     .maybeSingle();
   if (existing) redirect(`/repos/${existing.id}`);
@@ -473,8 +374,8 @@ export async function selectRepositoryAction(
   const { data: repo, error } = await supabase
     .from("repositories")
     .insert({
-      org_id: installation.org_id,
-      installation_id: input.installationUuid,
+      org_id: connection.org_id,
+      github_connection_id: connection.id,
       github_repo_id: selected.githubRepoId,
       owner: selected.owner,
       name: selected.name,
@@ -490,7 +391,7 @@ export async function selectRepositoryAction(
     const { data: concurrent } = await supabase
       .from("repositories")
       .select("id")
-      .eq("org_id", installation.org_id)
+      .eq("org_id", connection.org_id)
       .eq("github_repo_id", selected.githubRepoId)
       .maybeSingle();
     if (concurrent) redirect(`/repos/${concurrent.id}`);
@@ -501,7 +402,7 @@ export async function selectRepositoryAction(
   }
 
   const { error: siteError } = await supabase.from("sites").insert({
-    org_id: installation.org_id,
+    org_id: connection.org_id,
     repository_id: repo.id,
     site_id: `site_${siteIdAlphabet()}`,
     allowed_origins: [],
@@ -509,6 +410,25 @@ export async function selectRepositoryAction(
   if (siteError) {
     await supabase.from("repositories").delete().eq("id", repo.id);
     return { ok: false, error: siteError.message };
+  }
+
+  try {
+    const hookId = await createRepositoryWebhook(
+      connection.id,
+      selected.owner,
+      selected.name,
+    );
+    await createServiceClient().from("github_repository_hooks").upsert({
+      repository_id: repo.id,
+      org_id: connection.org_id,
+      github_hook_id: hookId,
+    });
+  } catch (hookError) {
+    console.error("GitHub repository webhook could not be created", {
+      repositoryId: repo.id,
+      message:
+        hookError instanceof Error ? hookError.message : "unknown GitHub error",
+    });
   }
 
   redirect(`/repos/${repo.id}`);
@@ -527,9 +447,7 @@ export async function requestAnalysisAction(
   const supabase = await createClient();
   const { data: repo, error: repoError } = await supabase
     .from("repositories")
-    .select(
-      "id, org_id, owner, name, default_branch, github_installations(installation_id, suspended_at)",
-    )
+    .select("id, org_id, owner, name, default_branch, github_connection_id")
     .eq("id", repositoryId)
     .maybeSingle();
   if (repoError) {
@@ -540,11 +458,7 @@ export async function requestAnalysisAction(
   }
   if (!repo) return { ok: false, error: "repository not found" };
 
-  const installation = repo.github_installations as unknown as {
-    installation_id: number;
-    suspended_at: string | null;
-  } | null;
-  if (!installation || installation.suspended_at) {
+  if (!repo.github_connection_id) {
     return {
       ok: false,
       error: "GitHub connection is unavailable; reconnect it and try again",
@@ -589,7 +503,7 @@ export async function requestAnalysisAction(
   let sha: string;
   try {
     sha = await resolveRepositoryHead(
-      installation.installation_id,
+      repo.github_connection_id,
       repo.owner,
       repo.name,
       repo.default_branch,

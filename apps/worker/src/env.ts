@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  assertGithubAppEnvironment,
   assertSupabaseEnvironment,
   SODIUM_ENVIRONMENTS,
 } from "@sodium/contracts";
@@ -18,9 +17,9 @@ const GatewayModelIdSchema = z
  * Worker environment. Validated at startup — the process refuses to boot on
  * invalid configuration rather than failing mid-job.
  *
- * GitHub App credentials are required because local development uses the same
- * repository path as production. AI remains optional; deterministic synthesis
- * keeps analysis useful when no model credential is configured.
+ * GitHub OAuth credentials are fetched from Supabase Vault per repository.
+ * AI remains optional; deterministic synthesis keeps analysis useful when no
+ * model credential is configured.
  */
 const EnvSchema = z.object({
   SODIUM_ENVIRONMENT: z.enum(SODIUM_ENVIRONMENTS),
@@ -35,9 +34,6 @@ const EnvSchema = z.object({
   SODIUM_PUBLIC_URL: z.string().url().optional(),
   VERCEL_ENV: z.enum(SODIUM_ENVIRONMENTS).optional(),
   VERCEL_URL: z.string().optional(),
-
-  GITHUB_APP_ID: z.string().min(1),
-  GITHUB_APP_PRIVATE_KEY: z.string().min(100),
 
   // AI synthesis (optional in local development)
   AI_GATEWAY_API_KEY: z.string().optional(),
@@ -65,10 +61,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): WorkerEnv {
   assertSupabaseEnvironment(
     parsed.data.SODIUM_ENVIRONMENT,
     parsed.data.SUPABASE_URL,
-  );
-  assertGithubAppEnvironment(
-    parsed.data.SODIUM_ENVIRONMENT,
-    parsed.data.GITHUB_APP_ID,
   );
   if (
     parsed.data.VERCEL_ENV &&

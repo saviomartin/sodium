@@ -17,7 +17,6 @@ export default async function Home({
     add?: string;
     deleted?: string;
     error?: string;
-    installation?: string;
     next?: string;
   }>;
 }) {

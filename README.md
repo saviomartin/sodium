@@ -5,7 +5,7 @@ WebMCP-enabled application.
 
 The product flow is deliberately short:
 
-1. Continue with GitHub; first sign-in continues directly into GitHub App access.
+1. Continue with GitHub once; the same OAuth grant signs you in and loads your repositories.
 2. Choose a repository from the home page.
 3. Review the latest automatic analysis on the repository page.
 4. Enable the proposed tools you want and publish the ready changes.
@@ -35,11 +35,11 @@ Requirements: Node 24+, pnpm 11, the Vercel CLI, and access to the linked
 `foundative/sodium-webmcp` project. Local development is isolated from
 production:
 
-| Runtime                    | Supabase project     | GitHub App                 | Public origin                      |
-| -------------------------- | -------------------- | -------------------------- | ---------------------------------- |
-| Local / Vercel Development | `sodium-development` | `Sodium Local Development` | `http://localhost:3000`            |
-| Vercel Preview             | `sodium-development` | development credentials    | deployment-specific `VERCEL_URL`   |
-| Production                 | `sodium`             | `sodium-webmcp`            | `https://sodium-webmcp.vercel.app` |
+| Runtime                    | Supabase project     | GitHub OAuth App | Public origin                      |
+| -------------------------- | -------------------- | ---------------- | ---------------------------------- |
+| Local / Vercel Development | `sodium-development` | development      | `http://localhost:3000`            |
+| Vercel Preview             | `sodium-development` | development      | deployment-specific `VERCEL_URL`   |
+| Production                 | `sodium`             | Sodium           | `https://sodium-webmcp.vercel.app` |
 
 The app validates these project refs at startup. A local or Preview build
 pointed at production Supabase exits instead of starting.
@@ -55,15 +55,15 @@ corepack pnpm dev
 value, and writes three ignored mode-600 files:
 
 - `.env`: the minimal Supabase CLI/database variables;
-- `apps/web/.env.local`: localhost Auth, signing, and GitHub App variables;
-- `apps/worker/.env`: the isolated database, GitHub App, and worker variables.
+- `apps/web/.env.local`: localhost Auth, signing, and webhook variables;
+- `apps/worker/.env`: the isolated database and worker variables.
 
 The development database starts empty. `supabase/seed.sql` intentionally
 creates no users, repositories, or demo rows. Sign in with GitHub and connect a
 real repository to test the same user flow as production.
 
-GitHub App permissions and callback URLs are documented in
-[`docs/github-app.md`](docs/github-app.md).
+GitHub OAuth scopes and callback URLs are documented in
+[`docs/github-oauth.md`](docs/github-oauth.md).
 
 Stripe billing uses one Customer and one $49/month subscription per connected
 repository. The first successful repository analysis is free; later manual and

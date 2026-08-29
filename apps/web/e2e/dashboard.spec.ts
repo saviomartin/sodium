@@ -69,24 +69,26 @@ async function provisionRepository(userId: string, paid = true) {
   if (membershipError || !membership) throw membershipError;
 
   const unique = Number(String(Date.now()).slice(-11));
-  const { data: installation, error: installationError } = await admin
-    .from("github_installations")
-    .insert({
-      org_id: membership.org_id,
-      installation_id: unique,
-      account_login: "foundative",
-      account_type: "Organization",
-      created_by: userId,
-    })
-    .select("id")
-    .single();
-  if (installationError || !installation) throw installationError;
+  const { data: connectionId, error: connectionError } = await admin.rpc(
+    "upsert_github_connection",
+    {
+      p_org_id: membership.org_id,
+      p_github_user_id: unique,
+      p_github_login: "foundative",
+      p_github_email: "owner@example.com",
+      p_scopes: ["repo", "user:email"],
+      p_access_token: `gho_${"x".repeat(36)}`,
+      p_refresh_token: "",
+      p_created_by: userId,
+    },
+  );
+  if (connectionError || !connectionId) throw connectionError;
 
   const { data: repository, error: repositoryError } = await admin
     .from("repositories")
     .insert({
       org_id: membership.org_id,
-      installation_id: installation.id,
+      github_connection_id: connectionId,
       github_repo_id: unique,
       owner: "foundative",
       name: "webmcp-fixture-shop",
@@ -179,7 +181,6 @@ async function provisionRepository(userId: string, paid = true) {
   return {
     admin,
     workspaceId: membership.org_id,
-    githubInstallationId: unique,
     repositoryId: repository.id,
     runId: run.id,
     candidateId: candidate.id,
@@ -197,10 +198,10 @@ test("analysis returns to the repo and edits publish explicitly", async ({
 
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("heading", { name: "No GitHub repository connected" }),
+    page.getByRole("heading", { name: "Reconnect GitHub" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Connect a GitHub repo" }),
+    page.getByRole("button", { name: "Continue with GitHub" }),
   ).toBeVisible();
   await expect(page.getByText(/create.*organization/i)).toHaveCount(0);
   await page.getByLabel("Open account menu").click();
@@ -228,13 +229,11 @@ test("analysis returns to the repo and edits publish explicitly", async ({
   await expect(
     page.getByRole("heading", { name: "foundative repositories" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add account" })).toBeVisible();
-  await expect(page.locator('input[name="intent"]')).toHaveValue("add");
-  await expect(
-    page.getByRole("link", { name: /Update access/ }),
-  ).toHaveAttribute(
-    "href",
-    `https://github.com/organizations/foundative/settings/installations/${seeded.githubInstallationId}`,
+  await expect(page.getByRole("button", { name: "Add account" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("link", { name: /Update access/ })).toHaveCount(
+    0,
   );
 
   await page.goto(`/repos/${seeded.repositoryId}/runs/${seeded.runId}`);

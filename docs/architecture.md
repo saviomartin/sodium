@@ -115,29 +115,21 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
   `request.jwt.claim.sub`); types via `supabase gen types typescript --local`; run
   `supabase db advisors` (CLI ≥ 2.81) before shipping schema changes.
 
-### 1.4 GitHub App
+### 1.4 GitHub OAuth
 
-- Auth: app JWT (RS256, `exp` ≤ 10 min, `iat` backdated 60 s) →
-  `POST /app/installations/{id}/access_tokens` (1-hour tokens, **scopable at creation**
-  to `repository_ids` + `permissions`). Octokit: `octokit` v5 meta-package /
-  `@octokit/app` v16 / `@octokit/auth-app` v8 (auto token caching).
-  ([JWT](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app),
-  [installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app))
-- Install flow: `https://github.com/apps/<slug>/installations/new?state=<csrf>`; the
-  setup callback's `installation_id` **must not be trusted** — we verify by listing the
-  app's installations server-side and binding `state` to the session.
-  ([setup URL docs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-setup-url))
+- One Supabase GitHub OAuth authorization uses `repo user:email` for sign-in,
+  verified email, private source, commits, and repository webhooks.
+- The callback validates the provider token against `GET /user` and
+  `GET /user/emails`, then stores it in Supabase Vault. Browser clients can
+  read connection metadata but never token or Vault secret columns.
+- Repository access uses `GET /user/repos`; there is no separate installation,
+  account chooser, or setup callback.
 - Webhooks: `X-Hub-Signature-256` HMAC verified with a timing-safe compare
   (`@octokit/webhooks`), `X-GitHub-Delivery` GUID for idempotency, respond 2xx < 10 s and
   process async; no automatic redelivery.
   ([validating deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries))
-- Content access without executing code: `GET /repos/{o}/{r}/tarball/{ref}` → 302 (link
-  expires in ~5 min) with the installation token. No git binary, no submodules, no hooks.
-- **Minimal permissions: `contents: read`, `metadata: read`**
-  (implicit); `installation*` events arrive automatically.
-  ([permissions matrix](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps))
-- Keys: GitHub issues PKCS#1 PEM; Node crypto accepts it (convert to PKCS#8 for WebCrypto
-  runtimes); store in env/KMS, never in the database. Local webhook dev via smee.io.
+- Content access without executing code: `GET /repos/{o}/{r}/tarball/{ref}`.
+  No git binary, no submodules, and no repository hooks are executed locally.
 
 ---
 
@@ -155,7 +147,7 @@ packages/contracts   Zod schemas, DB types, versioned action contracts, determin
 
 The test target is intentionally external:
 `foundative/webmcp-fixture-shop`. It is connected and analyzed through the
-same GitHub App path as any customer repository.
+same GitHub OAuth path as any customer repository.
 
 Internal packages are consumed as TypeScript source ("just-in-time packages");
 only `packages/runtime` has a build (esbuild → immutable browser bundles).
@@ -242,7 +234,7 @@ live project inside always-rolled-back transactions. Consequences:
 Also by explicit decision, **sign-in is GitHub OAuth only** (Supabase's
 GitHub provider; PKCE via `/auth/callback`, token-hash verification via
 `/auth/confirm`) and **no data is seeded** — there are no demo accounts.
-Sign-in identity is deliberately distinct from GitHub App repository access.
+The same GitHub grant supplies sign-in identity and repository access.
 Every auth user receives an invisible personal workspace automatically; this
 is an RLS tenant boundary, not a user-facing organization model.
 Test suites provision their own state: the database tests create tenants
@@ -253,7 +245,7 @@ through the app's own confirm route) and delete them in teardown.
 ### D8 — Supabase schema in five domains, RLS everywhere
 
 `identity` (profiles, organizations, memberships with roles), `source control`
-(installations, repositories, environments, commits), `analysis` (runs, routes,
+(OAuth connections, repositories, commits), `analysis` (runs, routes,
 candidates, evidence), `publication` (contracts, immutable contract versions, manifests,
 deployments), `operations` (eval runs, usage events, audit log). Every exposed table has
 RLS; membership checks go through security-definer helpers in a `private` schema; roles
