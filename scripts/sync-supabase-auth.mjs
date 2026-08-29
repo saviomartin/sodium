@@ -26,10 +26,10 @@ const environments = {
   },
   production: {
     projectRef: "wsacbkkbvkcuqgiagxms",
-    siteUrl: "https://sodium-webmcp.vercel.app",
+    siteUrl: "https://sodium.result.dev",
     redirects: [
-      "https://sodium-webmcp.vercel.app/auth/callback",
-      "https://sodium-webmcp.vercel.app/auth/confirm",
+      "https://sodium.result.dev/auth/callback",
+      "https://sodium.result.dev/auth/confirm",
     ],
   },
 };

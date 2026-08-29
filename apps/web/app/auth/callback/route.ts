@@ -84,11 +84,17 @@ export async function GET(request: NextRequest) {
           repository.owner,
           repository.name,
         );
-        await service.from("github_repository_hooks").insert({
-          repository_id: repository.id,
-          org_id: repository.org_id,
-          github_hook_id: hookId,
-        });
+        const { error: hookRecordError } = await service
+          .from("github_repository_hooks")
+          .upsert(
+            {
+              repository_id: repository.id,
+              org_id: repository.org_id,
+              github_hook_id: hookId,
+            },
+            { onConflict: "repository_id" },
+          );
+        if (hookRecordError) throw new Error(hookRecordError.message);
       } catch (hookError) {
         console.error("GitHub repository webhook backfill failed", {
           repositoryId: repository.id,

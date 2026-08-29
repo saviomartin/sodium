@@ -39,7 +39,7 @@ production:
 | -------------------------- | -------------------- | ---------------- | ---------------------------------- |
 | Local / Vercel Development | `sodium-development` | Sodium           | `http://localhost:3000`            |
 | Vercel Preview             | `sodium-development` | Sodium           | deployment-specific `VERCEL_URL`   |
-| Production                 | `sodium`             | Sodium           | `https://sodium-webmcp.vercel.app` |
+| Production                 | `sodium`             | Sodium           | `https://sodium.result.dev` |
 
 The app validates these project refs at startup. A local or Preview build
 pointed at production Supabase exits instead of starting.

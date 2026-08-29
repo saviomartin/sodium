@@ -14,6 +14,33 @@
 
   /* The flat face of a framed panel. Reads above ink-900 without the checker. */
   --color-panel: #232323;
+
+  /*
+   * The page's one light band: the features grid. Paper, its hairline, and
+   * the two text tiers that sit on it — ink clears 15:1 and muted 5:1, so the
+   * band is readable on its own terms rather than by inverting the dark scale.
+   */
+  --color-cream: #f1eee7;
+  --color-cream-line: #d9d3c4;
+  --color-cream-ink: #17150f;
+  --color-cream-muted: #6a6459;
+}
+
+/*
+ * In-page anchors glide rather than jump. The header's section links are
+ * absolute (`/#pricing`), so they double as route changes from anywhere under
+ * the dashboard: `data-scroll-behavior="smooth"` on <html> in the root layout
+ * is what tells Next to hold this to same-page hash changes and land a real
+ * navigation instantly, instead of animating down a page that just mounted.
+ */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
@@ -64,5 +91,42 @@ strong {
       4px 4px,
       auto;
     background-repeat: no-repeat, repeat, no-repeat;
+  }
+}
+
+/*
+ * The modal fade: how every dialog and its scrim enter and leave.
+ *
+ * Radix stamps `data-state` on both the overlay and the panel and holds the
+ * unmount until the exit animation ends, so one pair of keyframes drives both
+ * directions. Opacity only — the panel centres itself with a transform, and
+ * leaving that alone keeps the fade from fighting it.
+ */
+@layer components {
+  .modal-fade[data-state="open"] {
+    animation: modal-fade-in 150ms ease-out;
+  }
+
+  .modal-fade[data-state="closed"] {
+    animation: modal-fade-out 120ms ease-in;
+  }
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* Radix unmounts straight away when there is no animation to wait on. */
+@media (prefers-reduced-motion: reduce) {
+  .modal-fade[data-state] {
+    animation: none;
   }
 }

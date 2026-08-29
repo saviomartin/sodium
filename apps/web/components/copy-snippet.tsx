@@ -65,7 +65,7 @@ const TOKEN_CLASSES: Record<HtmlTokenKind, string> = {
 };
 
 /** The snippet, coloured and wrapped so no part of it is hidden off-screen. */
-function SnippetCode({ snippet }: { snippet: string }) {
+export function SnippetCode({ snippet }: { snippet: string }) {
   return (
     <pre className="p-3 font-mono text-xs leading-5 whitespace-pre-wrap text-neutral-300 [overflow-wrap:anywhere]">
       <code>

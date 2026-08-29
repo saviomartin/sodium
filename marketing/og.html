@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sodium - social card</title>
+    <link rel="stylesheet" href="lib/shell.css" />
+    <style>
+      /* 1.91:1, the aspect every social card is cropped to. */
+      .stage {
+        width: 1200px;
+        height: 630px;
+      }
+
+      .content {
+        gap: 30px;
+        padding: 0 96px;
+      }
+
+      /* The mark from app/icon.svg, at the lockup's cap height. */
+      .brand .tile {
+        width: 24px;
+        height: 24px;
+        align-self: center;
+      }
+      .brand {
+        font-size: 22px;
+        gap: 10px;
+      }
+      .brand .by {
+        font-size: 15px;
+        gap: 7px;
+      }
+      .brand .by img {
+        height: 11px;
+      }
+
+      h1 {
+        max-width: 900px;
+        text-align: center;
+        font-size: 62px;
+        line-height: 1.14;
+        font-weight: 500;
+        letter-spacing: -0.03em;
+        color: var(--n100);
+        text-wrap: balance;
+      }
+
+      p.blurb {
+        max-width: 760px;
+        text-align: center;
+        font-size: 25px;
+        line-height: 1.5;
+        color: var(--n400);
+        text-wrap: balance;
+      }
+
+      /* The agents the headline is talking about, in their own marks. */
+      .agents {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 34px;
+        opacity: 0.92;
+      }
+      .agents img {
+        width: auto;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <canvas id="ascii"></canvas>
+      <div class="vignette"></div>
+
+      <div class="content">
+        <p class="brand">
+          <img class="tile" src="/apps/web/app/icon.svg" alt="" />
+          Sodium
+          <span class="by">
+            by
+            <img src="assets/result-logo-white.svg" alt="Result" />
+          </span>
+        </p>
+
+        <h1>Make your website usable by AI agents.</h1>
+
+        <p class="blurb">
+          Sodium turns what your site already does into WebMCP tools that agents
+          can discover and call. One line of code.
+        </p>
+
+        <!-- Heights are tuned per mark, as in components/rolling-agent.tsx:
+             equal measure is not equal weight. -->
+        <div class="agents">
+          <img src="/apps/web/public/logos/chatgpt.svg" alt="" style="height: 30px" />
+          <img src="/apps/web/public/logos/claude.svg" alt="" style="height: 29px" />
+          <img src="/apps/web/public/logos/perplexity.svg" alt="" style="height: 30px" />
+          <img src="/apps/web/public/logos/gemini.svg" alt="" style="height: 33px" />
+          <img src="/apps/web/public/logos/copilot.svg" alt="" style="height: 29px" />
+          <img src="/apps/web/public/logos/grok.svg" alt="" style="height: 26px" />
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { paintAscii } from "./lib/ascii.js";
+      const canvas = document.getElementById("ascii");
+      await document.fonts.ready;
+      await Promise.all(
+        [...document.images].map((image) =>
+          image.complete ? null : new Promise((done) => (image.onload = done)),
+        ),
+      );
+      paintAscii(canvas);
+      document.documentElement.dataset.ready = "1";
+    </script>
+  </body>
+</html>

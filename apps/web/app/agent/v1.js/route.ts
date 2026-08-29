@@ -35,7 +35,7 @@ export async function GET() {
   const bundle = loadBundle();
   if (!bundle) {
     return new Response(
-      "// loader bundle not built — run: pnpm --filter @sodium/runtime build\n",
+      "// loader bundle not built; run: pnpm --filter @sodium/runtime build\n",
       {
         status: 503,
         headers: { "content-type": "application/javascript; charset=utf-8" },

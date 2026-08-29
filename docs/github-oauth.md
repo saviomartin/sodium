@@ -4,6 +4,10 @@ Sodium uses one GitHub OAuth grant for both authentication and repository
 access. The user approves GitHub once and lands directly on the repository
 picker; there is no second installation step.
 
+Production callbacks and repository webhooks use the canonical origin
+`https://sodium.result.dev`. Keep the legacy Vercel hostname out of provider
+redirect and webhook configuration.
+
 ## OAuth App
 
 Create one GitHub OAuth App named **Sodium** and reuse it in every environment.

@@ -1,9 +1,11 @@
+import Image from "next/image";
 import Link from "next/link";
 import { listGithubRepositories } from "@/lib/github";
 import { getGithubConnection, getRepositories } from "@/lib/queries";
-import { selectRepositoryAction, signInWithGithubAction } from "@/lib/actions";
-import { ActionForm, SubmitButton } from "@/components/action-form";
+import { signInWithGithubAction } from "@/lib/actions";
 import { GithubSignInForm } from "@/components/github-sign-in-form";
+import { RepositoryPicker } from "@/components/repository-picker";
+import { RepositoryMeta, RepositoryName } from "@/components/repository-row";
 import {
   buttonClass,
   cn,
@@ -13,41 +15,14 @@ import {
 import {
   BookBookmarkIcon,
   CheckIcon,
-  GithubLogoIcon,
-  GitBranchIcon,
-  GlobeIcon,
-  LockSimpleIcon,
+  GithubMarkIcon,
+  PlusIcon,
   WarningCircleIcon,
 } from "@/components/icons";
 
 interface HomeRepositoryParams {
   add?: string;
   error?: string;
-}
-
-function RepositoryMeta({
-  isPrivate,
-  defaultBranch,
-}: {
-  isPrivate: boolean;
-  defaultBranch: string;
-}) {
-  const VisibilityIcon = isPrivate ? LockSimpleIcon : GlobeIcon;
-  return (
-    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-400">
-      <span className="inline-flex items-center gap-1">
-        <VisibilityIcon aria-hidden weight="fill" className="size-3.5" />
-        {isPrivate ? "Private" : "Public"}
-      </span>
-      <span aria-hidden className="text-white/20">
-        ·
-      </span>
-      <span className="inline-flex items-center gap-1 font-mono">
-        <GitBranchIcon aria-hidden className="size-3.5" />
-        {defaultBranch}
-      </span>
-    </p>
-  );
 }
 
 export function RepositoryPanelSkeleton() {
@@ -65,8 +40,11 @@ export function RepositoryPanelSkeleton() {
 
 export async function HomeRepositories({
   params,
+  avatarUrl,
 }: {
   params: HomeRepositoryParams;
+  /** The signed-in account's picture, shown against their GitHub login. */
+  avatarUrl?: string | null;
 }) {
   const [connection, connected] = await Promise.all([
     getGithubConnection(),
@@ -77,7 +55,7 @@ export async function HomeRepositories({
     return (
       <div className="px-6 py-12 text-center sm:py-16">
         <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-white/[0.06] text-neutral-300">
-          <GithubLogoIcon aria-hidden weight="fill" className="size-5" />
+          <GithubMarkIcon aria-hidden className="size-5 text-neutral-300" />
         </div>
         <h2 className="mt-4 text-base font-medium">Reconnect GitHub</h2>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-400 text-pretty">
@@ -119,42 +97,34 @@ export async function HomeRepositories({
             </p>
           </div>
           <Link href="/?add=1" className={buttonClass}>
+            <PlusIcon aria-hidden weight="bold" className="size-4 shrink-0" />
             New repository
-            <CtaArrow />
           </Link>
         </div>
-        <ul className="divide-y divide-white/[0.07] px-2 sm:px-3">
+        <ul className="max-h-96 divide-y divide-white/[0.07] overflow-y-auto">
           {connected.map((repository) => (
             <li
               key={repository.id}
-              className="flex items-center justify-between gap-3 rounded-lg px-3 py-4"
+              className="flex items-center justify-between gap-3 px-5 py-4 sm:px-6"
             >
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-neutral-300">
-                  <GithubLogoIcon
-                    aria-hidden
-                    weight="fill"
-                    className="size-4.5"
-                  />
-                </span>
-                <div className="min-w-0">
-                  <Link
-                    href={`/repos/${repository.id}`}
-                    className="block truncate py-0.5 text-sm font-medium text-neutral-100 hover:text-blue-400"
-                  >
-                    {repository.full_name}
-                  </Link>
-                  <RepositoryMeta
-                    isPrivate={repository.is_private}
-                    defaultBranch={repository.default_branch}
-                  />
-                </div>
+              <div className="min-w-0">
+                <Link
+                  href={`/repos/${repository.id}`}
+                  aria-label={repository.full_name}
+                  className="block text-sm font-medium text-neutral-100 hover:text-blue-400"
+                >
+                  <RepositoryName fullName={repository.full_name} />
+                </Link>
+                <RepositoryMeta
+                  isPrivate={repository.is_private}
+                  defaultBranch={repository.default_branch}
+                />
               </div>
               <Link
                 href={`/repos/${repository.id}`}
                 className={cn(secondaryButtonClass, "shrink-0")}
               >
-                Open
+                Open Repo
                 <CtaArrow />
               </Link>
             </li>
@@ -172,8 +142,11 @@ export async function HomeRepositories({
     listError =
       "GitHub could not load repositories. Sign in with GitHub again.";
   }
-  const connectedIds = new Map(
-    connected.map((repository) => [repository.github_repo_id, repository.id]),
+  const connectedIds = Object.fromEntries(
+    connected.map((repository) => [
+      String(repository.github_repo_id),
+      repository.id,
+    ]),
   );
 
   return (
@@ -181,11 +154,17 @@ export async function HomeRepositories({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-5 py-4 sm:px-6">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-medium">
-            <GithubLogoIcon
-              aria-hidden
-              weight="fill"
-              className="size-4 text-faint"
-            />
+            {avatarUrl ? (
+              <Image
+                src={avatarUrl}
+                alt=""
+                width={20}
+                height={20}
+                className="size-5 rounded-full bg-white/[0.06] object-cover"
+              />
+            ) : (
+              <GithubMarkIcon aria-hidden className="size-4 text-faint" />
+            )}
             {connection.github_login} repositories
           </h2>
           <p className="mt-0.5 text-xs text-neutral-400">
@@ -224,74 +203,16 @@ export async function HomeRepositories({
           </p>
         </div>
       ) : (
-        <ul className="divide-y divide-white/[0.07] px-2 sm:px-3">
-          {repositories.map((repository) => {
-            const connectedId = connectedIds.get(repository.githubRepoId);
-            return (
-              <li
-                key={repository.githubRepoId}
-                className="flex items-center justify-between gap-3 rounded-lg px-3 py-4"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-neutral-300">
-                    <BookBookmarkIcon
-                      aria-hidden
-                      weight="fill"
-                      className="size-4.5"
-                    />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-neutral-100">
-                      {repository.fullName}
-                    </p>
-                    <RepositoryMeta
-                      isPrivate={repository.isPrivate}
-                      defaultBranch={repository.defaultBranch}
-                    />
-                  </div>
-                </div>
-                {connectedId ? (
-                  <Link
-                    href={`/repos/${connectedId}`}
-                    className={cn(secondaryButtonClass, "shrink-0")}
-                  >
-                    Open
-                    <CtaArrow />
-                  </Link>
-                ) : (
-                  <ActionForm
-                    className="shrink-0"
-                    action={selectRepositoryAction}
-                    submitEvent={{
-                      name: "Repository Connection Requested",
-                      properties: {
-                        visibility: repository.isPrivate ? "private" : "public",
-                      },
-                    }}
-                  >
-                    <input
-                      type="hidden"
-                      name="connectionId"
-                      value={connection.id}
-                    />
-                    <input
-                      type="hidden"
-                      name="githubRepoId"
-                      value={repository.githubRepoId}
-                    />
-                    <SubmitButton
-                      className={buttonClass}
-                      pendingText="Connecting…"
-                    >
-                      Connect
-                      <CtaArrow />
-                    </SubmitButton>
-                  </ActionForm>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <RepositoryPicker
+          connectionId={connection.id}
+          connectedIds={connectedIds}
+          repositories={repositories.map((repository) => ({
+            githubRepoId: repository.githubRepoId,
+            fullName: repository.fullName,
+            defaultBranch: repository.defaultBranch,
+            isPrivate: repository.isPrivate,
+          }))}
+        />
       )}
     </div>
   );

@@ -33,15 +33,24 @@ const TYPES = {
   ".png": "image/png",
 };
 
+// A page is served from marketing/, falling back to the repo root so a shot
+// can point at an asset the app itself ships (public/logos, for one) instead
+// of a copy here that would drift from it.
+const ROOTS = [here, resolve(here, "..")];
+
 const server = createServer(async (req, res) => {
   const path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  try {
-    const body = await readFile(join(here, path));
-    res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
-    res.end(body);
-  } catch {
-    res.writeHead(404).end("not found");
+  for (const root of ROOTS) {
+    try {
+      const body = await readFile(join(root, path));
+      res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
+      res.end(body);
+      return;
+    } catch {
+      // Next root.
+    }
   }
+  res.writeHead(404).end("not found");
 });
 await new Promise((done) => server.listen(0, "127.0.0.1", done));
 const { port } = server.address();
@@ -59,4 +68,4 @@ const dest = isAbsolute(out) ? out : resolve(here, out);
 await page.screenshot({ path: dest });
 await browser.close();
 server.close();
-console.log(`${dest} — ${Number(w) * Number(dpr)}x${Number(h) * Number(dpr)}`);
+console.log(`${dest}: ${Number(w) * Number(dpr)}x${Number(h) * Number(dpr)}`);

@@ -121,7 +121,7 @@ function Panel({
  * the same line, so the four read as one instrument panel and a difference in
  * shape is a difference in the data.
  */
-function Metric({
+export function Metric({
   label,
   accent,
   icon: Icon,
@@ -254,7 +254,9 @@ function Insights({
         accent={topTool ? VIZ_SERIES[0] : VIZ_MUTED}
         pending={!topTool}
         headline={
-          topTool ? topTool.tool.replaceAll("_", " ") : "Waiting for tool calls"
+          topTool
+            ? topTool.tool.replaceAll("_", " ")
+            : "Waiting for agent interactions"
         }
         detail={
           topTool
@@ -403,29 +405,16 @@ export function AgentAnalyticsDashboard({
         </div>
       </header>
 
-      {!hasActivity && (
+      {!hasActivity && !locked && (
         <div className="border-l-2 border-blue-500 pl-3">
           <p className="flex items-center gap-2 text-sm font-medium text-neutral-100">
-            {locked ? (
-              <LockKeyIcon
-                aria-hidden
-                weight="fill"
-                className="size-4 shrink-0 text-blue-400"
-              />
-            ) : (
-              <PulseIcon
-                aria-hidden
-                className="size-4 shrink-0 text-blue-400"
-              />
-            )}
-            {locked
-              ? "Unlock analytics to start collecting"
-              : "Waiting for the first agent visit"}
+            <PulseIcon aria-hidden className="size-4 shrink-0 text-blue-400" />
+            Waiting for the first agent visit
           </p>
           <p className="mt-0.5 max-w-3xl text-sm leading-6 text-neutral-400 text-pretty">
-            {locked
-              ? "This dashboard will populate after you subscribe, publish the loader, and receive the first compatible agent or answer-engine visit."
-              : "Data appears automatically after the installed script loads in a compatible WebMCP browser, a tool runs, or someone follows a link from a recognized answer engine."}
+            Data appears automatically after the installed script loads in a
+            compatible WebMCP browser, a tool runs, or someone follows a link
+            from a recognized answer engine.
           </p>
         </div>
       )}

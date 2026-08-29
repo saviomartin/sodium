@@ -1,15 +1,37 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { AppHeader } from "@/components/app-header";
 import {
   HomeRepositories,
   RepositoryPanelSkeleton,
 } from "@/components/home-repositories";
-import { Landing } from "@/components/landing";
+import { MarketingSections, SiteFooter } from "@/components/marketing";
+import { AGENT_SENTENCE, RollingAgent } from "@/components/rolling-agent";
+import { SignInPanel } from "@/components/sign-in-panel";
+import { StructuredData } from "@/components/structured-data";
 import { frameClass } from "@/components/ui";
 import { getAccountContext } from "@/lib/queries";
+import { OPEN_GRAPH } from "@/lib/seo";
 
-export const metadata = { title: "Sodium" };
+/**
+ * The title and description come from the root layout, which already carries
+ * the product's own. What only this page can say is that it is the canonical
+ * URL for that copy, and og:url has to agree with the canonical or a crawler
+ * has two answers for where the page lives.
+ */
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: { ...OPEN_GRAPH, url: "/" },
+};
 
+/**
+ * The home page is one page in two states.
+ *
+ * Hero, features, pricing, FAQ and footer render the same whether or not
+ * anyone is signed in. Only the panel below the hero changes: a GitHub sign-in
+ * when signed out, the repository list when signed in. Keep new content outside
+ * that panel unless it genuinely depends on the session.
+ */
 export default async function Home({
   searchParams,
 }: {
@@ -24,44 +46,73 @@ export default async function Home({
     getAccountContext(),
     searchParams,
   ]);
-
-  if (!account.userId) return <Landing params={params} />;
+  const signedIn = Boolean(account.userId);
+  const next = params.next ?? "/";
 
   return (
-    <div className="min-h-dvh">
+    <div className="flex min-h-dvh flex-col">
       <AppHeader
-        account={{
-          email: account.email,
-          displayName: account.displayName,
-          avatarUrl: account.avatarUrl,
-        }}
+        account={
+          signedIn
+            ? {
+                email: account.email,
+                displayName: account.displayName,
+                avatarUrl: account.avatarUrl,
+              }
+            : null
+        }
+        next={next}
       />
-      <main className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 sm:py-20">
-        <header className="max-w-3xl">
-          <p className="text-xs font-medium uppercase text-neutral-400">
-            Website tools, made visible
-          </p>
-          <h1 className="mt-5 text-4xl font-medium text-neutral-100 text-balance sm:text-5xl">
-            Turn your website into tools ChatGPT can use.
-          </h1>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-neutral-300 text-pretty sm:text-lg">
-            Connect a GitHub repository. Sodium finds useful actions, lets you
-            approve them, and gives you one script to add to your site.
-          </p>
-        </header>
 
-        <section
-          className={`mt-10 min-h-64 overflow-hidden sm:mt-12 ${frameClass}`}
-        >
-          <Suspense fallback={<RepositoryPanelSkeleton />}>
-            <HomeRepositories params={params} />
-          </Suspense>
+      <main className="flex-1">
+        <StructuredData />
+
+        <section className="mx-auto w-full max-w-5xl px-4 pt-12 pb-16 sm:px-6 sm:pt-20 sm:pb-24">
+          <header className="mx-auto max-w-3xl text-center">
+            {/* The rolling agent is decorative repetition of one idea, so the
+                sentence assistive tech and crawlers read names every agent
+                once, statically, and the animated copy is hidden from them.
+
+                The name takes a line of its own — see `rolling-agent` for why
+                that is what keeps the swap still — so the wrap here no longer
+                depends on which name is showing, and nothing below the
+                headline moves as it rolls. */}
+            <h1 className="text-4xl leading-[1.25] font-normal text-neutral-100 text-balance sm:text-5xl">
+              <span className="sr-only">{AGENT_SENTENCE}</span>
+              <span aria-hidden>
+                Make your website usable by
+                <RollingAgent />
+              </span>
+            </h1>
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-neutral-300 text-pretty sm:text-lg">
+              Sodium turns your website’s existing capabilities into WebMCP
+              tools that AI agents can discover and use directly.
+            </p>
+          </header>
+
+          {/* The page's one moving part. Everything else is identical signed
+              in or out, so calls to action elsewhere point back at this id. */}
+          <div
+            id="start"
+            className={`mt-10 min-h-72 scroll-mt-16 overflow-hidden sm:mt-12 ${frameClass}`}
+          >
+            {signedIn ? (
+              <Suspense fallback={<RepositoryPanelSkeleton />}>
+                <HomeRepositories
+                  params={params}
+                  avatarUrl={account.avatarUrl}
+                />
+              </Suspense>
+            ) : (
+              <SignInPanel params={params} />
+            )}
+          </div>
         </section>
 
-        <p className="mt-5 text-center text-xs text-neutral-400">
-          Source is analyzed as data. Sodium never executes repository code.
-        </p>
+        <MarketingSections next={next} signedIn={signedIn} />
       </main>
+
+      <SiteFooter />
     </div>
   );
 }

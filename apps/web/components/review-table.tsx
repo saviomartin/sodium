@@ -88,6 +88,9 @@ export function ReviewTable({
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
     null,
   );
+  // Open state is tracked apart from the selection: the selected id outlives
+  // the close so the details panel still has a tool to render as it fades out.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const actionable = candidates.filter(
     (candidate) => candidate.status !== "rejected",
@@ -217,7 +220,10 @@ export function ReviewTable({
                   <td className="max-w-xl py-3 pr-4">
                     <button
                       type="button"
-                      onClick={() => setSelectedCandidateId(candidate.id)}
+                      onClick={() => {
+                        setSelectedCandidateId(candidate.id);
+                        setDetailsOpen(true);
+                      }}
                       className="group inline-flex items-center gap-1 rounded-sm py-0.5 text-left font-medium text-blue-400 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                     >
                       {candidate.title}
@@ -237,7 +243,7 @@ export function ReviewTable({
                           weight="fill"
                           className="size-3.5 shrink-0"
                         />
-                        Validation failed — open details
+                        Validation failed. Open details
                       </p>
                     ) : null}
                     <p className="mt-0.5 line-clamp-2 text-xs text-neutral-400 text-pretty">
@@ -278,10 +284,8 @@ export function ReviewTable({
         available={
           selectedCandidate ? Boolean(enabled[selectedCandidate.id]) : false
         }
-        open={selectedCandidate !== null}
-        onOpenChange={(open) => {
-          if (!open) setSelectedCandidateId(null);
-        }}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
       />
     </div>
   );

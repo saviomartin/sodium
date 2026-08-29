@@ -162,9 +162,9 @@ export function ConfirmAction({
           {!danger && <CtaArrow />}
         </AlertDialog.Trigger>
         <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm" />
+          <AlertDialog.Overlay className="modal-fade fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm" />
           <AlertDialog.Content
-            className={`fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5 shadow-lg shadow-black/40 ${frameClass}`}
+            className={`modal-fade fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5 shadow-lg shadow-black/40 ${frameClass}`}
           >
             <AlertDialog.Title className="flex items-center gap-2 text-sm font-medium text-balance">
               <WarningIcon

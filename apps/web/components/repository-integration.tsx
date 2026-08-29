@@ -99,8 +99,7 @@ export function RepositoryIntegration({
                 weight="fill"
                 className="size-4 shrink-0"
               />
-              Preview mode — subscribe to configure, copy, publish, or roll
-              back.
+              Preview mode. Subscribe to configure, copy, publish, or roll back.
             </p>
           ) : null}
         </div>
