@@ -6,7 +6,18 @@ import { publishSiteAction, rollbackManifestAction } from "@/lib/actions";
 import { ConfirmAction } from "./confirm-action";
 import { CopySnippet } from "./copy-snippet";
 import { OriginsEditor } from "./origins-editor";
-import { Card } from "./ui";
+import { Card, frameClass } from "./ui";
+import {
+  ClockCounterClockwiseIcon,
+  CodeIcon,
+  FingerprintIcon,
+  GlobeIcon,
+  InfoIcon,
+  LockKeyIcon,
+  PulseIcon,
+  RocketLaunchIcon,
+  SealCheckIcon,
+} from "./icons";
 
 type Publication = Awaited<ReturnType<typeof getPublication>>;
 
@@ -56,7 +67,6 @@ export function RepositoryIntegration({
     '/agent/v1.js" data-site="' +
     site.site_id +
     '"></script>';
-  const manifestUrl = publicUrl + "/api/m/" + site.site_id;
   const publishDescription =
     "Signs and publishes " +
     activeContracts.length +
@@ -70,19 +80,25 @@ export function RepositoryIntegration({
         <div>
           <h2
             id="install-access-title"
-            className="text-base font-semibold text-balance"
+            className="flex items-center gap-2 text-base font-medium text-balance"
           >
+            <CodeIcon aria-hidden className="size-4.5 shrink-0 text-faint" />
             Install &amp; access
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-neutral-500 text-pretty">
+          <p className="mt-1 max-w-2xl text-sm text-neutral-400 text-pretty">
             Add the loader once and choose where it can run. Every published
             tool executes through this script with no customer integration code.
           </p>
           {locked ? (
             <p
               role="status"
-              className="mt-2 text-xs font-medium text-blue-700 text-pretty"
+              className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-400 text-pretty"
             >
+              <LockKeyIcon
+                aria-hidden
+                weight="fill"
+                className="size-4 shrink-0"
+              />
               Preview mode — subscribe to configure, copy, publish, or roll
               back.
             </p>
@@ -92,66 +108,50 @@ export function RepositoryIntegration({
       </header>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="Loader snippet">
-          <p className="mb-3 text-sm text-neutral-600 text-pretty">
+        <Card title="Loader snippet" icon={CodeIcon}>
+          <p className="mb-3 text-sm text-neutral-400 text-pretty">
             Add this line to your document head. It only registers the tools
             enabled above and only on an allowed origin.
           </p>
-          <CopySnippet snippet={snippet} disabled={locked} />
-          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs text-neutral-500">Site ID</dt>
-              <dd className="font-mono text-xs break-all">{site.site_id}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-neutral-500">Manifest endpoint</dt>
-              <dd className="text-xs break-all">
-                {locked ? (
-                  <span
-                    aria-disabled="true"
-                    className="font-mono text-neutral-500"
-                  >
-                    {manifestUrl}
-                  </span>
-                ) : (
-                  <a
-                    href={manifestUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-mono text-blue-700 hover:underline"
-                  >
-                    {manifestUrl} ↗
-                  </a>
-                )}
-              </dd>
-            </div>
+          <CopySnippet snippet={snippet} />
+          <dl className="mt-4 text-sm">
+            <dt className="flex items-center gap-1 text-xs text-neutral-400">
+              <FingerprintIcon aria-hidden className="size-3.5" />
+              Site ID
+            </dt>
+            <dd className="font-mono text-xs break-all">{site.site_id}</dd>
           </dl>
         </Card>
 
-        <Card title="Allowed origins">
+        <Card title="Allowed origins" icon={GlobeIcon}>
           <OriginsEditor
             siteId={site.id}
             initialOrigins={site.allowed_origins}
-            locked={locked}
           />
         </Card>
 
-        <Card title="Runtime status">
+        <Card title="Runtime status" icon={PulseIcon}>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="text-xs text-neutral-500">Published tools</dt>
+              <dt className="flex items-center gap-1 text-xs text-neutral-400">
+                <RocketLaunchIcon aria-hidden className="size-3.5" />
+                Published tools
+              </dt>
               <dd className="font-medium tabular-nums">
                 {currentContent?.tools.length ?? 0}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-neutral-500">Live manifest</dt>
+              <dt className="flex items-center gap-1 text-xs text-neutral-400">
+                <SealCheckIcon aria-hidden className="size-3.5" />
+                Live manifest
+              </dt>
               <dd className="font-medium tabular-nums">
                 {current ? "Version " + current.version : "Not published"}
               </dd>
             </div>
           </dl>
-          <p className="mt-3 text-sm text-neutral-500 text-pretty">
+          <p className="mt-3 text-sm text-neutral-400 text-pretty">
             {locked
               ? "Subscribe to activate the loader and begin receiving runtime activity."
               : lastLoaderReady
@@ -171,8 +171,7 @@ export function RepositoryIntegration({
                 confirmLabel="Publish manifest"
                 triggerVariant={hasUnpublishedChanges ? "primary" : "secondary"}
                 blockWhileEdits
-                disabled={locked}
-                disabledReason="Subscribe to publish tools"
+                subscriberAction="publish tools"
                 fields={{ siteId: site.id }}
                 successEvent={{
                   name: "Manifest Published",
@@ -182,7 +181,20 @@ export function RepositoryIntegration({
                   },
                 }}
               />
-              <p className="mt-2 text-xs text-neutral-500">
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-neutral-400">
+                {hasUnpublishedChanges ? (
+                  <InfoIcon
+                    aria-hidden
+                    weight="fill"
+                    className="size-3.5 shrink-0 text-amber-300"
+                  />
+                ) : (
+                  <SealCheckIcon
+                    aria-hidden
+                    weight="fill"
+                    className="size-3.5 shrink-0 text-emerald-400"
+                  />
+                )}
                 {hasUnpublishedChanges
                   ? "Unpublished tool or origin changes are ready."
                   : "Live settings match your current edits."}
@@ -193,23 +205,27 @@ export function RepositoryIntegration({
       </div>
 
       {manifests.length > 0 || usage.length > 0 ? (
-        <details className="rounded-lg border border-neutral-200 bg-white">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
+        <details className={frameClass}>
+          <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium">
+            <ClockCounterClockwiseIcon
+              aria-hidden
+              className="size-4 text-faint"
+            />
             Versions, rollback &amp; activity
           </summary>
-          <div className="space-y-5 border-t border-neutral-100 p-4">
+          <div className="space-y-5 border-t border-white/[0.07] p-4">
             {manifests.length > 0 ? (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[32rem] text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
+                    <tr className="border-b border-white/10 text-left text-xs text-neutral-400">
                       <th className="py-2 pr-3 font-medium">Version</th>
                       <th className="py-2 pr-3 font-medium">Status</th>
                       <th className="py-2 pr-3 font-medium">Tools</th>
                       <th className="py-2 font-medium" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-100">
+                  <tbody className="divide-y divide-white/[0.07]">
                     {manifests.map((manifest) => {
                       const content =
                         manifest.manifest as unknown as ToolManifest;
@@ -220,8 +236,13 @@ export function RepositoryIntegration({
                           <td className="py-2 pr-3 tabular-nums">
                             v{manifest.version}
                             {isCurrent ? (
-                              <span className="ml-1 text-xs text-green-700">
-                                (live)
+                              <span className="ml-1 inline-flex items-center gap-1 text-xs text-emerald-400">
+                                <SealCheckIcon
+                                  aria-hidden
+                                  weight="fill"
+                                  className="size-3.5"
+                                />
+                                live
                               </span>
                             ) : null}
                           </td>
@@ -236,12 +257,12 @@ export function RepositoryIntegration({
                               <ConfirmAction
                                 action={rollbackManifestAction}
                                 trigger="Roll back to this"
+                                triggerIcon="rollback"
                                 title={"Roll back to v" + manifest.version}
                                 description="Re-signs this version's exact tool set as a new live version. Nothing is deleted from history."
                                 confirmLabel="Roll back"
                                 danger
-                                disabled={locked}
-                                disabledReason="Subscribe to roll back a manifest"
+                                subscriberAction="roll back a manifest"
                                 fields={{
                                   siteId: site.id,
                                   manifestId: manifest.id,
@@ -253,7 +274,7 @@ export function RepositoryIntegration({
                               />
                             ) : null}
                             {manifest.status === "draft" ? (
-                              <span className="text-xs text-amber-700">
+                              <span className="text-xs text-amber-300">
                                 Review compatibility findings before publishing
                               </span>
                             ) : null}
@@ -268,10 +289,14 @@ export function RepositoryIntegration({
 
             {deployments.length > 0 ? (
               <div>
-                <h3 className="text-xs font-semibold text-neutral-700">
+                <h3 className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                  <RocketLaunchIcon
+                    aria-hidden
+                    className="size-3.5 text-faint"
+                  />
                   Deployment history
                 </h3>
-                <ul className="mt-2 space-y-1 text-xs text-neutral-500 tabular-nums">
+                <ul className="mt-2 space-y-1 text-xs text-neutral-400 tabular-nums">
                   {deployments.map((deployment, index) => (
                     <li key={deployment.manifest_id + ":" + index}>
                       {new Date(deployment.created_at).toLocaleString()} ·{" "}
@@ -284,10 +309,13 @@ export function RepositoryIntegration({
 
             {usage.length > 0 ? (
               <div>
-                <h3 className="text-xs font-semibold text-neutral-700">
+                <h3 className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                  <PulseIcon aria-hidden className="size-3.5 text-faint" />
                   Loader activity
                 </h3>
-                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-neutral-500 tabular-nums">
+                {/* Event payloads are arbitrary JSON with no spaces to wrap
+                    on, so they need an explicit break to stay in the panel. */}
+                <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs break-all text-neutral-400 tabular-nums">
                   {usage.map((event, index) => (
                     <li key={event.created_at + ":" + index}>
                       {new Date(event.created_at).toLocaleString()} ·{" "}

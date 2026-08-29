@@ -1,0 +1,151 @@
+/* Design tokens lifted from apps/web/app/globals.css so shots match the app. */
+@font-face {
+  font-family: "Geist";
+  src: url("../assets/geist-sans.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../assets/geist-mono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
+}
+
+:root {
+  --ink-950: #191919;
+  --ink-900: #1e1e1e;
+  --panel: #232323;
+  --faint: #8f8f8f;
+  --n100: #f5f5f5;
+  --n200: #e5e5e5;
+  --n300: #d4d4d4;
+  --n400: #a3a3a3;
+  --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--ink-950);
+  color: var(--n200);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--ink-950);
+}
+
+.stage > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Pulls the field down under the content without hiding it at the edges. */
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 58% 66% at 50% 47%,
+    rgba(25, 25, 25, 0.98) 0%,
+    rgba(25, 25, 25, 0.95) 46%,
+    rgba(25, 25, 25, 0.5) 76%,
+    rgba(25, 25, 25, 0.08) 100%
+  );
+}
+
+.content {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Brand lockup, same shape as the app header. */
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--n100);
+}
+.brand .by {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--faint);
+}
+.brand .by img {
+  height: 10px;
+  width: auto;
+  opacity: 0.8;
+}
+
+/* The install card, exactly as CopySnippet renders it. */
+.card {
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.3);
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 10px 18px;
+  font-family: var(--mono);
+  color: var(--faint);
+}
+.card-body {
+  padding: 18px;
+  font-family: var(--mono);
+  color: var(--n300);
+  /* `pre` so a snippet can be hand-wrapped and stay aligned. */
+  white-space: pre;
+}
+
+/* Token hues from TOKEN_CLASSES in components/copy-snippet.tsx. */
+.t-name { color: #93c5fd; }
+.t-attr { color: #fde68a; }
+.t-str { color: #6ee7b7; }
+.t-punc { color: var(--faint); }
+
+/* secondaryButtonClass */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--n200);
+}
+.btn .marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

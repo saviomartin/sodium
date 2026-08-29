@@ -13,6 +13,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-dialog": "^1.1.23",
     "@sodium/contracts": "workspace:*",
@@ -21,12 +22,14 @@
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "@vercel/analytics": "^2.0.1",
+    "geist": "^1.7.2",
     "nanoid": "^6.0.1",
     "next": "16.3.2",
     "octokit": "^5.0.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
+    "sonner": "^2.0.8",
     "stripe": "22.4.0",
     "zod": "^4.1.5"
   },

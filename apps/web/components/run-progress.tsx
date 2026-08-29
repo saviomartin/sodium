@@ -10,6 +10,18 @@ import {
 } from "@sodium/contracts";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "./ui";
+import {
+  BroadcastIcon,
+  CheckCircleIcon,
+  CircleDashedIcon,
+  CircleNotchIcon,
+  CubeIcon,
+  FlaskIcon,
+  GithubLogoIcon,
+  MagnifyingGlassIcon,
+  MinusCircleIcon,
+  XCircleIcon,
+} from "./icons";
 
 const STAGE_LABELS: Record<string, string> = {
   clone: "Snapshot repository",
@@ -17,6 +29,23 @@ const STAGE_LABELS: Record<string, string> = {
   synthesize: "Tool synthesis",
   validate: "Validation & evals",
 };
+
+/** One glyph per stage, so a glance says which step of the pipeline is which. */
+const STAGE_ICONS: Record<string, typeof CubeIcon> = {
+  clone: GithubLogoIcon,
+  static: MagnifyingGlassIcon,
+  synthesize: CubeIcon,
+  validate: FlaskIcon,
+};
+
+/** Status is carried by the leading mark rather than a bare colored dot. */
+const STATUS_MARKS = {
+  succeeded: { icon: CheckCircleIcon, className: "text-emerald-400" },
+  skipped: { icon: MinusCircleIcon, className: "text-neutral-500" },
+  running: { icon: CircleNotchIcon, className: "text-blue-400", spin: true },
+  failed: { icon: XCircleIcon, className: "text-red-400" },
+  pending: { icon: CircleDashedIcon, className: "text-white/25" },
+} as const;
 
 interface StageState {
   status?: string;
@@ -99,21 +128,28 @@ export function RunProgress({
       {ANALYSIS_STAGES.map((stage) => {
         const state = merged[stage];
         const status = state?.status ?? "pending";
+        const mark =
+          STATUS_MARKS[status as keyof typeof STATUS_MARKS] ??
+          STATUS_MARKS.pending;
+        const StatusIcon = mark.icon;
+        const StageIcon = STAGE_ICONS[stage] ?? CubeIcon;
+        const spinning = "spin" in mark && mark.spin;
         return (
           <li key={stage} className="flex items-center gap-3 text-sm">
-            <span
+            <StatusIcon
               aria-hidden
+              weight={spinning ? "bold" : "fill"}
               className={cn(
-                "size-2 rounded-full",
-                status === "succeeded" && "bg-green-500",
-                status === "skipped" && "bg-neutral-300",
-                status === "running" && "bg-blue-500",
-                status === "failed" && "bg-red-500",
-                status === "pending" && "bg-neutral-200",
+                "size-4 shrink-0",
+                mark.className,
+                spinning && "animate-spin motion-reduce:animate-none",
               )}
             />
-            <span className="w-44 shrink-0">{STAGE_LABELS[stage]}</span>
-            <span className="text-xs text-neutral-500 truncate">
+            <span className="flex w-44 shrink-0 items-center gap-1.5">
+              <StageIcon aria-hidden className="size-4 shrink-0 text-faint" />
+              {STAGE_LABELS[stage]}
+            </span>
+            <span className="text-xs text-neutral-400 truncate">
               {status === "pending" ? "—" : status}
               {state?.message ? ` · ${state.message}` : ""}
             </span>
@@ -121,7 +157,19 @@ export function RunProgress({
         );
       })}
       {running && (
-        <li className="pt-1 text-xs text-neutral-400" aria-live="polite">
+        <li
+          className="flex items-center gap-1.5 pt-1 text-xs text-faint"
+          aria-live="polite"
+        >
+          <BroadcastIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0",
+              connected
+                ? "text-emerald-400"
+                : "animate-pulse text-amber-300 motion-reduce:animate-none",
+            )}
+          />
           {connected
             ? "Live updates connected"
             : "Reconnecting live updates · database sync remains active"}

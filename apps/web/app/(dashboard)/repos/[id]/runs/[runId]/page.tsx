@@ -3,6 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import type { JobError, RunStatus } from "@sodium/contracts";
 import { getRepository, getRun } from "@/lib/queries";
 import { Card, RunStatusBadge } from "@/components/ui";
+import {
+  GitCommitIcon,
+  GithubLogoIcon,
+  ListChecksIcon,
+  WarningIcon,
+} from "@/components/icons";
 import { RunProgress } from "@/components/run-progress";
 
 export const metadata = { title: "Analysis" };
@@ -23,25 +29,29 @@ export default async function RunPage({
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <header>
-        <p className="text-xs text-neutral-400">
+        <p className="flex items-center gap-1.5 text-xs text-faint">
+          <GithubLogoIcon aria-hidden weight="fill" className="size-3.5" />
           <Link href={`/repos/${repo.id}`} className="hover:underline">
             {repo.full_name}
           </Link>{" "}
           / analysis
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-lg font-semibold text-balance">
+          <h1 className="flex items-center gap-2 text-lg font-medium text-balance">
             Analyzing{" "}
-            <span className="font-mono">{commit?.sha.slice(0, 10)}</span>
+            <span className="inline-flex items-center gap-1.5 font-mono">
+              <GitCommitIcon aria-hidden className="size-4 text-faint" />
+              {commit?.sha.slice(0, 10)}
+            </span>
           </h1>
           <RunStatusBadge status={run.status as RunStatus} />
         </div>
-        <p className="mt-1 text-sm text-neutral-500 text-pretty">
+        <p className="mt-1 text-sm text-neutral-400 text-pretty">
           This page returns to the repository as soon as the analysis completes.
         </p>
       </header>
 
-      <Card title="Progress">
+      <Card title="Progress" icon={ListChecksIcon}>
         <RunProgress
           runId={run.id}
           runStatus={run.status}
@@ -55,9 +65,16 @@ export default async function RunPage({
         {error && (
           <p
             role="alert"
-            className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 text-pretty"
+            className="mt-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/15 px-3 py-2 text-sm text-red-400 text-pretty"
           >
-            {error.code}: {error.message}
+            <WarningIcon
+              aria-hidden
+              weight="fill"
+              className="mt-0.5 size-4 shrink-0"
+            />
+            <span>
+              {error.code}: {error.message}
+            </span>
           </p>
         )}
       </Card>

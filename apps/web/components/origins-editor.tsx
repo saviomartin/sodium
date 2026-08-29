@@ -4,19 +4,27 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateSiteOriginsAction } from "@/lib/actions";
 import { trackProductEvent } from "@/lib/product-analytics";
+import { usePaywall } from "./repository-paywall";
 import { inputClass, secondaryButtonClass } from "./ui";
+import {
+  CheckCircleIcon,
+  CircleNotchIcon,
+  GlobeIcon,
+  PlusIcon,
+  WarningCircleIcon,
+  XIcon,
+} from "./icons";
 import { useRepositorySettingsState } from "./repository-settings-state";
 
 export function OriginsEditor({
   siteId,
   initialOrigins,
-  locked = false,
 }: {
   siteId: string;
   initialOrigins: string[];
-  locked?: boolean;
 }) {
   const router = useRouter();
+  const { requireSubscription } = usePaywall();
   const { beginEdit, endEdit } = useRepositorySettingsState();
   const inputRef = useRef<HTMLInputElement>(null);
   const [origins, setOrigins] = useState(initialOrigins);
@@ -25,6 +33,7 @@ export function OriginsEditor({
   const [pending, startTransition] = useTransition();
 
   function persist(next: string[]) {
+    if (!requireSubscription("manage allowed origins")) return;
     setError(null);
     setSaved(false);
     beginEdit();
@@ -87,7 +96,7 @@ export function OriginsEditor({
       <div>
         <label
           htmlFor={`origin-${siteId}`}
-          className="mb-1 block text-xs font-medium text-neutral-600"
+          className="mb-1 block text-xs font-medium text-neutral-400"
         >
           Add an origin
         </label>
@@ -98,7 +107,7 @@ export function OriginsEditor({
             type="url"
             className={inputClass}
             placeholder="https://app.example.com"
-            disabled={locked || pending}
+            disabled={pending}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -109,50 +118,97 @@ export function OriginsEditor({
           <button
             type="button"
             className={secondaryButtonClass}
-            disabled={locked || pending}
+            disabled={pending}
             onClick={addOrigin}
           >
-            {pending ? "Saving…" : "Add"}
+            {pending ? (
+              <>
+                <CircleNotchIcon
+                  aria-hidden
+                  weight="bold"
+                  className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                />
+                Saving…
+              </>
+            ) : (
+              <>
+                <PlusIcon
+                  aria-hidden
+                  weight="bold"
+                  className="size-4 shrink-0"
+                />
+                Add
+              </>
+            )}
           </button>
         </div>
-        <p className="mt-1 text-xs text-neutral-400 text-pretty">
+        <p className="mt-1 text-xs text-faint text-pretty">
           Exact origin only, including scheme and optional port.
         </p>
       </div>
 
-      <ul className="divide-y divide-neutral-100 rounded-md border border-neutral-200">
-        {origins.map((origin) => (
-          <li
-            key={origin}
-            className="flex min-h-10 items-center justify-between gap-3 px-3 py-2"
-          >
-            <span className="min-w-0 truncate font-mono text-xs">{origin}</span>
-            <button
-              type="button"
-              className="shrink-0 text-xs font-medium text-neutral-500 hover:text-red-700 disabled:opacity-50"
-              disabled={locked || pending || origins.length === 1}
-              aria-label={`Remove ${origin}`}
-              title={
-                locked
-                  ? "Subscribe to manage allowed origins"
-                  : origins.length === 1
+      {origins.length > 0 ? (
+        <ul className="divide-y divide-white/[0.07] rounded-md border border-white/10">
+          {origins.map((origin) => (
+            <li
+              key={origin}
+              className="flex min-h-10 items-center justify-between gap-3 px-3 py-2"
+            >
+              <span className="flex min-w-0 items-center gap-1.5 font-mono text-xs">
+                <GlobeIcon
+                  aria-hidden
+                  weight="fill"
+                  className="size-3.5 shrink-0 text-faint"
+                />
+                {/* Its own box: `truncate` needs a block to ellipsize, and as a
+                    flex item its hidden overflow also lets it shrink past the
+                    origin's min-content width instead of widening the row. */}
+                <span className="truncate">{origin}</span>
+              </span>
+              <button
+                type="button"
+                className="-mr-1 inline-flex min-h-6 shrink-0 items-center gap-1 rounded px-1 text-xs font-medium text-neutral-400 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50"
+                disabled={pending || origins.length === 1}
+                aria-label={`Remove ${origin}`}
+                title={
+                  origins.length === 1
                     ? "At least one allowed origin is required"
                     : undefined
-              }
-              onClick={() => persist(origins.filter((item) => item !== origin))}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
+                }
+                onClick={() =>
+                  persist(origins.filter((item) => item !== origin))
+                }
+              >
+                <XIcon aria-hidden weight="bold" className="size-3.5" />
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {error ? (
-        <p role="alert" className="text-sm text-red-700 text-pretty">
+        <p
+          role="alert"
+          className="flex items-start gap-1.5 text-sm text-red-400 text-pretty"
+        >
+          <WarningCircleIcon
+            aria-hidden
+            weight="fill"
+            className="mt-0.5 size-4 shrink-0"
+          />
           {error}
         </p>
       ) : saved ? (
-        <p role="status" className="text-sm text-green-700">
+        <p
+          role="status"
+          className="flex items-center gap-1.5 text-sm text-emerald-400"
+        >
+          <CheckCircleIcon
+            aria-hidden
+            weight="fill"
+            className="size-4 shrink-0"
+          />
           Saved. Republish to make this live.
         </p>
       ) : null}
