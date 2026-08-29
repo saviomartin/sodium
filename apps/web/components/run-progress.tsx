@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import {
   ANALYSIS_STAGES,
@@ -17,7 +17,7 @@ import {
   CircleNotchIcon,
   CubeIcon,
   FlaskIcon,
-  GithubLogoIcon,
+  GithubMarkIcon,
   MagnifyingGlassIcon,
   MinusCircleIcon,
   XCircleIcon,
@@ -31,8 +31,11 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 /** One glyph per stage, so a glance says which step of the pipeline is which. */
-const STAGE_ICONS: Record<string, typeof CubeIcon> = {
-  clone: GithubLogoIcon,
+const STAGE_ICONS: Record<
+  string,
+  ComponentType<{ className?: string; "aria-hidden"?: boolean }>
+> = {
+  clone: GithubMarkIcon,
   static: MagnifyingGlassIcon,
   synthesize: CubeIcon,
   validate: FlaskIcon,

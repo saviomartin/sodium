@@ -20,7 +20,7 @@
 
 - [ ] `NEXT_PUBLIC_SODIUM_ENVIRONMENT=production` and `SODIUM_ENVIRONMENT=production`; startup must reject either non-production Supabase project ref.
 - [ ] Vercel Development and Preview use `sodium-development`; Production uses `sodium`. Never scope one Supabase secret across all three environments.
-- [ ] Production Auth allows only `https://sodium-webmcp.vercel.app/auth/{callback,confirm}`. Localhost and Preview patterns belong only to development Auth.
+- [ ] Production Auth allows only `https://sodium.result.dev/auth/{callback,confirm}`. Localhost and Preview patterns belong only to development Auth.
 - [ ] Dedicated production project; separate project (or branch) for previews. `supabase link` + `pnpm db:push` per environment; never edit schema through the dashboard.
 - [ ] Run `supabase db advisors` (CLI ≥ 2.81) after every migration and resolve findings.
 - [ ] `pnpm db:test` (RLS suite) green against the production schema before first launch.

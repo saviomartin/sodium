@@ -19,6 +19,7 @@ import { RepositoryIntegration } from "@/components/repository-integration";
 import { AgentAnalyticsDashboard } from "@/components/agent-analytics-dashboard";
 import { RepositorySettingsState } from "@/components/repository-settings-state";
 import { RepositoryLiveRefresh } from "@/components/repository-live-refresh";
+import { RepositoryFullName } from "@/components/repository-row";
 import { ReviewTable, type CandidateRow } from "@/components/review-table";
 import {
   CheckoutStatusNotice,
@@ -30,6 +31,7 @@ import { hasPaidRepositoryAccess } from "@/lib/billing-state";
 import {
   Card,
   CtaArrow,
+  CtaRepeat,
   EmptyState,
   RunStatusBadge,
   buttonClass,
@@ -42,7 +44,7 @@ import {
   CubeIcon,
   GitBranchIcon,
   GitCommitIcon,
-  GithubLogoIcon,
+  GithubMarkIcon,
   InfoIcon,
   MagnifyingGlassIcon,
   WarningIcon,
@@ -170,8 +172,20 @@ export default async function RepositoryPage({
     rows.length === 0 &&
     discoveredPrimitiveCount > 0 &&
     (synthesizeDetail?.potential === undefined || candidates.length > 0);
+  // Until an analysis has produced tools there is nothing to enable, so a
+  // visitor who has not paid gets one primary action — run the analysis. The
+  // upgrade only claims the header once tools are on the page to enable.
+  const toolsDiscovered = rows.length > 0;
   const emphasizeRunAnalysis =
-    shouldEmphasizeRunAnalysis(runs) || legacyEmptyAnalysis;
+    shouldEmphasizeRunAnalysis(runs) ||
+    legacyEmptyAnalysis ||
+    (!paid && !toolsDiscovered);
+  // Once one analysis has landed, running again is a repeat rather than the
+  // first step: the label drops the urgency and the mark turns instead of
+  // pointing forward.
+  const analyzedBefore = Boolean(latestSuccessfulRun);
+  const runAnalysisLabel = analyzedBefore ? "Run analysis" : "Run analysis now";
+  const RunAnalysisMark = analyzedBefore ? CtaRepeat : CtaArrow;
 
   return (
     <RepositorySettingsState>
@@ -187,12 +201,11 @@ export default async function RepositoryPage({
           <header className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="flex items-center gap-2 text-lg font-medium text-balance">
-                <GithubLogoIcon
+                <GithubMarkIcon
                   aria-hidden
-                  weight="fill"
                   className="size-5 shrink-0 text-faint"
                 />
-                {repo.full_name}
+                <RepositoryFullName fullName={repo.full_name} />
               </h1>
               <p className="flex flex-wrap items-center gap-x-2 text-sm text-neutral-400">
                 <span className="inline-flex items-center gap-1">
@@ -233,8 +246,8 @@ export default async function RepositoryPage({
                     }
                     pendingText="Starting…"
                   >
-                    Run analysis now
-                    <CtaArrow />
+                    {runAnalysisLabel}
+                    <RunAnalysisMark />
                   </SubmitButton>
                 </ActionForm>
               ) : (
@@ -242,11 +255,11 @@ export default async function RepositoryPage({
                   action="run another analysis"
                   className={secondaryButtonClass}
                 >
-                  Run analysis now
-                  <CtaArrow />
+                  {runAnalysisLabel}
+                  <RunAnalysisMark />
                 </PaywalledButton>
               )}
-              {site ? (
+              {site && (paid || toolsDiscovered) ? (
                 <RepositoryBillingControl
                   repositoryId={repo.id}
                   paid={paid}
@@ -321,6 +334,7 @@ export default async function RepositoryPage({
                     cancelAtPeriodEnd={false}
                     currentPeriodEnd={null}
                     label="Unlock install & access"
+                    emphasis="secondary"
                   />
                 ) : undefined
               }
@@ -344,6 +358,7 @@ export default async function RepositoryPage({
                     cancelAtPeriodEnd={false}
                     currentPeriodEnd={null}
                     label="Unlock analytics"
+                    emphasis="secondary"
                   />
                 ) : undefined
               }
@@ -383,8 +398,8 @@ export default async function RepositoryPage({
                         <p className="text-pretty">
                           <span className="font-mono text-xs">
                             {finding.toolName}
-                          </span>{" "}
-                          — {finding.summary}
+                          </span>
+                          : {finding.summary}
                         </p>
                         <p className="flex items-center gap-1 text-xs text-faint tabular-nums">
                           <GitCommitIcon aria-hidden className="size-3.5" />

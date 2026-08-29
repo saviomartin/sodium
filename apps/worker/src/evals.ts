@@ -218,7 +218,7 @@ export function agentSelectionEval(
       return {
         name: "agent_selection",
         passed: false,
-        details: `wording is ambiguous with "${sibling.name}" — an agent may pick the wrong tool`,
+        details: `wording is ambiguous with "${sibling.name}", an agent may pick the wrong tool`,
       };
     }
   }

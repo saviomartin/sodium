@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import type { BillingStatus } from "@/lib/billing-state";
 import { billingStatusLabel } from "@/lib/billing-state";
+import { REPOSITORY_PLAN_FEATURES, REPOSITORY_PRICE_USD } from "@/lib/plan";
 import { trackProductEvent } from "@/lib/product-analytics";
 import { notifyUpgradeRequired } from "@/lib/upgrade-toast";
 import {
@@ -19,23 +20,23 @@ import {
   startRepositoryCheckoutAction,
 } from "@/lib/actions";
 import { ActionForm, SubmitButton } from "./action-form";
-import { buttonClass, CtaArrow, frameClass, secondaryButtonClass } from "./ui";
+import { PlanCard } from "./plan-card";
+import { RepositoryFullName } from "./repository-row";
+import { AGENT_SENTENCE, RollingAgent } from "./rolling-agent";
 import {
-  CheckCircleIcon,
+  buttonClass,
+  CtaArrow,
+  CtaCheck,
+  frameClass,
+  secondaryButtonClass,
+} from "./ui";
+import {
   CircleNotchIcon,
+  GithubMarkIcon,
   InfoIcon,
   SealCheckIcon,
-  SparkleIcon,
   XIcon,
 } from "./icons";
-
-const FEATURES = [
-  "Enable and publish AI tools",
-  "Automatic analysis on every push",
-  "Edit generated tool definitions",
-  "Manage versions and rollbacks",
-  "Track tool usage and failures",
-] as const;
 
 interface PaywallContextValue {
   paid: boolean;
@@ -143,7 +144,7 @@ function PricingDialog({
         if (nextOpen) {
           trackProductEvent({
             name: "Pricing Viewed",
-            properties: { priceUsd: 49 },
+            properties: { priceUsd: REPOSITORY_PRICE_USD },
           });
         }
       }}
@@ -151,71 +152,82 @@ function PricingDialog({
       <Dialog.Portal>
         {/* Same scrim as the app's other modals, and `dvh` so a phone's
             retracting browser chrome cannot push the dialog off-screen. */}
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm" />
+        <Dialog.Overlay className="modal-fade fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm" />
         <Dialog.Content
-          className={`fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-6 shadow-xl focus:outline-none ${frameClass}`}
+          className={`modal-fade fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-6 shadow-xl focus:outline-none ${frameClass}`}
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <Dialog.Title className="flex items-center gap-2 text-lg font-medium text-balance">
-                <SparkleIcon
-                  aria-hidden
-                  weight="fill"
-                  className="size-5 shrink-0 text-blue-400"
-                />
-                Unlock AI capabilities
-              </Dialog.Title>
-              <Dialog.Description className="mt-1 text-sm text-neutral-400 text-pretty">
-                Activate every generated tool for {repositoryName}.
-              </Dialog.Description>
-            </div>
-            <Dialog.Close
-              className="rounded-md p-1 text-faint hover:bg-white/[0.06] hover:text-neutral-300 focus-visible:outline-2 focus-visible:outline-blue-500"
-              aria-label="Close pricing"
-            >
-              <XIcon aria-hidden weight="bold" className="size-4" />
-            </Dialog.Close>
-          </div>
-
-          <div className="mt-6 flex items-end gap-2 border-b border-white/[0.07] pb-5">
-            <span className="text-4xl font-medium tabular-nums">$49</span>
-            <span className="pb-1 text-sm text-neutral-400">
-              / month / repository
-            </span>
-          </div>
-
-          <ul className="my-5 space-y-3">
-            {FEATURES.map((feature) => (
-              <li key={feature} className="flex items-start gap-2.5 text-sm">
-                <CheckCircleIcon
-                  aria-hidden
-                  weight="fill"
-                  className="mt-0.5 size-4 shrink-0 text-emerald-400"
-                />
-                <span>{feature}</span>
-              </li>
-            ))}
-          </ul>
-
-          <ActionForm
-            action={startRepositoryCheckoutAction}
-            submitEvent={{
-              name: "Checkout Initiated",
-              properties: { priceUsd: 49 },
-            }}
+          {/* The close sits out of flow rather than beside the heading: it
+              would otherwise narrow every line of the headline to spare the
+              one line it actually sits on. */}
+          <Dialog.Close
+            className="absolute top-5 right-5 rounded-md p-1 text-faint hover:bg-white/[0.06] hover:text-neutral-300 focus-visible:outline-2 focus-visible:outline-blue-500"
+            aria-label="Close pricing"
           >
-            <input type="hidden" name="repositoryId" value={repositoryId} />
-            <SubmitButton
-              className={`${buttonClass} min-h-10 w-full`}
-              pendingText="Opening secure checkout…"
-            >
-              Unlock AI capabilities for your site
-              <CtaArrow />
-            </SubmitButton>
-          </ActionForm>
-          <p className="mt-3 text-center text-xs text-faint text-pretty">
-            Secure checkout by Stripe. Cancel anytime. This subscription unlocks
-            only {repositoryName}.
+            <XIcon aria-hidden weight="bold" className="size-4" />
+          </Dialog.Close>
+
+          {/* The home page’s headline, at dialog scale. Someone who read it on
+              the way in meets the same promise at the moment they buy, and the
+              rolling name keeps naming what the money is for. */}
+          <Dialog.Title className="text-xl leading-[1.3] font-normal text-neutral-100 text-balance sm:text-2xl">
+            <span className="sr-only">{AGENT_SENTENCE}</span>
+            <span aria-hidden>
+              Make your website usable by
+              <RollingAgent />
+            </span>
+          </Dialog.Title>
+          {/* The repository is a flex item rather than words in the sentence,
+              so its mark and name wrap as one label instead of leaving the
+              mark stranded at the end of a line. */}
+          <Dialog.Description className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-neutral-400">
+            Unlock every generated tool for
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-neutral-300">
+              <GithubMarkIcon
+                aria-hidden
+                className="size-3.5 shrink-0 text-faint"
+              />
+              <span className="truncate">
+                <RepositoryFullName fullName={repositoryName} />
+              </span>
+            </span>
+          </Dialog.Description>
+
+          {/* The home page's paid card, unframed because the dialog already
+              wears the frame. One component, so the pricing a visitor read
+              and the pricing a customer buys cannot say different things. */}
+          <div className="mt-6 border-t border-white/[0.07] pt-6">
+            <PlanCard
+              framed={false}
+              name="Repository"
+              price={`$${REPOSITORY_PRICE_USD}`}
+              cadence="/ month"
+              features={REPOSITORY_PLAN_FEATURES}
+              action={
+                <ActionForm
+                  action={startRepositoryCheckoutAction}
+                  submitEvent={{
+                    name: "Checkout Initiated",
+                    properties: { priceUsd: REPOSITORY_PRICE_USD },
+                  }}
+                >
+                  <input
+                    type="hidden"
+                    name="repositoryId"
+                    value={repositoryId}
+                  />
+                  <SubmitButton
+                    className={buttonClass}
+                    pendingText="Opening secure checkout…"
+                  >
+                    Unlock AI capabilities for your site
+                    <CtaArrow />
+                  </SubmitButton>
+                </ActionForm>
+              }
+            />
+          </div>
+          <p className="mt-3 text-xs text-faint text-pretty">
+            Secure checkout by Stripe. Cancel anytime.
           </p>
         </Dialog.Content>
       </Dialog.Portal>
@@ -234,6 +246,7 @@ export function RepositoryBillingControl({
   cancelAtPeriodEnd,
   currentPeriodEnd,
   label = "Enable tools",
+  emphasis = "primary",
 }: {
   repositoryId: string;
   paid: boolean;
@@ -241,6 +254,12 @@ export function RepositoryBillingControl({
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
   label?: string;
+  /**
+   * `secondary` for the locked sections further down a page whose primary
+   * action is running the first analysis — the upgrade stays offered, but it
+   * does not outrank the step we want taken first.
+   */
+  emphasis?: "primary" | "secondary";
 }) {
   const { openPricing } = usePaywall();
 
@@ -270,10 +289,15 @@ export function RepositoryBillingControl({
     );
   }
 
+  const secondary = emphasis === "secondary";
   return (
-    <button type="button" className={buttonClass} onClick={openPricing}>
+    <button
+      type="button"
+      className={secondary ? secondaryButtonClass : buttonClass}
+      onClick={openPricing}
+    >
       {label}
-      <CtaArrow />
+      {secondary ? <CtaArrow /> : <CtaCheck />}
     </button>
   );
 }

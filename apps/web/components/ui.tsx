@@ -6,8 +6,10 @@ import {
   type RunStatus,
 } from "@sodium/contracts";
 import {
+  ArrowClockwiseIcon,
   ArrowRightIcon,
   ArrowUUpLeftIcon,
+  CheckIcon,
   CheckCircleIcon,
   CircleNotchIcon,
   ClockIcon,
@@ -45,6 +47,41 @@ export function CtaArrow({ className }: { className?: string }) {
       weight="bold"
       className={cn(
         "size-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none",
+        className,
+      )}
+    />
+  );
+}
+
+/**
+ * The trailing mark on an action that repeats work already done once. A run
+ * that has a predecessor is not forward motion, so the mark turns on hover
+ * instead of advancing.
+ */
+export function CtaRepeat({ className }: { className?: string }) {
+  return (
+    <ArrowClockwiseIcon
+      aria-hidden
+      weight="bold"
+      className={cn(
+        "size-4 shrink-0 transition-transform duration-300 group-hover:rotate-180 motion-reduce:transition-none",
+        className,
+      )}
+    />
+  );
+}
+
+/**
+ * The trailing mark on an action that switches something on rather than moving
+ * to a next step.
+ */
+export function CtaCheck({ className }: { className?: string }) {
+  return (
+    <CheckIcon
+      aria-hidden
+      weight="bold"
+      className={cn(
+        "size-4 shrink-0 transition-transform duration-150 group-hover:scale-110 motion-reduce:transition-none",
         className,
       )}
     />
@@ -106,7 +143,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-white/15 px-6 py-10 text-center">
+    <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
       {Icon && (
         <span className="mb-1 flex size-9 items-center justify-center rounded-full bg-white/[0.06] text-neutral-300">
           <Icon aria-hidden className="size-4.5" />

@@ -34,6 +34,11 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     pathname.startsWith("/auth/") ||
     pathname === "/" ||
+    // Crawler-facing files. Without these a signed-out crawler is redirected
+    // to "/" and never reads robots.txt or the sitemap at all.
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
+    pathname === "/manifest.webmanifest" ||
     pathname === "/login" ||
     pathname.startsWith("/api/m/") ||
     pathname.startsWith("/api/events") ||

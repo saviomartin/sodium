@@ -33,7 +33,7 @@ import {
 } from "./icons";
 
 const confirmationLabels: Record<ConfirmationPolicy, string> = {
-  none: "No confirmation — read-only execution",
+  none: "No confirmation, read-only execution",
   recommended: "Confirmation recommended before execution",
   required: "Confirmation required and enforced by the loader",
 };
@@ -65,10 +65,10 @@ export function ToolDetailsDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm" />
+        <Dialog.Overlay className="modal-fade fixed inset-0 z-40 bg-ink-950/70 backdrop-blur-sm" />
         {tool ? (
           <Dialog.Content
-            className={`fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[min(64rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5 shadow-lg shadow-black/40 focus:outline-none ${frameClass}`}
+            className={`modal-fade fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[min(64rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto p-5 shadow-lg shadow-black/40 focus:outline-none ${frameClass}`}
           >
             {/* Reserves the Close button's own width, which the icon and label
                 push just past `pr-20`. */}
@@ -239,7 +239,7 @@ export function ToolDetailsDialog({
                       </dt>
                       <dd className="text-pretty">
                         {tool.contract?.auth.required
-                          ? `Required${tool.contract.auth.roles.length ? ` — roles: ${tool.contract.auth.roles.join(", ")}` : ""}. The application still enforces access at execution time.`
+                          ? `Required${tool.contract.auth.roles.length ? `, roles: ${tool.contract.auth.roles.join(", ")}` : ""}. The application still enforces access at execution time.`
                           : "No authentication requirement was detected in the cited source. The application still enforces runtime access."}
                       </dd>
                       {tool.contract?.auth.detectedFrom ? (
@@ -289,8 +289,8 @@ export function ToolDetailsDialog({
                             <span className="text-pretty">
                               <span className="font-mono text-xs">
                                 {issue.code}
-                              </span>{" "}
-                              — {issue.message}
+                              </span>
+                              : {issue.message}
                             </span>
                           </li>
                         ))}
@@ -325,8 +325,8 @@ export function ToolDetailsDialog({
                             <span className="text-pretty">
                               <span className="font-mono text-xs">
                                 {evalRun.name}
-                              </span>{" "}
-                              —{" "}
+                              </span>
+                              :{" "}
                               {(evalRun.details as { details?: string } | null)
                                 ?.details ?? "No details provided."}
                             </span>
@@ -384,8 +384,8 @@ export function ToolDetailsDialog({
                                 aria-hidden
                                 className="mr-1 inline size-3.5 align-[-2px] text-faint"
                               />
-                              <span className="font-medium">Preview crawl</span>{" "}
-                              — {evidence.summary}{" "}
+                              <span className="font-medium">Preview crawl</span>
+                              : {evidence.summary}{" "}
                               <span className="font-mono text-xs">
                                 {evidence.url}
                               </span>

@@ -3,7 +3,7 @@
 import { useFormStatus } from "react-dom";
 import { trackProductEvent } from "@/lib/product-analytics";
 import { buttonClass, CtaArrow } from "./ui";
-import { CircleNotchIcon, GithubLogoIcon } from "./icons";
+import { CircleNotchIcon, GithubMarkIcon } from "./icons";
 
 function SignInButton({
   className,
@@ -31,7 +31,7 @@ function SignInButton({
   return (
     <button type="submit" className={className}>
       {mark === "github" && (
-        <GithubLogoIcon aria-hidden weight="fill" className="size-4 shrink-0" />
+        <GithubMarkIcon aria-hidden className="size-4 shrink-0" />
       )}
       {label}
       {mark === "arrow" && <CtaArrow />}

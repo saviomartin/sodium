@@ -1,6 +1,16 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { getAccountContext } from "@/lib/queries";
+
+/**
+ * Nothing under the dashboard is reachable without a session, so nothing
+ * under it belongs in an index. Titles still come from the pages themselves
+ * and run through the root template.
+ */
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function DashboardLayout({
   children,

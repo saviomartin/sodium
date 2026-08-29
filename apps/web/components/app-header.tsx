@@ -1,7 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { signInWithGithubAction, signOutAction } from "@/lib/actions";
+import { DISCORD_URL, ENTERPRISE_URL } from "@/lib/plan";
 import { GithubSignInForm } from "./github-sign-in-form";
+import { SectionLink } from "./section-link";
 import { frameClass, secondaryButtonClass } from "./ui";
 import { ArrowSquareOutIcon, GearIcon, SignOutIcon } from "./icons";
 
@@ -13,12 +15,27 @@ export interface HeaderAccount {
 
 /**
  * The header rides every page, signed in or out, so a link here has to resolve
- * everywhere. Section anchors (#features, #pricing, #faq) do not — nothing in
- * the app declares those ids, and on /repos/[id] they would only append a dead
- * fragment. Re-add them here once the landing page actually carries the
- * sections, and point them at `/#features` so they work off the landing page.
+ * everywhere. The home page carries these sections in both states, which is
+ * why the anchors are absolute (`/#features`) rather than bare fragments: from
+ * /repos/[id] or /settings they navigate home and land on the section.
+ *
+ * The links that leave the site close the row, marked `external` so they all
+ * render the same way: a new tab, the arrow glyph, and the note screen readers
+ * need to hear before they follow one.
  */
-const ENTERPRISE_URL = "https://cal.com/team/result/enterprise";
+const NAV: readonly {
+  href: string;
+  label: string;
+  external?: boolean;
+}[] = [
+  { href: "/#features", label: "Features" },
+  { href: "/#pricing", label: "Pricing" },
+  { href: "/#faq", label: "FAQ" },
+  { href: DISCORD_URL, label: "Community", external: true },
+  { href: ENTERPRISE_URL, label: "Enterprise", external: true },
+];
+
+const NAV_LINK_CLASS = "py-1 transition-colors hover:text-neutral-100";
 
 function AccountAvatar({ account }: { account: HeaderAccount }) {
   if (account.avatarUrl) {
@@ -69,17 +86,33 @@ export function AppHeader({
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-6 text-sm text-neutral-400 md:flex">
-          <a
-            href={ENTERPRISE_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 py-1 transition-colors hover:text-neutral-100"
-          >
-            Enterprise
-            <ArrowSquareOutIcon aria-hidden className="size-3.5 text-faint" />
-            <span className="sr-only">(opens in a new tab)</span>
-          </a>
+        <nav className="hidden items-center gap-4 text-sm text-neutral-400 md:flex lg:gap-6">
+          {NAV.map((item) =>
+            item.external ? (
+              <a
+                key={item.href}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                className={`inline-flex items-center gap-1 ${NAV_LINK_CLASS}`}
+              >
+                {item.label}
+                <ArrowSquareOutIcon
+                  aria-hidden
+                  className="size-3.5 text-faint"
+                />
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            ) : (
+              <SectionLink
+                key={item.href}
+                href={item.href}
+                className={NAV_LINK_CLASS}
+              >
+                {item.label}
+              </SectionLink>
+            ),
+          )}
         </nav>
 
         <div className="col-start-3 flex items-center justify-end">

@@ -46,12 +46,15 @@ export function Sparkline({
   color,
   label,
   max: pinnedMax,
+  axis = VIZ_AXIS,
 }: {
   values: number[];
   color: string;
   label: string;
   /** Pin the top of the scale — for series that are already a percentage. */
   max?: number;
+  /** The baseline rule. Defaults to the dark chrome; the light band overrides. */
+  axis?: string;
 }) {
   const live = values.some((value) => value > 0);
   const series = live ? values : GHOST_TREND;
@@ -99,7 +102,7 @@ export function Sparkline({
         x2="100"
         y1="100"
         y2="100"
-        stroke={VIZ_AXIS}
+        stroke={axis}
         strokeWidth="1"
         strokeDasharray={DOTTED.dasharray}
         strokeLinecap={DOTTED.linecap}
@@ -309,7 +312,11 @@ export function ActivityChart({
                   // A centered label at either end hangs half its width past
                   // the plot, where the card's padding clips it. The end ticks
                   // sit inside their own edge instead, as the tooltip does.
-                  x <= 10 ? "" : x >= 90 ? "-translate-x-full" : "-translate-x-1/2",
+                  x <= 10
+                    ? ""
+                    : x >= 90
+                      ? "-translate-x-full"
+                      : "-translate-x-1/2",
                 )}
                 style={{ left: `${x}%` }}
               >
@@ -491,7 +498,7 @@ export function ToolTimeline({
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[10px] text-faint">
         <span className="tabular-nums">
           {days.length > 0
-            ? `${labelForDay(days[0]!.date)} — ${labelForDay(days[days.length - 1]!.date)}`
+            ? `${labelForDay(days[0]!.date)} to ${labelForDay(days[days.length - 1]!.date)}`
             : ""}
         </span>
         <span className="inline-flex items-center gap-1.5">
@@ -553,10 +560,35 @@ function polygon(count: number, radius: number): string {
   }).join(" ");
 }
 
+/**
+ * Coverage across every engine, as one shape.
+ *
+ * The colour props exist because the landing page draws this on paper: the
+ * rings, the dot halo and the plotted hue all have to change ground together
+ * or the shape stops reading. They default to the dark chrome, so the
+ * dashboard passes none of them.
+ */
 export function EngineRadar({
   visitsByEngine,
+  className = "max-w-[280px]",
+  logoClass = "size-7",
+  accent = PRIMARY,
+  grid = VIZ_GRID,
+  surface = VIZ_SURFACE,
+  logoInk,
 }: {
   visitsByEngine: Map<string, number>;
+  /** Sizes the square. Replaces the default width cap rather than joining it. */
+  className?: string;
+  logoClass?: string;
+  /** The plotted shape's hue, and the wash under it. */
+  accent?: string;
+  /** Rings and spokes. */
+  grid?: string;
+  /** The ground the dots are haloed against, so they read off the shape. */
+  surface?: string;
+  /** Ink for the marks their brands publish as monochrome. */
+  logoInk?: string;
 }) {
   const count = ANSWER_ENGINES.length;
   const max = Math.max(
@@ -570,12 +602,12 @@ export function EngineRadar({
   });
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[280px]">
+    <div className={cn("relative mx-auto aspect-square w-full", className)}>
       <svg viewBox="0 0 100 100" aria-hidden="true" className="size-full">
         <defs>
           <radialGradient id="radar-wash">
-            <stop offset="0%" stopColor={PRIMARY} stopOpacity="0.07" />
-            <stop offset="100%" stopColor={PRIMARY} stopOpacity="0" />
+            <stop offset="0%" stopColor={accent} stopOpacity="0.07" />
+            <stop offset="100%" stopColor={accent} stopOpacity="0" />
           </radialGradient>
         </defs>
         <polygon points={polygon(count, RING_SPAN)} fill="url(#radar-wash)" />
@@ -584,7 +616,7 @@ export function EngineRadar({
             key={ring}
             points={polygon(count, RING_SPAN * ring)}
             fill="none"
-            stroke={VIZ_GRID}
+            stroke={grid}
             strokeWidth="0.5"
           />
         ))}
@@ -597,7 +629,7 @@ export function EngineRadar({
               y1="50"
               x2={x}
               y2={y}
-              stroke={VIZ_GRID}
+              stroke={grid}
               strokeWidth="0.4"
             />
           );
@@ -609,9 +641,9 @@ export function EngineRadar({
               points={points
                 .map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`)
                 .join(" ")}
-              fill={PRIMARY}
+              fill={accent}
               fillOpacity="0.26"
-              stroke={PRIMARY}
+              stroke={accent}
               strokeWidth="1"
               strokeLinejoin="round"
             />
@@ -623,8 +655,8 @@ export function EngineRadar({
                   cx={point.x}
                   cy={point.y}
                   r="1.9"
-                  fill={PRIMARY}
-                  stroke={VIZ_SURFACE}
+                  fill={accent}
+                  stroke={surface}
                   strokeWidth="1"
                 />
               ))}
@@ -647,7 +679,8 @@ export function EngineRadar({
             <AnswerEngineLogo
               engine={engine.name}
               dimmed={max > 0 && visits === 0}
-              className="size-7"
+              ink={logoInk}
+              className={logoClass}
             />
           </span>
         );

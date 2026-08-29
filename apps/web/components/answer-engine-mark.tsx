@@ -282,11 +282,18 @@ export function AnswerEngineLogo({
   engine,
   className,
   dimmed = false,
+  ink,
 }: {
   engine: string;
   className?: string;
   /** Engines with no traffic recede, but only once some engine has any. */
   dimmed?: boolean;
+  /**
+   * Replaces the ink for marks the brand publishes as monochrome — OpenAI and
+   * Grok ship near-white, which disappears on the landing page's light band.
+   * Marks with a fixed palette ignore this, as they must.
+   */
+  ink?: string;
 }) {
   const mark = MARKS[engine];
   const brand = answerEngineBrand(engine);
@@ -297,7 +304,7 @@ export function AnswerEngineLogo({
       focusable="false"
       className={cn("shrink-0", className)}
       style={{
-        color: brand.color,
+        color: ink ?? brand.color,
         opacity: dimmed ? 0.42 : 1,
         filter: dimmed ? "grayscale(1)" : undefined,
       }}

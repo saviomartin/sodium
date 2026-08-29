@@ -280,6 +280,19 @@ export async function applyCanonicalSubscription(
     throw new Error("Stripe event mode does not match this deployment");
   }
   const service = createServiceClient();
+  const { data: repository, error: repositoryError } = await service
+    .from("repositories")
+    .select("org_id")
+    .eq("id", subscription.repositoryId)
+    .maybeSingle();
+  if (repositoryError) throw new Error(repositoryError.message);
+  // Account deletion cancels Stripe first, then deletes the repository. The
+  // resulting asynchronous cancellation event is valid but has no projection
+  // left to update, so acknowledge it instead of retrying forever.
+  if (!repository) return false;
+  if (repository.org_id !== subscription.orgId) {
+    throw new Error("billing repository mismatch");
+  }
   const { data: current, error: currentError } = await service
     .from("repository_billing")
     .select("stripe_subscription_id, status")

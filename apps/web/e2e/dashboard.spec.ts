@@ -505,7 +505,7 @@ test("analysis returns to the repo and edits publish explicitly", async ({
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("button", { name: "Continue with GitHub" }),
+    page.getByRole("button", { name: "Login with GitHub" }),
   ).toBeVisible();
 });
 
@@ -545,7 +545,7 @@ test("legacy empty analyses require reanalysis instead of claiming no tools exis
   ).toBeVisible();
   await expect(page.getByText(/discarded every tool/)).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Run analysis now" }),
+    page.getByRole("button", { name: "Run analysis" }),
   ).toBeVisible();
   await expect(
     page.getByText("No executable tools found", { exact: true }),
@@ -580,11 +580,13 @@ test("one free analysis stays readable while repository capabilities are paywall
   await expect(
     page.getByRole("heading", { name: "Install & access" }),
   ).toBeVisible();
-  await expect(page.getByText(/Preview mode — subscribe/)).toBeVisible();
+  await expect(page.getByText(/Preview mode\. Subscribe/)).toBeVisible();
 
   // Paywalled controls stay live. Pressing one says why it is blocked and
   // offers the subscription rather than presenting a dead button.
-  const pricing = page.getByRole("dialog", { name: "Unlock AI capabilities" });
+  const pricing = page.getByRole("dialog", {
+    name: "Make your website usable by",
+  });
   const dismissPricing = async () => {
     await pricing.getByRole("button", { name: "Close pricing" }).click();
     await expect(pricing).toBeHidden();
@@ -625,11 +627,11 @@ test("one free analysis stays readable while repository capabilities are paywall
     analytics.getByText("Preview mode", { exact: true }),
   ).toBeVisible();
   await expect(
-    analytics.getByText("Unlock analytics to start collecting"),
-  ).toBeVisible();
+    analytics.getByText("Waiting for the first agent visit"),
+  ).toHaveCount(0);
   await expect(analytics.getByRole("link", { name: "7d" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Run analysis now" }).click();
+  await page.getByRole("button", { name: "Run analysis" }).click();
   await expect(pricing).toBeVisible();
   await dismissPricing();
 
@@ -643,17 +645,20 @@ test("one free analysis stays readable while repository capabilities are paywall
   await page.getByRole("button", { name: "Close" }).click();
 
   await page.getByRole("button", { name: "Enable tools" }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Unlock AI capabilities" });
+  const dialog = page.getByRole("dialog", {
+    name: "Make your website usable by",
+  });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("$49", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("/ month / repository")).toBeVisible();
+  await expect(dialog.getByText("/ month")).toBeVisible();
   await expect(
     dialog.getByRole("button", {
       name: "Unlock AI capabilities for your site",
     }),
   ).toBeVisible();
+  // The dialog names the one repository the subscription unlocks.
   await expect(
-    dialog.getByText(/unlocks only foundative\/webmcp-fixture-shop/),
+    dialog.getByText("foundative/webmcp-fixture-shop"),
   ).toBeVisible();
 });
 

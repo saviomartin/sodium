@@ -108,7 +108,24 @@ export async function resolveRepositoryHead(
   return data.sha;
 }
 
-/** Creates the push webhook used for continuous analysis after connection. */
+const LEGACY_WEBHOOK_HOSTS = new Set(["sodium-webmcp.vercel.app"]);
+
+function isSodiumWebhookUrl(value: unknown, targetUrl: string): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const candidate = new URL(value);
+    const target = new URL(targetUrl);
+    return (
+      candidate.pathname === "/api/webhooks/github" &&
+      (candidate.hostname === target.hostname ||
+        LEGACY_WEBHOOK_HOSTS.has(candidate.hostname))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Creates or repairs the push webhook used for continuous analysis. */
 export async function createRepositoryWebhook(
   connectionId: string,
   owner: string,
@@ -118,6 +135,42 @@ export async function createRepositoryWebhook(
     throw new Error("GitHub webhook secret is not configured");
   }
   const octokit = await storedOctokit(connectionId);
+  const targetUrl = `${siteUrl()}/api/webhooks/github`;
+  const { data: hooks } = await octokit.request(
+    "GET /repos/{owner}/{repo}/hooks",
+    { owner, repo, per_page: 100 },
+  );
+  const existing = hooks.find(
+    (hook) =>
+      hook.name === "web" && isSodiumWebhookUrl(hook.config.url, targetUrl),
+  );
+  if (
+    existing &&
+    existing.active &&
+    existing.events.includes("push") &&
+    existing.config.url === targetUrl
+  ) {
+    return existing.id;
+  }
+  if (existing) {
+    const { data } = await octokit.request(
+      "PATCH /repos/{owner}/{repo}/hooks/{hook_id}",
+      {
+        owner,
+        repo,
+        hook_id: existing.id,
+        active: true,
+        events: ["push"],
+        config: {
+          url: targetUrl,
+          content_type: "json",
+          secret: env.GITHUB_WEBHOOK_SECRET,
+          insecure_ssl: "0",
+        },
+      },
+    );
+    return data.id;
+  }
   const { data } = await octokit.request("POST /repos/{owner}/{repo}/hooks", {
     owner,
     repo,
@@ -125,7 +178,7 @@ export async function createRepositoryWebhook(
     active: true,
     events: ["push"],
     config: {
-      url: `${siteUrl()}/api/webhooks/github`,
+      url: targetUrl,
       content_type: "json",
       secret: env.GITHUB_WEBHOOK_SECRET,
       insecure_ssl: "0",

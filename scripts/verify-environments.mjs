@@ -159,7 +159,7 @@ try {
   }
   if (
     developmentAuth.site_url !== "http://localhost:3000" ||
-    productionAuth.site_url !== "https://sodium-webmcp.vercel.app"
+    productionAuth.site_url !== "https://sodium.result.dev"
   ) {
     throw new Error("Supabase Auth site URLs are incorrect");
   }
@@ -169,8 +169,8 @@ try {
     "https://*-foundative.vercel.app/**",
   ];
   const expectedProductionRedirects = [
-    "https://sodium-webmcp.vercel.app/auth/callback",
-    "https://sodium-webmcp.vercel.app/auth/confirm",
+    "https://sodium.result.dev/auth/callback",
+    "https://sodium.result.dev/auth/confirm",
   ];
   if (
     developmentAuth.uri_allow_list !== expectedDevelopmentRedirects.join(",") ||
@@ -186,7 +186,7 @@ try {
     ),
     githubAuthorize(
       projectRefs.production,
-      "https://sodium-webmcp.vercel.app/auth/callback",
+      "https://sodium.result.dev/auth/callback",
     ),
   ]);
   if (!developmentClient || developmentClient !== productionClient) {

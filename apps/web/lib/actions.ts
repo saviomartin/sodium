@@ -418,11 +418,17 @@ export async function selectRepositoryAction(
       selected.owner,
       selected.name,
     );
-    await createServiceClient().from("github_repository_hooks").upsert({
-      repository_id: repo.id,
-      org_id: connection.org_id,
-      github_hook_id: hookId,
-    });
+    const { error: hookRecordError } = await createServiceClient()
+      .from("github_repository_hooks")
+      .upsert(
+        {
+          repository_id: repo.id,
+          org_id: connection.org_id,
+          github_hook_id: hookId,
+        },
+        { onConflict: "repository_id" },
+      );
+    if (hookRecordError) throw new Error(hookRecordError.message);
   } catch (hookError) {
     console.error("GitHub repository webhook could not be created", {
       repositoryId: repo.id,

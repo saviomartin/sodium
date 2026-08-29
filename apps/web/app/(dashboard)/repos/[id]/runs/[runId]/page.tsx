@@ -5,10 +5,11 @@ import { getRepository, getRun } from "@/lib/queries";
 import { Card, RunStatusBadge } from "@/components/ui";
 import {
   GitCommitIcon,
-  GithubLogoIcon,
+  GithubMarkIcon,
   ListChecksIcon,
   WarningIcon,
 } from "@/components/icons";
+import { RepositoryFullName } from "@/components/repository-row";
 import { RunProgress } from "@/components/run-progress";
 
 export const metadata = { title: "Analysis" };
@@ -30,11 +31,14 @@ export default async function RunPage({
     <div className="mx-auto max-w-2xl space-y-6">
       <header>
         <p className="flex items-center gap-1.5 text-xs text-faint">
-          <GithubLogoIcon aria-hidden weight="fill" className="size-3.5" />
-          <Link href={`/repos/${repo.id}`} className="hover:underline">
-            {repo.full_name}
-          </Link>{" "}
-          / analysis
+          <GithubMarkIcon aria-hidden className="size-3.5" />
+          <span>
+            <Link href={`/repos/${repo.id}`} className="hover:underline">
+              <RepositoryFullName fullName={repo.full_name} />
+            </Link>
+            <span className="mx-1.5 text-white/25">/</span>
+            analysis
+          </span>
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="flex items-center gap-2 text-lg font-medium text-balance">
