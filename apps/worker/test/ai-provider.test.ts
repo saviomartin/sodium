@@ -201,10 +201,12 @@ const env = {
 describe("AI model configuration", () => {
   it("defaults to Terra with Claude Sonnet 5 as the backup", () => {
     const parsed = loadEnv({
-      SUPABASE_URL: "https://example.supabase.co",
+      SODIUM_ENVIRONMENT: "development",
+      SUPABASE_URL: "https://laqlbydlawieccohknsj.supabase.co",
       SUPABASE_SECRET_KEY: "x".repeat(24),
       SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
-      GITHUB_APP_ID: "1",
+      SODIUM_PUBLIC_URL: "http://localhost:3000",
+      GITHUB_APP_ID: "4758809",
       GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
     });
     expect(parsed.AI_MODEL).toBe("openai/gpt-5.6-terra");
@@ -214,14 +216,61 @@ describe("AI model configuration", () => {
   it("rejects model names that cannot be routed through AI Gateway", () => {
     expect(() =>
       loadEnv({
-        SUPABASE_URL: "https://example.supabase.co",
+        SODIUM_ENVIRONMENT: "development",
+        SUPABASE_URL: "https://laqlbydlawieccohknsj.supabase.co",
         SUPABASE_SECRET_KEY: "x".repeat(24),
         SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
-        GITHUB_APP_ID: "1",
+        SODIUM_PUBLIC_URL: "http://localhost:3000",
+        GITHUB_APP_ID: "4758809",
         GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
         AI_MODEL: "gpt-5.6-terra",
       }),
     ).toThrow("provider/model format");
+  });
+
+  it("rejects a development worker pointed at production Supabase", () => {
+    expect(() =>
+      loadEnv({
+        SODIUM_ENVIRONMENT: "development",
+        SUPABASE_URL: "https://wsacbkkbvkcuqgiagxms.supabase.co",
+        SUPABASE_SECRET_KEY: "x".repeat(24),
+        SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
+        SODIUM_PUBLIC_URL: "http://localhost:3000",
+        GITHUB_APP_ID: "4758809",
+        GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
+      }),
+    ).toThrow("Supabase environment mismatch");
+  });
+
+  it("derives the preview origin from Vercel instead of localhost or production", () => {
+    const parsed = loadEnv({
+      SODIUM_ENVIRONMENT: "preview",
+      VERCEL_ENV: "preview",
+      VERCEL_URL: "sodium-git-feature-foundative.vercel.app",
+      SUPABASE_URL: "https://laqlbydlawieccohknsj.supabase.co",
+      SUPABASE_SECRET_KEY: "x".repeat(24),
+      SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
+      GITHUB_APP_ID: "4758809",
+      GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
+    });
+    expect(parsed.SODIUM_PUBLIC_URL).toBe(
+      "https://sodium-git-feature-foundative.vercel.app",
+    );
+  });
+
+  it("rejects Vercel and Sodium environment mismatches", () => {
+    expect(() =>
+      loadEnv({
+        SODIUM_ENVIRONMENT: "development",
+        VERCEL_ENV: "production",
+        SUPABASE_URL: "https://laqlbydlawieccohknsj.supabase.co",
+        SUPABASE_SECRET_KEY: "x".repeat(24),
+        SUPABASE_DB_URL: "postgres://user:pass@example.com:5432/postgres",
+        SODIUM_PUBLIC_URL: "http://localhost:3000",
+        GITHUB_APP_ID: "4758809",
+        GITHUB_APP_PRIVATE_KEY: "x".repeat(120),
+      }),
+    ).toThrow("Vercel environment mismatch");
   });
 });
 

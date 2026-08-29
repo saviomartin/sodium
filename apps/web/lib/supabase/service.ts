@@ -2,6 +2,7 @@ import "server-only";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@sodium/contracts/database";
 import { env } from "../env";
+import { publicEnv } from "../public-env";
 
 /**
  * Service-role client: BYPASSES RLS. Only for code paths that have already
@@ -10,7 +11,7 @@ import { env } from "../env";
  */
 export function createServiceClient() {
   return createSupabaseClient<Database>(
-    env.NEXT_PUBLIC_SUPABASE_URL,
+    publicEnv.NEXT_PUBLIC_SUPABASE_URL,
     env.SUPABASE_SECRET_KEY,
     {
       auth: { persistSession: false, autoRefreshToken: false },

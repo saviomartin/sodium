@@ -27,10 +27,11 @@ export default defineConfig({
     command:
       "node ../../packages/runtime/scripts/build.mjs && corepack pnpm exec next build && corepack pnpm exec next start --port 3100",
     env: {
-      GITHUB_APP_ID: "1",
+      GITHUB_APP_ID: "4758809",
       GITHUB_APP_PRIVATE_KEY: "e2e-placeholder-".padEnd(120, "x"),
       NEXT_DIST_DIR: ".next-e2e",
-      NEXT_PUBLIC_GITHUB_APP_SLUG: "sodium-e2e",
+      NEXT_PUBLIC_GITHUB_APP_SLUG: "sodium-local-development",
+      NEXT_PUBLIC_SODIUM_ENVIRONMENT: "development",
       SITE_URL: "http://localhost:3100",
       MANIFEST_SIGNING_KEY_ID: "e2e-test",
       MANIFEST_SIGNING_PRIVATE_KEY: e2eSigningKey.privateKeyPem,

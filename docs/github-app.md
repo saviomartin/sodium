@@ -1,7 +1,8 @@
 # GitHub App setup
 
-Sodium uses a GitHub App (never personal access tokens). One app serves every
-customer; installations grant per-repository access.
+Sodium uses GitHub Apps (never personal access tokens). Production has one App
+for customers; localhost has a separate development App so OAuth sessions,
+installations, callbacks, and credentials cannot cross environments.
 
 Note the split: **sign-in** uses GitHub OAuth through Supabase (identity
 only — see README → "GitHub sign-in"), while the **GitHub App** below grants
@@ -46,7 +47,9 @@ database, logs, or generated pull requests.
 
 ## 3. Local webhook development
 
-GitHub cannot reach localhost; use smee:
+The development App keeps webhooks disabled by default. Manual analysis,
+repository access, and integration PRs still work end to end. To test push
+delivery specifically, enable the development webhook and use smee:
 
 ```bash
 npx smee -u https://smee.io/<your-channel> -t http://localhost:3000/api/webhooks/github

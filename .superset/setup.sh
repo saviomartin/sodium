@@ -36,28 +36,22 @@ for app in apps/web apps/worker; do
   fi
 done
 
-pull_env() {
-  local directory="$1"
-  local filename="$2"
-  local fallback="$SUPERSET_ROOT_PATH/$directory/$filename"
-
-  echo "▸ Pulling Development env vars from Vercel → $directory/$filename"
-  if (cd "$directory" && vercel_cli env pull "$filename" --environment=development --yes); then
-    return
-  fi
-
-  if [ -f "$fallback" ]; then
-    echo "  vercel env pull failed — copying $directory/$filename from main checkout instead"
-    cp "$fallback" "$directory/$filename"
-    return
-  fi
-
-  echo "  Vercel env pull failed and no fallback exists for $directory/$filename" >&2
-  return 1
-}
-
-pull_env . .env
-pull_env apps/web .env.local
-pull_env apps/worker .env
+echo "▸ Pulling and validating isolated Development env vars"
+if ! pnpm env:pull; then
+  echo "  Vercel env pull failed — copying validated files from the main checkout" >&2
+  for file in .env apps/web/.env.local apps/worker/.env; do
+    if [ ! -f "$SUPERSET_ROOT_PATH/$file" ]; then
+      echo "  Missing fallback: $SUPERSET_ROOT_PATH/$file" >&2
+      exit 1
+    fi
+    if ! rg -q "laqlbydlawieccohknsj" "$SUPERSET_ROOT_PATH/$file" || \
+      rg -q "wsacbkkbvkcuqgiagxms" "$SUPERSET_ROOT_PATH/$file"; then
+      echo "  Refusing non-development fallback: $SUPERSET_ROOT_PATH/$file" >&2
+      exit 1
+    fi
+    cp "$SUPERSET_ROOT_PATH/$file" "$file"
+    chmod 600 "$file"
+  done
+fi
 
 echo "✓ Workspace '${SUPERSET_WORKSPACE_NAME:-${SUPERSET_WORKSPACE_PATH##*/}}' ready"
