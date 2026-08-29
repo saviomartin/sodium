@@ -6,7 +6,19 @@ import { connectGithubAction, selectRepositoryAction } from "@/lib/actions";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { RefreshOnFocus } from "@/components/refresh-on-focus";
 import { githubInstallationSettingsUrl } from "@/lib/github-installation-url";
-import { buttonClass, secondaryButtonClass } from "@/components/ui";
+import { buttonClass, cn, CtaArrow, secondaryButtonClass } from "@/components/ui";
+import {
+  ArrowSquareOutIcon,
+  BookBookmarkIcon,
+  BuildingsIcon,
+  CheckIcon,
+  GithubLogoIcon,
+  GitBranchIcon,
+  GlobeIcon,
+  LockSimpleIcon,
+  WarningCircleIcon,
+  XIcon,
+} from "@/components/icons";
 
 const ERROR_MESSAGES: Record<string, string> = {
   github_state: "The GitHub connection expired. Start it again.",
@@ -22,6 +34,7 @@ interface HomeRepositoryParams {
   installation?: string;
 }
 
+/** Visibility and default branch, each behind the glyph that names it. */
 function RepositoryMeta({
   isPrivate,
   defaultBranch,
@@ -29,9 +42,20 @@ function RepositoryMeta({
   isPrivate: boolean;
   defaultBranch: string;
 }) {
+  const VisibilityIcon = isPrivate ? LockSimpleIcon : GlobeIcon;
   return (
-    <p className="mt-1 text-xs text-neutral-500">
-      {isPrivate ? "Private" : "Public"} · {defaultBranch}
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-400">
+      <span className="inline-flex items-center gap-1">
+        <VisibilityIcon aria-hidden weight="fill" className="size-3.5" />
+        {isPrivate ? "Private" : "Public"}
+      </span>
+      <span aria-hidden className="text-white/20">
+        ·
+      </span>
+      <span className="inline-flex items-center gap-1 font-mono">
+        <GitBranchIcon aria-hidden className="size-3.5" />
+        {defaultBranch}
+      </span>
     </p>
   );
 }
@@ -56,6 +80,7 @@ function ConnectGithubButton({
       <input type="hidden" name="intent" value={intent} />
       <SubmitButton className={className} pendingText="Opening GitHub…">
         {label}
+        <CtaArrow />
       </SubmitButton>
     </ActionForm>
   );
@@ -67,9 +92,9 @@ export function RepositoryPanelSkeleton() {
       aria-label="Loading repositories"
       className="animate-pulse px-6 py-7 motion-reduce:animate-none"
     >
-      <div className="h-4 w-40 rounded bg-neutral-200" />
-      <div className="mt-5 h-14 rounded-lg bg-neutral-100" />
-      <div className="mt-2 h-14 rounded-lg bg-neutral-100" />
+      <div className="h-4 w-40 rounded bg-white/10" />
+      <div className="mt-5 h-14 rounded-lg bg-white/[0.06]" />
+      <div className="mt-2 h-14 rounded-lg bg-white/[0.06]" />
     </div>
   );
 }
@@ -82,8 +107,15 @@ export async function HomeRepositories({
   if (!hasGithubApp()) {
     return (
       <div className="px-6 py-12 text-center">
-        <p className="text-sm font-semibold">GitHub connection unavailable</p>
-        <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
+        <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+          <WarningCircleIcon
+            aria-hidden
+            weight="fill"
+            className="size-4 shrink-0 text-amber-300"
+          />
+          GitHub connection unavailable
+        </p>
+        <p className="mx-auto mt-2 max-w-md text-sm text-neutral-400">
           This deployment is missing its GitHub App configuration.
         </p>
       </div>
@@ -105,40 +137,61 @@ export async function HomeRepositories({
   if (!choosingRepository) {
     return (
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 px-5 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-5 py-4 sm:px-6">
           <div>
-            <h2 className="text-sm font-semibold">Connected repositories</h2>
-            <p className="mt-0.5 text-xs text-neutral-500">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <BookBookmarkIcon
+                aria-hidden
+                weight="fill"
+                className="size-4 text-faint"
+              />
+              Connected repositories
+            </h2>
+            <p className="mt-0.5 text-xs text-neutral-400">
               Open a repository to review tools and publish changes.
             </p>
           </div>
           <Link href="/?add=1" className={buttonClass}>
             New repository
+            <CtaArrow />
           </Link>
         </div>
-        <ul className="divide-y divide-neutral-100 px-2 sm:px-3">
+        <ul className="divide-y divide-white/[0.07] px-2 sm:px-3">
           {connected.map((repository) => (
             <li
               key={repository.id}
-              className="flex items-center justify-between gap-4 rounded-lg px-3 py-4"
+              className="flex items-center justify-between gap-3 rounded-lg px-3 py-4"
             >
-              <div className="min-w-0">
-                <Link
-                  href={`/repos/${repository.id}`}
-                  className="truncate text-sm font-semibold text-neutral-950 hover:text-blue-700"
-                >
-                  {repository.full_name}
-                </Link>
-                <RepositoryMeta
-                  isPrivate={repository.is_private}
-                  defaultBranch={repository.default_branch}
-                />
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-neutral-300">
+                  <GithubLogoIcon
+                    aria-hidden
+                    weight="fill"
+                    className="size-4.5"
+                  />
+                </span>
+                <div className="min-w-0">
+                  {/* `block`: overflow, and so `truncate`, does not apply to a
+                      non-replaced inline box — a long owner/name would spill
+                      across the Open button instead of ellipsizing. */}
+                  <Link
+                    href={`/repos/${repository.id}`}
+                    className="block truncate py-0.5 text-sm font-medium text-neutral-100 hover:text-blue-400"
+                  >
+                    {repository.full_name}
+                  </Link>
+                  <RepositoryMeta
+                    isPrivate={repository.is_private}
+                    defaultBranch={repository.default_branch}
+                  />
+                </div>
               </div>
               <Link
                 href={`/repos/${repository.id}`}
-                className={secondaryButtonClass}
+                className={cn(secondaryButtonClass, "shrink-0")}
               >
                 Open
+                <CtaArrow />
               </Link>
             </li>
           ))}
@@ -150,20 +203,13 @@ export async function HomeRepositories({
   if (activeInstallations.length === 0) {
     return (
       <div className="px-6 py-12 text-center sm:py-16">
-        <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700">
-          <svg
-            aria-hidden
-            viewBox="0 0 16 16"
-            className="size-5"
-            fill="currentColor"
-          >
-            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-          </svg>
+        <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-white/[0.06] text-neutral-300">
+          <GithubLogoIcon aria-hidden weight="fill" className="size-5" />
         </div>
-        <h2 className="mt-4 text-base font-semibold">
+        <h2 className="mt-4 text-base font-medium">
           No GitHub repository connected
         </h2>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500 text-pretty">
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-400 text-pretty">
           Install the GitHub App, choose a repository, and you are ready to
           analyze.
         </p>
@@ -171,7 +217,15 @@ export async function HomeRepositories({
           <ConnectGithubButton label="Connect a GitHub repo" />
         </div>
         {params.error && (
-          <p role="alert" className="mt-4 text-sm text-red-700">
+          <p
+            role="alert"
+            className="mt-4 inline-flex items-center gap-1.5 text-sm text-red-400"
+          >
+            <WarningCircleIcon
+              aria-hidden
+              weight="fill"
+              className="size-4 shrink-0"
+            />
             {ERROR_MESSAGES[params.error] ?? "GitHub connection failed."}
           </p>
         )}
@@ -190,13 +244,21 @@ export async function HomeRepositories({
       <div className="px-5 py-5 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Choose a GitHub account</h2>
-            <p className="mt-1 text-xs text-neutral-500">
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              <BuildingsIcon
+                aria-hidden
+                weight="fill"
+                className="size-4 text-faint"
+              />
+              Choose a GitHub account
+            </h2>
+            <p className="mt-1 text-xs text-neutral-400">
               Select the account that owns the repository.
             </p>
           </div>
           {connected.length > 0 && (
             <Link href="/" className={secondaryButtonClass}>
+              <XIcon aria-hidden weight="bold" className="size-4 shrink-0" />
               Cancel
             </Link>
           )}
@@ -209,6 +271,7 @@ export async function HomeRepositories({
               className={secondaryButtonClass}
             >
               {installation.account_login}
+              <CtaArrow />
             </Link>
           ))}
           <ConnectGithubButton label="Add GitHub account" intent="add" />
@@ -237,18 +300,28 @@ export async function HomeRepositories({
   return (
     <div>
       <RefreshOnFocus />
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 px-5 py-4 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-5 py-4 sm:px-6">
         <div>
-          <h2 className="text-sm font-semibold">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
+            <GithubLogoIcon
+              aria-hidden
+              weight="fill"
+              className="size-4 text-faint"
+            />
             {selected.account_login} repositories
           </h2>
-          <p className="mt-0.5 text-xs text-neutral-500">
+          <p className="mt-0.5 text-xs text-neutral-400">
             Select one repository to analyze.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {connected.length > 0 && (
             <Link href="/" className={secondaryButtonClass}>
+              <CheckIcon
+                aria-hidden
+                weight="bold"
+                className="size-4 shrink-0"
+              />
               Done
             </Link>
           )}
@@ -264,49 +337,74 @@ export async function HomeRepositories({
             className={buttonClass}
           >
             Update access
+            <ArrowSquareOutIcon
+              aria-hidden
+              weight="bold"
+              className="size-4 shrink-0 transition-transform duration-150 group-hover:-translate-y-0.5 motion-reduce:transition-none"
+            />
             <span className="sr-only"> on GitHub (opens in a new tab)</span>
           </a>
         </div>
       </div>
 
       {listError ? (
-        <p role="alert" className="px-6 py-8 text-sm text-red-700">
+        <p
+          role="alert"
+          className="flex items-center gap-1.5 px-6 py-8 text-sm text-red-400"
+        >
+          <WarningCircleIcon
+            aria-hidden
+            weight="fill"
+            className="size-4 shrink-0"
+          />
           {listError}
         </p>
       ) : repositories.length === 0 ? (
         <div className="px-6 py-10 text-center">
-          <p className="text-sm font-medium">No repositories available</p>
-          <p className="mt-1 text-sm text-neutral-500">
+          <BookBookmarkIcon aria-hidden className="mx-auto size-6 text-faint" />
+          <p className="mt-2 text-sm font-medium">No repositories available</p>
+          <p className="mt-1 text-sm text-neutral-400">
             Update GitHub access to grant Sodium one or more repositories.
           </p>
         </div>
       ) : (
-        <ul className="divide-y divide-neutral-100 px-2 sm:px-3">
+        <ul className="divide-y divide-white/[0.07] px-2 sm:px-3">
           {repositories.map((repository) => {
             const connectedId = connectedIds.get(repository.githubRepoId);
             return (
               <li
                 key={repository.githubRepoId}
-                className="flex items-center justify-between gap-4 rounded-lg px-3 py-4"
+                className="flex items-center justify-between gap-3 rounded-lg px-3 py-4"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-neutral-950">
-                    {repository.fullName}
-                  </p>
-                  <RepositoryMeta
-                    isPrivate={repository.isPrivate}
-                    defaultBranch={repository.defaultBranch}
-                  />
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-white/[0.06] text-neutral-300">
+                    <BookBookmarkIcon
+                      aria-hidden
+                      weight="fill"
+                      className="size-4.5"
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-neutral-100">
+                      {repository.fullName}
+                    </p>
+                    <RepositoryMeta
+                      isPrivate={repository.isPrivate}
+                      defaultBranch={repository.defaultBranch}
+                    />
+                  </div>
                 </div>
                 {connectedId ? (
                   <Link
                     href={`/repos/${connectedId}`}
-                    className={secondaryButtonClass}
+                    className={cn(secondaryButtonClass, "shrink-0")}
                   >
                     Open
+                    <CtaArrow />
                   </Link>
                 ) : (
                   <ActionForm
+                    className="shrink-0"
                     action={selectRepositoryAction}
                     submitEvent={{
                       name: "Repository Connection Requested",
@@ -330,6 +428,7 @@ export async function HomeRepositories({
                       pendingText="Connecting…"
                     >
                       Connect
+                      <CtaArrow />
                     </SubmitButton>
                   </ActionForm>
                 )}

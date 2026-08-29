@@ -1,10 +1,68 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  /* Dark surface scale. ink-950 is the page; the rest stack above it. */
+  --color-ink-950: #191919;
+  --color-ink-900: #1e1e1e;
+  --color-ink-800: #262626;
+
+  /* Muted text tier. neutral-500 misses AA on ink-950; this clears it at 5.5:1. */
+  --color-faint: #8f8f8f;
+
+  /* The flat face of a framed panel. Reads above ink-900 without the checker. */
+  --color-panel: #232323;
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased;
+  @apply bg-ink-950 text-neutral-200 antialiased;
+  color-scheme: dark;
+}
+
+/*
+ * Nothing renders heavier than 500. Preflight already neutralises h1-h6, but
+ * the user-agent still bolds these, so they need an explicit floor.
+ */
+th,
+b,
+strong {
+  font-weight: 500;
+}
+
+/*
+ * The frame: the checkered border every surface in the app wears.
+ *
+ * One element, three background layers. A flat `panel` fill is clipped to the
+ * padding box, a 2px dither is painted across the border box, and an opaque
+ * ink base sits under the dither so the transparent squares never leak the
+ * content behind a dialog or a menu. The border itself is transparent and
+ * exists only to reserve the band the texture shows through, which means the
+ * inner radius falls out of `border-radius` minus `border-width` — concentric
+ * corners for free, and no wrapper element to fight `dl`/`details` nesting.
+ *
+ * The band is 5px against a 2px square, so its inner edge cuts a row of the
+ * checker in half. That is the intended look: it keeps the texture reading as
+ * woven rather than as a tidy row of tiles.
+ */
+@layer components {
+  .frame {
+    border: 5px solid transparent;
+    border-radius: 6px;
+    background-image:
+      linear-gradient(var(--color-panel), var(--color-panel)),
+      repeating-conic-gradient(
+        rgba(255, 255, 255, 0.22) 0% 25%,
+        transparent 0% 50%
+      ),
+      linear-gradient(var(--color-ink-950), var(--color-ink-950));
+    background-origin: padding-box, border-box, border-box;
+    background-clip: padding-box, border-box, border-box;
+    background-size:
+      auto,
+      4px 4px,
+      auto;
+    background-repeat: no-repeat, repeat, no-repeat;
+  }
 }

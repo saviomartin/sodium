@@ -1,9 +1,54 @@
-import type { ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
 import Link from "next/link";
-import type { AgentAnalytics } from "@/lib/agent-analytics";
-import { cn } from "./ui";
+import {
+  dailyRange,
+  type AgentAnalytics,
+  type AgentAnalyticsDay,
+} from "@/lib/agent-analytics";
+import { ANSWER_ENGINE_COUNT } from "@/lib/answer-engines";
+import { VIZ_MUTED, VIZ_SERIES, VIZ_STATUS } from "@/lib/viz";
+import {
+  ActivityChart,
+  EngineList,
+  EngineRadar,
+  Sparkline,
+  ToolTimeline,
+} from "./analytics-charts";
+import { cn, frameClass } from "./ui";
+import {
+  BroadcastIcon,
+  ChartLineUpIcon,
+  CircleNotchIcon,
+  LockKeyIcon,
+  PulseIcon,
+  RobotIcon,
+  SealCheckIcon,
+  ShieldCheckIcon,
+  TargetIcon,
+  TimerIcon,
+  WrenchIcon,
+} from "./icons";
+
+/** Phosphor icons take their size from the caller and their color from style. */
+type IconComponent = ComponentType<{
+  className?: string;
+  style?: CSSProperties;
+  weight?: "regular" | "bold" | "fill";
+  "aria-hidden"?: boolean;
+}>;
 
 const number = new Intl.NumberFormat("en-US");
+
+/*
+ * Card's shell, rebuilt from its parts (see `Card` in ./ui). Analytics surfaces
+ * cannot use that component directly — they sit under this section's `h2` so
+ * their titles must be `h3`, and the stat rows wear the shell as `dt`/`dd` to
+ * stay one description list — but every one of them matches it class for class.
+ */
+const cardHeadClass = "border-b border-white/[0.07] px-4 py-3";
+const cardTitleClass =
+  "flex items-center gap-2 text-sm font-medium text-neutral-100 text-balance";
+const cardBodyClass = "p-4";
 
 function formatLatency(value: number): string {
   if (!value) return "—";
@@ -11,154 +56,174 @@ function formatLatency(value: number): string {
   return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`;
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return "Never";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function RangePicker({
-  repoId,
-  days,
-  locked,
-}: {
-  repoId: string;
-  days: number;
-  locked: boolean;
-}) {
+function RangePicker({ repoId, days }: { repoId: string; days: number }) {
   return (
     <nav
       aria-label="Analytics date range"
-      className="flex rounded-md border border-neutral-200 bg-neutral-50 p-0.5"
+      className="flex rounded-md border border-white/10 bg-white/[0.04] p-0.5"
     >
-      {[7, 30, 90].map((range) => {
-        const className = cn(
-          "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-          range === days
-            ? "bg-white text-neutral-950 shadow-sm"
-            : locked
-              ? "text-neutral-400"
-              : "text-neutral-500 hover:text-neutral-950",
-        );
-        return locked ? (
-          <span
-            key={range}
-            aria-current={range === days ? "page" : undefined}
-            aria-disabled="true"
-            className={className}
-          >
-            {range}d
-          </span>
-        ) : (
-          <Link
-            key={range}
-            href={`/repos/${repoId}?range=${range}d#agent-analytics`}
-            aria-current={range === days ? "page" : undefined}
-            className={className}
-          >
-            {range}d
-          </Link>
-        );
-      })}
+      {[7, 30, 90].map((range) => (
+        <Link
+          key={range}
+          href={`/repos/${repoId}?range=${range}d#agent-analytics`}
+          aria-current={range === days ? "page" : undefined}
+          className={cn(
+            "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+            range === days
+              ? "bg-white/10 text-neutral-100"
+              : "text-neutral-400 hover:text-neutral-100",
+          )}
+        >
+          {range}d
+        </Link>
+      ))}
     </nav>
   );
 }
 
-function ActivityChart({ analytics }: { analytics: AgentAnalytics }) {
-  const max = Math.max(
-    1,
-    ...analytics.daily.flatMap((day) => [day.toolCalls, day.agentVisits]),
-  );
-  const labelEvery =
-    analytics.periodDays > 30 ? 15 : analytics.periodDays > 7 ? 7 : 1;
-
-  return (
-    <div>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-neutral-950">
-            Agent activity
-          </h2>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            Compatible-agent visits and completed tool calls, by UTC day.
-          </p>
-        </div>
-        <div className="flex items-center gap-4 text-xs text-neutral-500">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-2 rounded-sm bg-blue-600" /> Tool calls
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-2 rounded-sm bg-neutral-300" /> Agent visits
-          </span>
-        </div>
-      </div>
-      <div className="flex h-44 items-end gap-px border-b border-neutral-200 pt-4">
-        {analytics.daily.map((day, index) => {
-          const toolHeight = day.toolCalls
-            ? Math.max(3, (day.toolCalls / max) * 100)
-            : 0;
-          const visitHeight = day.agentVisits
-            ? Math.max(3, (day.agentVisits / max) * 100)
-            : 0;
-          return (
-            <div
-              key={day.date}
-              className="group relative flex h-full min-w-0 flex-1 items-end justify-center gap-px"
-              title={`${day.date}: ${day.toolCalls} tool calls, ${day.agentVisits} agent visits`}
-            >
-              <span
-                className="w-[42%] max-w-2 rounded-t-sm bg-neutral-300 transition-colors group-hover:bg-neutral-400"
-                style={{ height: `${visitHeight}%` }}
-              />
-              <span
-                className="w-[42%] max-w-2 rounded-t-sm bg-blue-600 transition-colors group-hover:bg-blue-500"
-                style={{ height: `${toolHeight}%` }}
-              />
-              {index % labelEvery === 0 && (
-                <span className="absolute top-full mt-2 whitespace-nowrap text-[10px] text-neutral-400">
-                  {new Intl.DateTimeFormat("en", {
-                    month: "short",
-                    day: "numeric",
-                    timeZone: "UTC",
-                  }).format(new Date(`${day.date}T00:00:00Z`))}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="h-7" />
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  detail,
+/** A charted subsection of the dashboard, in Card's shell with an `h3` title. */
+function Panel({
+  title,
+  description,
+  icon: Icon,
+  aside,
+  children,
 }: {
-  label: string;
-  value: string;
-  detail: string;
+  title: string;
+  description: string;
+  icon?: IconComponent;
+  aside?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <div className="border-l border-neutral-200 pl-4 first:border-l-0 first:pl-0 sm:first:border-l sm:first:pl-4">
-      <dt className="text-[11px] font-medium tracking-wide text-neutral-500 uppercase">
+    <section className={frameClass}>
+      <header
+        className={`${cardHeadClass} flex flex-wrap items-center justify-between gap-x-4 gap-y-2`}
+      >
+        <h3 className={cardTitleClass}>
+          {Icon && <Icon aria-hidden className="size-4 shrink-0 text-faint" />}
+          {title}
+        </h3>
+        {aside}
+      </header>
+      <div className={cardBodyClass}>
+        <p className="mb-4 text-sm text-neutral-400 text-pretty">
+          {description}
+        </p>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One headline number over its own daily series. Every tile in the row draws
+ * the same line, so the four read as one instrument panel and a difference in
+ * shape is a difference in the data.
+ */
+function Metric({
+  label,
+  accent,
+  icon: Icon,
+  value,
+  detail,
+  series,
+  max,
+}: {
+  label: string;
+  accent: string;
+  icon: IconComponent;
+  value: string;
+  detail: string;
+  series: number[];
+  /** Pin the chart's ceiling, for a series that is already a percentage. */
+  max?: number;
+}) {
+  return (
+    <div className={frameClass}>
+      <dt className={`${cardHeadClass} ${cardTitleClass}`}>
+        <Icon
+          aria-hidden
+          weight="fill"
+          className="size-4 shrink-0"
+          style={{ color: accent }}
+        />
         {label}
       </dt>
-      <dd className="mt-2 text-2xl font-semibold tracking-tight text-neutral-950 tabular-nums">
-        {value}
+      <dd className={cardBodyClass}>
+        <p className="text-2xl font-medium tabular-nums text-neutral-100">
+          {value}
+        </p>
+        <p className="mt-1 text-xs text-neutral-400 text-pretty">{detail}</p>
+        <Sparkline values={series} color={accent} label={label} max={max} />
       </dd>
-      <p className="mt-1 text-xs text-neutral-500">{detail}</p>
     </div>
   );
 }
 
-function InsightStrip({
+/**
+ * Wears Card's shell — framed panel, bordered title strip — but keeps `dt`/`dd`
+ * so the three insights stay one description list rather than three sections.
+ */
+function Insight({
+  label,
+  accent,
+  icon: Icon,
+  headline,
+  detail,
+  pending = false,
+}: {
+  label: string;
+  accent: string;
+  icon: IconComponent;
+  headline: string;
+  detail: string;
+  pending?: boolean;
+}) {
+  return (
+    <div className={frameClass}>
+      <dt className={`${cardHeadClass} ${cardTitleClass}`}>
+        <Icon
+          aria-hidden
+          weight="fill"
+          className="size-4 shrink-0"
+          style={{ color: accent }}
+        />
+        {label}
+      </dt>
+      <dd className={cardBodyClass}>
+        <p className="flex items-center gap-2 text-sm font-medium text-neutral-100 text-pretty">
+          {pending ? (
+            <CircleNotchIcon
+              aria-hidden
+              className="size-4 shrink-0 animate-spin text-faint motion-reduce:animate-none"
+            />
+          ) : null}
+          {headline}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-neutral-400 text-pretty">
+          {detail}
+        </p>
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Success as a daily rate. A day with no calls has no rate of its own, so the
+ * series holds the last measured level instead of dropping to zero.
+ */
+function successByDay(days: AgentAnalyticsDay[]): number[] {
+  let held = 0;
+  return days.map((day) => {
+    if (day.toolCalls > 0) {
+      held = (day.successfulCalls / day.toolCalls) * 100;
+    }
+    return held;
+  });
+}
+
+function Insights({
   analytics,
   managedTools,
 }: {
@@ -174,57 +239,84 @@ function InsightStrip({
   const unusedCount = managedTools.filter(
     (tool) => !usedToolNames.has(canonicalToolName(tool)),
   ).length;
+  // Before the first call, "unused" is a fact about traffic, not about coverage.
+  const awaitingFirstCall = analytics.summary.toolCalls === 0;
   const reliabilityIssues =
     analytics.summary.failedCalls +
     analytics.summary.manifestFetchFailures +
     analytics.summary.manifestRejections;
 
   return (
-    <div className="grid overflow-hidden rounded-lg border border-neutral-200 bg-white md:grid-cols-3 md:divide-x md:divide-neutral-200">
-      <div className="p-4">
-        <p className="text-[11px] font-semibold tracking-wide text-blue-700 uppercase">
-          Top intent
-        </p>
-        <p className="mt-2 text-sm font-semibold text-neutral-950">
-          {topTool
-            ? topTool.tool.replaceAll("_", " ")
-            : "Waiting for tool calls"}
-        </p>
-        <p className="mt-1 text-xs leading-5 text-neutral-500">
-          {topTool
+    <dl className="grid gap-4 sm:grid-cols-3">
+      <Insight
+        label="Top intent"
+        icon={TargetIcon}
+        accent={topTool ? VIZ_SERIES[0] : VIZ_MUTED}
+        pending={!topTool}
+        headline={
+          topTool ? topTool.tool.replaceAll("_", " ") : "Waiting for tool calls"
+        }
+        detail={
+          topTool
             ? `${Math.round((topTool.calls / Math.max(1, analytics.summary.toolCalls)) * 100)}% of all agent actions in this period.`
-            : "The first invocation will reveal what agents ask this site to do."}
-        </p>
-      </div>
-      <div className="border-t border-neutral-200 p-4 md:border-t-0">
-        <p className="text-[11px] font-semibold tracking-wide text-amber-700 uppercase">
-          Coverage gap
-        </p>
-        <p className="mt-2 text-sm font-semibold text-neutral-950">
-          {unusedCount === 0
-            ? "Every live tool was used"
-            : `${unusedCount} live tool${unusedCount === 1 ? "" : "s"} unused`}
-        </p>
-        <p className="mt-1 text-xs leading-5 text-neutral-500">
-          {unusedCount === 0
-            ? "Your published surface is receiving agent demand."
-            : "Review naming and descriptions if expected tools stay undiscovered."}
-        </p>
-      </div>
-      <div className="border-t border-neutral-200 p-4 md:border-t-0">
-        <p className="text-[11px] font-semibold tracking-wide text-emerald-700 uppercase">
-          Reliability
-        </p>
-        <p className="mt-2 text-sm font-semibold text-neutral-950">
-          {reliabilityIssues === 0
+            : "The first invocation will reveal what agents ask this site to do."
+        }
+      />
+      <Insight
+        label="Coverage gap"
+        icon={WrenchIcon}
+        accent={
+          awaitingFirstCall
+            ? VIZ_MUTED
+            : unusedCount === 0
+              ? VIZ_STATUS.good
+              : VIZ_STATUS.warning
+        }
+        headline={
+          awaitingFirstCall
+            ? `${managedTools.length} live tool${managedTools.length === 1 ? "" : "s"} ready`
+            : unusedCount === 0
+              ? "Every live tool was used"
+              : `${unusedCount} live tool${unusedCount === 1 ? "" : "s"} unused`
+        }
+        detail={
+          awaitingFirstCall
+            ? "Once calls arrive, this names the tools agents never reach for."
+            : unusedCount === 0
+              ? "Your published surface is receiving agent demand."
+              : "Review naming and descriptions if expected tools stay undiscovered."
+        }
+      />
+      <Insight
+        label="Reliability"
+        icon={ShieldCheckIcon}
+        accent={reliabilityIssues === 0 ? VIZ_STATUS.good : VIZ_STATUS.critical}
+        headline={
+          reliabilityIssues === 0
             ? "No recorded failures"
-            : `${reliabilityIssues} issue${reliabilityIssues === 1 ? "" : "s"} recorded`}
-        </p>
-        <p className="mt-1 text-xs leading-5 text-neutral-500">
-          Tool failures, rejected manifests, and loader fetch failures combined.
-        </p>
-      </div>
-    </div>
+            : `${reliabilityIssues} issue${reliabilityIssues === 1 ? "" : "s"} recorded`
+        }
+        detail="Tool failures, rejected manifests, and loader fetch failures combined."
+      />
+    </dl>
+  );
+}
+
+function LegendKey({
+  color,
+  children,
+}: {
+  color: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className="h-0.5 w-3 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+      {children}
+    </span>
   );
 }
 
@@ -252,198 +344,184 @@ export function AgentAnalyticsDashboard({
       analytics.summary.answerEngineVisits >
     0;
 
+  const days: AgentAnalyticsDay[] = dailyRange(analytics);
+  const visitsByEngine = new Map(
+    analytics.engines.map((engine) => [engine.engine, engine.visits]),
+  );
+  const enginesSeen = [...visitsByEngine.values()].filter(
+    (visits) => visits > 0,
+  ).length;
+  const successColor =
+    successRate >= 95
+      ? VIZ_STATUS.good
+      : successRate >= 80
+        ? VIZ_STATUS.warning
+        : VIZ_STATUS.critical;
+
   return (
-    <section id="agent-analytics" className="scroll-mt-6 space-y-5">
-      <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-        <div className="flex flex-wrap items-start justify-between gap-5 border-b border-neutral-100 px-5 py-5 sm:px-6">
-          <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-wide uppercase",
-                  locked ? "text-blue-700" : "text-emerald-700",
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    locked ? "bg-blue-500" : "bg-emerald-500",
-                  )}
-                />
-                {locked ? "Preview mode" : "Collecting from agent.js"}
-              </span>
-              <span className="text-xs text-neutral-400">
-                No prompts or page content collected
-              </span>
-            </div>
-            <h2 className="text-lg font-semibold tracking-tight text-neutral-950 text-balance">
-              Agent analytics
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-neutral-500 text-pretty">
-              See what compatible browser agents ask your site to do, whether
-              tools succeed, and which answer engines send people your way.
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-3">
-            {locked ? unlockAction : null}
-            <RangePicker
-              repoId={repoId}
-              days={analytics.periodDays}
-              locked={locked}
+    <section
+      id="agent-analytics"
+      aria-labelledby="agent-analytics-title"
+      className="scroll-mt-6 space-y-4"
+    >
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2
+            id="agent-analytics-title"
+            className="flex items-center gap-2 text-base font-medium text-balance"
+          >
+            <ChartLineUpIcon
+              aria-hidden
+              className="size-4.5 shrink-0 text-faint"
             />
-          </div>
+            Agent analytics
+          </h2>
+          <p className="mt-1 max-w-2xl text-sm text-neutral-400 text-pretty">
+            See what compatible browser agents ask your site to do, whether
+            tools succeed, and which answer engines send people your way.
+          </p>
+          <p
+            className={cn(
+              "mt-2 inline-flex items-center gap-1.5 text-xs font-medium",
+              locked ? "text-blue-400" : "text-emerald-400",
+            )}
+          >
+            {locked ? (
+              <LockKeyIcon aria-hidden weight="fill" className="size-4" />
+            ) : (
+              <BroadcastIcon aria-hidden className="size-4" />
+            )}
+            {locked ? "Preview mode" : "Collecting from agent.js"}
+          </p>
+          <p className="mt-1 text-xs text-faint">
+            No prompts or page content collected
+          </p>
         </div>
-        <dl className="grid gap-y-5 px-5 py-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
-          <Metric
-            label="Agent-ready visits"
-            value={number.format(analytics.summary.agentVisits)}
-            detail="Loader initialized with WebMCP"
-          />
-          <Metric
-            label="Tool calls"
-            value={number.format(analytics.summary.toolCalls)}
-            detail={`${number.format(analytics.tools.length)} unique tools used`}
-          />
-          <Metric
-            label="Success rate"
-            value={analytics.summary.toolCalls ? `${successRate}%` : "—"}
-            detail={`${number.format(analytics.summary.failedCalls)} failed calls`}
-          />
-          <Metric
-            label="P95 latency"
-            value={formatLatency(analytics.summary.p95LatencyMs)}
-            detail={`Average ${formatLatency(analytics.summary.averageLatencyMs)}`}
-          />
-        </dl>
-      </section>
+        <div className="flex flex-col items-end gap-3">
+          {locked ? unlockAction : null}
+          <RangePicker repoId={repoId} days={analytics.periodDays} />
+        </div>
+      </header>
 
       {!hasActivity && (
-        <section className="rounded-lg border border-blue-200 bg-blue-50 px-5 py-4">
-          <p className="text-sm font-semibold text-blue-950">
+        <div className="border-l-2 border-blue-500 pl-3">
+          <p className="flex items-center gap-2 text-sm font-medium text-neutral-100">
+            {locked ? (
+              <LockKeyIcon
+                aria-hidden
+                weight="fill"
+                className="size-4 shrink-0 text-blue-400"
+              />
+            ) : (
+              <PulseIcon
+                aria-hidden
+                className="size-4 shrink-0 text-blue-400"
+              />
+            )}
             {locked
               ? "Unlock analytics to start collecting"
               : "Waiting for the first agent visit"}
           </p>
-          <p className="mt-1 text-sm leading-6 text-blue-800/80">
+          <p className="mt-0.5 max-w-3xl text-sm leading-6 text-neutral-400 text-pretty">
             {locked
               ? "This dashboard will populate after you subscribe, publish the loader, and receive the first compatible agent or answer-engine visit."
               : "Data appears automatically after the installed script loads in a compatible WebMCP browser, a tool runs, or someone follows a link from a recognized answer engine."}
           </p>
-        </section>
+        </div>
       )}
 
-      <InsightStrip analytics={analytics} managedTools={managedTools} />
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Metric
+          label="Agent-ready visits"
+          icon={RobotIcon}
+          accent={VIZ_MUTED}
+          value={number.format(analytics.summary.agentVisits)}
+          detail="Loader initialized with WebMCP"
+          series={days.map((day) => day.agentVisits)}
+        />
+        <Metric
+          label="Tool calls"
+          icon={WrenchIcon}
+          accent={VIZ_SERIES[0]}
+          value={number.format(analytics.summary.toolCalls)}
+          detail={`${number.format(analytics.tools.length)} unique tools used`}
+          series={days.map((day) => day.toolCalls)}
+        />
+        <Metric
+          label="Success rate"
+          icon={SealCheckIcon}
+          accent={analytics.summary.toolCalls ? successColor : VIZ_MUTED}
+          value={analytics.summary.toolCalls ? `${successRate}%` : "—"}
+          detail={`${number.format(analytics.summary.failedCalls)} failed calls`}
+          series={successByDay(days)}
+          max={100}
+        />
+        <Metric
+          label="P95 latency"
+          icon={TimerIcon}
+          accent={VIZ_SERIES[6]}
+          value={formatLatency(analytics.summary.p95LatencyMs)}
+          detail={`Average ${formatLatency(analytics.summary.averageLatencyMs)}`}
+          series={days.map((day) => day.p95LatencyMs)}
+        />
+      </dl>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-5 sm:p-6">
-        <ActivityChart analytics={analytics} />
-      </section>
+      <Panel
+        title="Agent activity"
+        icon={PulseIcon}
+        description="Compatible-agent visits and completed tool calls, by UTC day."
+        aside={
+          <div className="flex items-center gap-4 text-xs text-neutral-400">
+            <LegendKey color={VIZ_SERIES[0]}>Tool calls</LegendKey>
+            <LegendKey color={VIZ_MUTED}>Agent visits</LegendKey>
+          </div>
+        }
+      >
+        <ActivityChart days={days} hasActivity={hasActivity} />
+      </Panel>
 
-      <div className="grid gap-5 lg:grid-cols-[1.45fr_0.75fr]">
-        <section className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
-          <header className="border-b border-neutral-100 px-5 py-4">
-            <h2 className="text-sm font-semibold text-neutral-950">
-              What agents ask your site to do
-            </h2>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              Exact invocations from the tools Sodium manages.
-            </p>
-          </header>
-          {analytics.tools.length === 0 ? (
-            <p className="px-5 py-10 text-center text-sm text-neutral-500">
-              No tool calls in this period.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-[11px] tracking-wide text-neutral-400 uppercase">
-                  <tr>
-                    <th className="px-5 py-3 font-medium">Tool</th>
-                    <th className="px-3 py-3 text-right font-medium">Calls</th>
-                    <th className="px-3 py-3 text-right font-medium">
-                      Success
-                    </th>
-                    <th className="px-3 py-3 text-right font-medium">P95</th>
-                    <th className="hidden px-5 py-3 text-right font-medium sm:table-cell">
-                      Last used
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {analytics.tools.map((tool) => (
-                    <tr key={tool.tool}>
-                      <td className="px-5 py-3.5 font-mono text-xs font-medium text-neutral-900">
-                        {tool.tool}
-                      </td>
-                      <td className="px-3 py-3.5 text-right tabular-nums">
-                        {number.format(tool.calls)}
-                      </td>
-                      <td className="px-3 py-3.5 text-right tabular-nums">
-                        {Math.round(
-                          (tool.successfulCalls / Math.max(1, tool.calls)) *
-                            100,
-                        )}
-                        %
-                      </td>
-                      <td className="px-3 py-3.5 text-right text-neutral-500 tabular-nums">
-                        {formatLatency(tool.p95LatencyMs)}
-                      </td>
-                      <td className="hidden px-5 py-3.5 text-right text-xs whitespace-nowrap text-neutral-500 sm:table-cell">
-                        {formatDate(tool.lastUsedAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+      <Panel
+        title="What agents ask your site to do"
+        icon={WrenchIcon}
+        description="Every tool Sodium manages, and the days agents actually invoked it."
+      >
+        <ToolTimeline
+          analytics={analytics}
+          managedTools={managedTools}
+          days={days}
+        />
+      </Panel>
 
-        <section className="rounded-lg border border-neutral-200 bg-white">
-          <header className="border-b border-neutral-100 px-5 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-neutral-950">
-                Answer engine traffic
-              </h2>
-              <span className="text-lg font-semibold tabular-nums">
-                {number.format(analytics.summary.answerEngineVisits)}
-              </span>
-            </div>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              Recognized AI products that sent a referrer or source tag.
+      <Panel
+        title="Answer engine traffic"
+        icon={BroadcastIcon}
+        description={`Visits referred by a recognized AI product. Sodium attributes ${ANSWER_ENGINE_COUNT} engines.`}
+        aside={
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-lg leading-none font-medium tabular-nums text-neutral-100">
+              {number.format(analytics.summary.answerEngineVisits)}
+            </span>
+            <span className="text-xs text-faint">visits</span>
+          </span>
+        }
+      >
+        <div className="grid items-center gap-8 sm:grid-cols-[minmax(0,288px)_minmax(0,1fr)]">
+          <div>
+            <EngineRadar visitsByEngine={visitsByEngine} />
+            <p className="mt-3 text-center text-xs text-faint">
+              {enginesSeen} of {ANSWER_ENGINE_COUNT} engines seen in the last{" "}
+              {analytics.periodDays} days
             </p>
-          </header>
-          {analytics.engines.length === 0 ? (
-            <p className="px-5 py-10 text-center text-sm text-neutral-500">
-              No attributable answer-engine visits in this period.
-            </p>
-          ) : (
-            <ul className="divide-y divide-neutral-100 px-5">
-              {analytics.engines.map((engine) => (
-                <li
-                  key={engine.engine}
-                  className="flex items-center justify-between gap-4 py-3.5"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-neutral-900">
-                      {engine.engine}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-neutral-400">
-                      Last visit {formatDate(engine.lastVisitAt)}
-                    </p>
-                  </div>
-                  <span className="text-sm font-semibold tabular-nums">
-                    {number.format(engine.visits)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="border-t border-neutral-100 px-5 py-3 text-[11px] leading-5 text-neutral-400">
-            Best-effort attribution. WebMCP does not reveal the calling
-            provider, and browser privacy settings can remove referrers.
-          </p>
-        </section>
-      </div>
+          </div>
+          <EngineList visitsByEngine={visitsByEngine} />
+        </div>
+        <p className="mt-4 text-[11px] leading-5 text-faint text-pretty">
+          Best-effort attribution. WebMCP does not reveal the calling provider,
+          and browser privacy settings can remove referrers.
+        </p>
+      </Panel>
+
+      <Insights analytics={analytics} managedTools={managedTools} />
     </section>
   );
 }
