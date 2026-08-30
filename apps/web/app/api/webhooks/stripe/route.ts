@@ -1,10 +1,16 @@
 import type Stripe from "stripe";
+import { after } from "next/server";
 import {
   applyCanonicalSubscription,
   canonicalSubscription,
   stripe,
   stripeBillingConfig,
 } from "@/lib/stripe";
+import { hasPaidRepositoryAccess } from "@/lib/billing-state";
+import {
+  ensurePaidRepositoryAnalysis,
+  kickAnalysisWorker,
+} from "@/lib/paid-analysis";
 
 export const runtime = "nodejs";
 
@@ -49,7 +55,10 @@ function checkoutSessionId(event: Stripe.Event): string | null {
 export async function POST(request: Request) {
   const signature = request.headers.get("stripe-signature");
   if (!signature) {
-    return Response.json({ error: "missing Stripe signature" }, { status: 400 });
+    return Response.json(
+      { error: "missing Stripe signature" },
+      { status: 400 },
+    );
   }
 
   let event: Stripe.Event;
@@ -98,7 +107,26 @@ export async function POST(request: Request) {
       canonical,
       checkoutSessionId(event),
     );
-    return Response.json({ received: true, applied });
+    let analysisRunId: string | null = null;
+    if (hasPaidRepositoryAccess(canonical.status)) {
+      // This is intentionally outside the event-deduplication branch. If the
+      // first delivery wrote billing but failed to reach GitHub, Stripe's
+      // retry still gets another chance to enqueue the idempotent analysis.
+      analysisRunId = await ensurePaidRepositoryAnalysis(
+        canonical.repositoryId,
+      );
+      after(async () => {
+        try {
+          await kickAnalysisWorker();
+        } catch (error) {
+          console.error("paid analysis worker kick failed", {
+            repositoryId: canonical.repositoryId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    }
+    return Response.json({ received: true, applied, analysisRunId });
   } catch (error) {
     // Foreign Stripe objects are intentionally ignored. Metadata and price
     // validation prevent another product from granting Sodium access.

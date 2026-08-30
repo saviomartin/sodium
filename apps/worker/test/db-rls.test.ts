@@ -453,6 +453,12 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
         (x) =>
           x`select public.request_push_analysis('delivery-auth', ${t.githubRepoId}, ${"a".repeat(40)}, 'refs/heads/main')`,
       );
+      await expectError(
+        tx,
+        /permission denied/,
+        (x) =>
+          x`select public.request_paid_analysis(${t.acmeRepo}, ${"b".repeat(40)}, 'main')`,
+      );
     });
   });
 
@@ -561,7 +567,7 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     });
   });
 
-  it("request_analysis enforces membership and enqueues one stage job", async () => {
+  it("request_analysis enforces membership and paid access", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await actAs(tx, t.bob);
@@ -590,65 +596,74 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
     });
   });
 
-  it("allows one successful free analysis and requires a repo subscription after it", async () => {
+  it("blocks unpaid analysis before any work is queued", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await tx`delete from repository_billing where repository_id = ${t.acmeRepo}`;
-      await actAs(tx, t.alice);
-      const [first] = await tx<{ request_analysis: string }[]>`
-        select public.request_analysis(${t.acmeRepo}, ${"1".repeat(40)})
-      `;
-      await actAsService(tx);
-      await tx`
-        update analysis_runs
-        set status = 'succeeded', finished_at = now()
-        where id = ${first!.request_analysis}
-      `;
-      const [repository] = await tx<
-        { free_analysis_consumed_at: string | null }[]
-      >`
-        select free_analysis_consumed_at from repositories where id = ${t.acmeRepo}
-      `;
-      expect(repository!.free_analysis_consumed_at).toBeTruthy();
-
       await actAs(tx, t.alice);
       await expectError(
         tx,
         /subscription required/,
         (x) =>
-          x`select public.request_analysis(${t.acmeRepo}, ${"2".repeat(40)})`,
+          x`select public.request_analysis(${t.acmeRepo}, ${"1".repeat(40)})`,
       );
+      await actAsService(tx);
+      expect(
+        await tx`select id from analysis_runs where repository_id = ${t.acmeRepo}`,
+      ).toHaveLength(0);
+      expect(
+        await tx`select message from pgmq.q_sodium_jobs where message ->> 'runId' is not null`,
+      ).toHaveLength(0);
     });
   });
 
-  it("gates automatic push analysis per repository", async () => {
+  it("starts paid post-checkout analysis once per commit", async () => {
+    await withRollback(async (tx) => {
+      const t = await seedTenants(tx);
+      const sha = "2".repeat(40);
+      const [first] = await tx<{ request_paid_analysis: string }[]>`
+        select public.request_paid_analysis(${t.acmeRepo}, ${sha}, 'main')
+      `;
+      const [retry] = await tx<{ request_paid_analysis: string }[]>`
+        select public.request_paid_analysis(${t.acmeRepo}, ${sha}, 'main')
+      `;
+      expect(retry!.request_paid_analysis).toBe(first!.request_paid_analysis);
+      const runs = await tx<
+        { access_tier: string; requested_by: string | null }[]
+      >`
+        select access_tier, requested_by
+        from analysis_runs
+        where repository_id = ${t.acmeRepo}
+      `;
+      expect(runs).toEqual([{ access_tier: "paid", requested_by: null }]);
+      expect(
+        await tx`
+          select message
+          from pgmq.q_sodium_jobs
+          where message ->> 'runId' = ${first!.request_paid_analysis}
+        `,
+      ).toHaveLength(1);
+    });
+  });
+
+  it("gates every automatic push analysis per repository", async () => {
     await withRollback(async (tx) => {
       const t = await seedTenants(tx);
       await tx`delete from repository_billing where repository_id = ${t.acmeRepo}`;
-      const [first] = await tx<
-        { request_push_analysis: { runId: string; enqueued: string[] } }[]
+      const [unpaid] = await tx<
+        { request_push_analysis: { ignored?: string } }[]
       >`
         select public.request_push_analysis(
           'delivery-free-1', ${t.githubRepoId}, ${"3".repeat(40)},
           'refs/heads/main'
         )
       `;
-      expect(first!.request_push_analysis.enqueued).toEqual(["analysis.stage"]);
-      await tx`
-        update analysis_runs set status = 'succeeded', finished_at = now()
-        where id = ${first!.request_push_analysis.runId}
-      `;
-      const [second] = await tx<
-        { request_push_analysis: { ignored?: string } }[]
-      >`
-        select public.request_push_analysis(
-          'delivery-free-2', ${t.githubRepoId}, ${"4".repeat(40)},
-          'refs/heads/main'
-        )
-      `;
-      expect(second!.request_push_analysis.ignored).toBe(
+      expect(unpaid!.request_push_analysis.ignored).toBe(
         "subscription required",
       );
+      expect(
+        await tx`select id from analysis_runs where repository_id = ${t.acmeRepo}`,
+      ).toHaveLength(0);
     });
   });
 

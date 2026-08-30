@@ -464,6 +464,9 @@ export async function requestAnalysisAction(
   }
   if (!repo) return { ok: false, error: "repository not found" };
 
+  const paid = await requirePaidRepository(repositoryId);
+  if ("error" in paid) return { ok: false, error: paid.error };
+
   if (!repo.github_connection_id) {
     return {
       ok: false,

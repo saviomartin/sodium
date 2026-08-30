@@ -6,6 +6,7 @@ import type { Database } from "@sodium/contracts/database";
 import { env, siteUrl } from "./env";
 import { createServiceClient } from "./supabase/service";
 import { hasPaidRepositoryAccess, type BillingStatus } from "./billing-state";
+import { ensurePaidRepositoryAnalysis } from "./paid-analysis";
 
 const integrationId = customAlphabet("abcdefghijklmnopqrstuvwxyz", 8);
 const SODIUM_BILLING_KEY = "repository_ai_v1";
@@ -425,6 +426,12 @@ export async function reconcileRepositorySubscriptions() {
           })
           .eq("repository_id", row.repository_id);
         if (updateError) throw new Error(updateError.message);
+        if (
+          !hasPaidRepositoryAccess(row.status) &&
+          hasPaidRepositoryAccess(canonical.status)
+        ) {
+          await ensurePaidRepositoryAnalysis(row.repository_id);
+        }
         updated += 1;
       } catch (error) {
         failed += 1;
