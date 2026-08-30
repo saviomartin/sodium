@@ -9,7 +9,7 @@
 export const REPOSITORY_PRICE_USD = 49;
 
 export const REPOSITORY_PLAN_FEATURES = [
-  "Unlimited tools per repository",
+  "Code analysis and unlimited tools per repository",
   "Automatic re-analysis on every push",
   "Tool definitions you can edit, version, and roll back",
   "Agent analytics included",

@@ -1140,6 +1140,10 @@ export type Database = {
         Args: { p_commit_sha: string; p_ref?: string; p_repository_id: string }
         Returns: string
       }
+      request_paid_analysis: {
+        Args: { p_commit_sha: string; p_ref?: string; p_repository_id: string }
+        Returns: string
+      }
       request_push_analysis: {
         Args: {
           p_commit_sha: string

@@ -35,11 +35,11 @@ Requirements: Node 24+, pnpm 11, the Vercel CLI, and access to the linked
 `foundative/sodium-webmcp` project. Local development is isolated from
 production:
 
-| Runtime                    | Supabase project     | GitHub OAuth App | Public origin                      |
-| -------------------------- | -------------------- | ---------------- | ---------------------------------- |
-| Local / Vercel Development | `sodium-development` | Sodium           | `http://localhost:3000`            |
-| Vercel Preview             | `sodium-development` | Sodium           | deployment-specific `VERCEL_URL`   |
-| Production                 | `sodium`             | Sodium           | `https://sodium.result.dev` |
+| Runtime                    | Supabase project     | GitHub OAuth App | Public origin                    |
+| -------------------------- | -------------------- | ---------------- | -------------------------------- |
+| Local / Vercel Development | `sodium-development` | Sodium           | `http://localhost:3000`          |
+| Vercel Preview             | `sodium-development` | Sodium           | deployment-specific `VERCEL_URL` |
+| Production                 | `sodium`             | Sodium           | `https://sodium.result.dev`      |
 
 The app validates these project refs at startup. A local or Preview build
 pointed at production Supabase exits instead of starting.
@@ -67,9 +67,9 @@ GitHub OAuth scopes and callback URLs are documented in
 [`docs/github-oauth.md`](docs/github-oauth.md).
 
 Stripe billing uses one Customer and one $49/month subscription per connected
-repository. The first successful repository analysis is free; later manual and
-push-triggered analysis, tool changes, publishing, rollback, and analytics
-require that repository's subscription. Run `stripe listen --forward-to
+repository. Analysis starts after that repository's subscription becomes
+active; later pushes are analyzed automatically. Tool changes, publishing,
+rollback, and analytics use the same entitlement. Run `stripe listen --forward-to
 localhost:3000/api/webhooks/stripe --latest` for local webhook delivery.
 
 Open `http://localhost:3000`, continue with GitHub, and choose

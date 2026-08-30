@@ -23,13 +23,7 @@ import { ActionForm, SubmitButton } from "./action-form";
 import { PlanCard } from "./plan-card";
 import { RepositoryFullName } from "./repository-row";
 import { AGENT_SENTENCE, RollingAgent } from "./rolling-agent";
-import {
-  buttonClass,
-  CtaArrow,
-  CtaCheck,
-  frameClass,
-  secondaryButtonClass,
-} from "./ui";
+import { buttonClass, CtaArrow, frameClass, secondaryButtonClass } from "./ui";
 import {
   CircleNotchIcon,
   GithubMarkIcon,
@@ -46,7 +40,6 @@ interface PaywallContextValue {
    * and the caller stops.
    */
   requireSubscription: (action: string) => boolean;
-  openPricing: () => void;
 }
 
 /**
@@ -56,7 +49,6 @@ interface PaywallContextValue {
 const PaywallContext = createContext<PaywallContextValue>({
   paid: true,
   requireSubscription: () => true,
-  openPricing: () => {},
 });
 
 export function usePaywall(): PaywallContextValue {
@@ -101,7 +93,6 @@ export function RepositoryPaywall({
   const value = useMemo<PaywallContextValue>(
     () => ({
       paid,
-      openPricing: () => setOpen(true),
       requireSubscription: (action: string) => {
         if (paid) return true;
         notifyUpgradeRequired(action);
@@ -180,7 +171,7 @@ function PricingDialog({
               so its mark and name wrap as one label instead of leaving the
               mark stranded at the end of a line. */}
           <Dialog.Description className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-neutral-400">
-            Unlock every generated tool for
+            Analyze and unlock every generated tool for
             <span className="inline-flex min-w-0 items-center gap-1.5 text-neutral-300">
               <GithubMarkIcon
                 aria-hidden
@@ -219,7 +210,7 @@ function PricingDialog({
                     className={buttonClass}
                     pendingText="Opening secure checkout…"
                   >
-                    Unlock AI capabilities for your site
+                    Subscribe & run analysis
                     <CtaArrow />
                   </SubmitButton>
                 </ActionForm>
@@ -235,70 +226,40 @@ function PricingDialog({
   );
 }
 
-/**
- * The repository's billing affordance: manage an active subscription, or open
- * the pricing dialog the provider owns.
- */
+/** The compact management affordance shown for an active subscription. */
 export function RepositoryBillingControl({
   repositoryId,
-  paid,
   status,
   cancelAtPeriodEnd,
   currentPeriodEnd,
-  label = "Enable tools",
-  emphasis = "primary",
 }: {
   repositoryId: string;
-  paid: boolean;
   status: BillingStatus | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
-  label?: string;
-  /**
-   * `secondary` for the locked sections further down a page whose primary
-   * action is running the first analysis — the upgrade stays offered, but it
-   * does not outrank the step we want taken first.
-   */
-  emphasis?: "primary" | "secondary";
 }) {
-  const { openPricing } = usePaywall();
-
-  if (paid) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
-          <SealCheckIcon aria-hidden weight="fill" className="size-4" />
-          {billingStatusLabel(status)}
-        </span>
-        <ActionForm
-          action={openRepositoryBillingPortalAction}
-          submitEvent={{ name: "Billing Management Requested" }}
-        >
-          <input type="hidden" name="repositoryId" value={repositoryId} />
-          <SubmitButton className={secondaryButtonClass} pendingText="Opening…">
-            Manage billing
-            <CtaArrow />
-          </SubmitButton>
-        </ActionForm>
-        {cancelAtPeriodEnd && currentPeriodEnd ? (
-          <span className="w-full text-right text-xs text-neutral-400">
-            Access ends {new Date(currentPeriodEnd).toLocaleDateString()}
-          </span>
-        ) : null}
-      </div>
-    );
-  }
-
-  const secondary = emphasis === "secondary";
   return (
-    <button
-      type="button"
-      className={secondary ? secondaryButtonClass : buttonClass}
-      onClick={openPricing}
-    >
-      {label}
-      {secondary ? <CtaArrow /> : <CtaCheck />}
-    </button>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+        <SealCheckIcon aria-hidden weight="fill" className="size-4" />
+        {billingStatusLabel(status)}
+      </span>
+      <ActionForm
+        action={openRepositoryBillingPortalAction}
+        submitEvent={{ name: "Billing Management Requested" }}
+      >
+        <input type="hidden" name="repositoryId" value={repositoryId} />
+        <SubmitButton className={secondaryButtonClass} pendingText="Opening…">
+          Manage billing
+          <CtaArrow />
+        </SubmitButton>
+      </ActionForm>
+      {cancelAtPeriodEnd && currentPeriodEnd ? (
+        <span className="w-full text-right text-xs text-neutral-400">
+          Access ends {new Date(currentPeriodEnd).toLocaleDateString()}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -341,7 +302,7 @@ export function CheckoutStatusNotice({
         className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-300"
       >
         <SealCheckIcon aria-hidden weight="fill" className="size-4 shrink-0" />
-        Subscription active. This repository’s tools are unlocked.
+        Subscription active. Analysis starts automatically.
       </p>
     );
   }

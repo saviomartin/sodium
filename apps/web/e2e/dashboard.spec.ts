@@ -181,6 +181,7 @@ async function provisionRepository(userId: string, paid = true) {
   return {
     admin,
     workspaceId: membership.org_id,
+    connectionId,
     repositoryId: repository.id,
     runId: run.id,
     candidateId: candidate.id,
@@ -552,7 +553,46 @@ test("legacy empty analyses require reanalysis instead of claiming no tools exis
   ).toHaveCount(0);
 });
 
-test("one free analysis stays readable while repository capabilities are paywalled", async ({
+test("a new repository opens pricing before any analysis is created", async ({
+  page,
+}) => {
+  const { users } = state();
+  await signIn(page, users.owner.email);
+  const seeded = await provisionRepository(users.owner.id, false);
+  await seeded.admin
+    .from("action_candidates")
+    .delete()
+    .eq("run_id", seeded.runId);
+  await seeded.admin.from("analysis_runs").delete().eq("id", seeded.runId);
+
+  await page.goto(`/repos/${seeded.repositoryId}`);
+  await expect(
+    page.getByText("No analysis yet", { exact: true }),
+  ).toBeVisible();
+  const runAnalysis = page.getByRole("button", { name: "Run analysis" });
+  await expect(runAnalysis).toHaveClass(/bg-blue-600/);
+  await runAnalysis.click();
+
+  const pricing = page.getByRole("dialog", {
+    name: "Make your website usable by",
+  });
+  await expect(pricing).toBeVisible();
+  await expect(
+    pricing.getByRole("button", { name: "Subscribe & run analysis" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enable tools" })).toHaveCount(
+    0,
+  );
+
+  const { count, error } = await seeded.admin
+    .from("analysis_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("repository_id", seeded.repositoryId);
+  if (error) throw error;
+  expect(count).toBe(0);
+});
+
+test("legacy unpaid analysis stays readable while new analysis requires payment", async ({
   page,
 }) => {
   const { users } = state();
@@ -633,6 +673,14 @@ test("one free analysis stays readable while repository capabilities are paywall
 
   await page.getByRole("button", { name: "Run analysis" }).click();
   await expect(pricing).toBeVisible();
+  await expect(pricing.getByText("$49", { exact: true })).toBeVisible();
+  await expect(pricing.getByText("/ month")).toBeVisible();
+  await expect(
+    pricing.getByRole("button", { name: "Subscribe & run analysis" }),
+  ).toBeVisible();
+  await expect(
+    pricing.getByText("foundative/webmcp-fixture-shop"),
+  ).toBeVisible();
   await dismissPricing();
 
   await page.getByRole("button", { name: "Submit contact" }).click();
@@ -644,22 +692,9 @@ test("one free analysis stays readable while repository capabilities are paywall
   ).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
 
-  await page.getByRole("button", { name: "Enable tools" }).first().click();
-  const dialog = page.getByRole("dialog", {
-    name: "Make your website usable by",
-  });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("$49", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("/ month")).toBeVisible();
-  await expect(
-    dialog.getByRole("button", {
-      name: "Unlock AI capabilities for your site",
-    }),
-  ).toBeVisible();
-  // The dialog names the one repository the subscription unlocks.
-  await expect(
-    dialog.getByText("foundative/webmcp-fixture-shop"),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enable tools" })).toHaveCount(
+    0,
+  );
 });
 
 test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
@@ -670,6 +705,23 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
   const { users } = state();
   await signIn(page, users.owner.email);
   const seeded = await provisionRepository(users.owner.id, false);
+  const { data: liveConnection, error: liveConnectionError } =
+    await seeded.admin
+      .from("github_connections")
+      .select("id")
+      .neq("id", seeded.connectionId)
+      .limit(1)
+      .maybeSingle();
+  if (liveConnectionError) throw liveConnectionError;
+  test.skip(
+    !liveConnection,
+    "a real Development GitHub connection is required for paid analysis",
+  );
+  const { error: connectionUpdateError } = await seeded.admin
+    .from("repositories")
+    .update({ github_connection_id: liveConnection!.id })
+    .eq("id", seeded.repositoryId);
+  if (connectionUpdateError) throw connectionUpdateError;
   const env = loadWebEnv();
   const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
     apiVersion: "2026-08-26.dahlia" as Stripe.LatestApiVersion,
@@ -715,10 +767,10 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
       })
       .eq("id", seeded.runId);
     await page.goto(`/repos/${seeded.repositoryId}`);
-    await page.getByRole("button", { name: "Enable tools" }).first().click();
+    await page.getByRole("button", { name: "Run analysis" }).click();
     await page
       .getByRole("button", {
-        name: "Unlock AI capabilities for your site",
+        name: "Subscribe & run analysis",
       })
       .click();
     await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
@@ -768,6 +820,33 @@ test("Stripe Checkout unlocks exactly one repository", async ({ page }) => {
       .single();
     expect(billing?.status).toBe("active");
     expect(billing?.stripe_subscription_id).toMatch(/^sub_/);
+
+    const latestPaidRun = async () => {
+      const { data, error } = await seeded.admin
+        .from("analysis_runs")
+        .select("id, access_tier, status, repository_commits!inner(sha)")
+        .eq("repository_id", seeded.repositoryId)
+        .neq("id", seeded.runId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    };
+    await expect
+      .poll(latestPaidRun, { timeout: 30_000 })
+      .toMatchObject({ access_tier: "paid" });
+    await expect
+      .poll(async () => (await latestPaidRun())?.status, { timeout: 120_000 })
+      .toBe("succeeded");
+
+    await page.reload();
+    await expect(
+      page.getByRole("checkbox", { name: "Enable all tools" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Enable tools" }),
+    ).toHaveCount(0);
   } finally {
     const { data: billing } = await seeded.admin
       .from("repository_billing")

@@ -13,7 +13,6 @@ import {
 } from "@/lib/queries";
 import { emptyAgentAnalytics } from "@/lib/agent-analytics";
 import { requestAnalysisAction } from "@/lib/actions";
-import { shouldEmphasizeRunAnalysis } from "@/lib/analysis-state";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { RepositoryIntegration } from "@/components/repository-integration";
 import { AgentAnalyticsDashboard } from "@/components/agent-analytics-dashboard";
@@ -172,19 +171,9 @@ export default async function RepositoryPage({
     rows.length === 0 &&
     discoveredPrimitiveCount > 0 &&
     (synthesizeDetail?.potential === undefined || candidates.length > 0);
-  // Until an analysis has produced tools there is nothing to enable, so a
-  // visitor who has not paid gets one primary action — run the analysis. The
-  // upgrade only claims the header once tools are on the page to enable.
-  const toolsDiscovered = rows.length > 0;
-  const emphasizeRunAnalysis =
-    shouldEmphasizeRunAnalysis(runs) ||
-    legacyEmptyAnalysis ||
-    (!paid && !toolsDiscovered);
-  // Once one analysis has landed, running again is a repeat rather than the
-  // first step: the label drops the urgency and the mark turns instead of
-  // pointing forward.
+  // Run analysis is the single primary action. Before payment it opens the
+  // repository checkout; after payment it starts a new run immediately.
   const analyzedBefore = Boolean(latestSuccessfulRun);
-  const runAnalysisLabel = analyzedBefore ? "Run analysis" : "Run analysis now";
   const RunAnalysisMark = analyzedBefore ? CtaRepeat : CtaArrow;
 
   return (
@@ -217,9 +206,7 @@ export default async function RepositoryPage({
                 </span>
                 {paid
                   ? "New commits are analyzed automatically"
-                  : repo.free_analysis_consumed_at
-                    ? "Generated tools are ready to review"
-                    : "Your first successful analysis is included"}
+                  : "Subscribe to analyze this repository"}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -231,7 +218,7 @@ export default async function RepositoryPage({
                   View analysis
                   <CtaArrow />
                 </Link>
-              ) : paid || !repo.free_analysis_consumed_at ? (
+              ) : paid ? (
                 <ActionForm
                   action={requestAnalysisAction}
                   submitEvent={{
@@ -240,29 +227,20 @@ export default async function RepositoryPage({
                   }}
                 >
                   <input type="hidden" name="repositoryId" value={repo.id} />
-                  <SubmitButton
-                    className={
-                      emphasizeRunAnalysis ? buttonClass : secondaryButtonClass
-                    }
-                    pendingText="Starting…"
-                  >
-                    {runAnalysisLabel}
+                  <SubmitButton className={buttonClass} pendingText="Starting…">
+                    Run analysis
                     <RunAnalysisMark />
                   </SubmitButton>
                 </ActionForm>
               ) : (
-                <PaywalledButton
-                  action="run another analysis"
-                  className={secondaryButtonClass}
-                >
-                  {runAnalysisLabel}
+                <PaywalledButton action="run analysis" className={buttonClass}>
+                  Run analysis
                   <RunAnalysisMark />
                 </PaywalledButton>
               )}
-              {site && (paid || toolsDiscovered) ? (
+              {paid ? (
                 <RepositoryBillingControl
                   repositoryId={repo.id}
-                  paid={paid}
                   status={billing?.status ?? null}
                   cancelAtPeriodEnd={billing?.cancel_at_period_end ?? false}
                   currentPeriodEnd={billing?.current_period_end ?? null}
@@ -325,19 +303,6 @@ export default async function RepositoryPage({
               site={site}
               publication={publication}
               locked={!paid}
-              unlockAction={
-                !paid ? (
-                  <RepositoryBillingControl
-                    repositoryId={repo.id}
-                    paid={false}
-                    status={billing?.status ?? null}
-                    cancelAtPeriodEnd={false}
-                    currentPeriodEnd={null}
-                    label="Unlock install & access"
-                    emphasis="secondary"
-                  />
-                ) : undefined
-              }
             />
           ) : null}
 
@@ -349,19 +314,6 @@ export default async function RepositoryPage({
                 .map((contract) => contract.name)}
               analytics={analytics ?? emptyAgentAnalytics(analyticsDays)}
               locked={!paid}
-              unlockAction={
-                !paid ? (
-                  <RepositoryBillingControl
-                    repositoryId={repo.id}
-                    paid={false}
-                    status={billing?.status ?? null}
-                    cancelAtPeriodEnd={false}
-                    currentPeriodEnd={null}
-                    label="Unlock analytics"
-                    emphasis="secondary"
-                  />
-                ) : undefined
-              }
             />
           ) : null}
 

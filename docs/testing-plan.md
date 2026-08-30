@@ -33,11 +33,14 @@ corepack pnpm dev
 3. Connect `foundative/webmcp-fixture-shop` without another GitHub redirect.
 4. Confirm the repository page has one **Run analysis** button and no SHA
    input.
-5. Run analysis. The worker must download the latest `main` commit.
-6. Keep the page open until all stages finish. Do not reload.
-7. Sleep/background the tab during a second run, then return. The UI must
+5. Click **Run analysis** and confirm the repository-scoped Stripe checkout is
+   shown before any analysis run exists.
+6. Complete sandbox payment. The webhook must grant access and enqueue the
+   latest `main` commit without an **Enable tools** step.
+7. Keep the page open until all stages finish. Do not reload.
+8. Sleep/background the tab during a second run, then return. The UI must
    reconcile to the database within 2.5 seconds.
-8. Review, approve, publish, roll back, and verify the one-script installation.
+9. Review, approve, publish, roll back, and verify the one-script installation.
 
 ## 4. Edge cases
 
