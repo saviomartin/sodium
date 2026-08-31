@@ -11,7 +11,8 @@ import { REPOSITORY_PRICE_USD } from "./plan";
 export const FAQ = [
   {
     question: "Which websites does Sodium support?",
-    answer: "Sodium supports almost all tech stacks.",
+    answer:
+      "Sodium supports Next.js App Router websites and browser React apps built with Vite, Create React App, Rsbuild, Parcel, or Webpack.",
   },
   {
     question: "What happens after I connect my repository?",
