@@ -1,5 +1,3 @@
-import { Project, ts } from "ts-morph";
-import { posix } from "node:path";
 import type { RepoWorkspace } from "../workspace";
 import type {
   AuthSignalInfo,
@@ -11,17 +9,23 @@ import type {
   ZodSchemaInfo,
 } from "../types";
 import { parseAppPath, routeFileKind } from "./routes";
-import { detectAuthSignals } from "./auth";
+import { detectAuthSignals } from "../shared/auth";
 import {
   extractForms,
   extractControls,
   extractLinks,
   extractRouteHandlers,
   extractServerActions,
-} from "./extractors";
-import { extractZodSchemas } from "./zod-schemas";
-
-const PARSE_EXTENSIONS = /\.(tsx|ts|jsx|js|mjs)$/;
+} from "../shared/jsx-extractors";
+import { extractZodSchemas } from "../shared/zod-schemas";
+import {
+  buildRouteBindings,
+  dedupeControls,
+  dedupeLinks,
+  filesWithinProject,
+  finalizeForms,
+  loadSourceProject,
+} from "../shared/project";
 
 /** Finds the App Router directory ("app" or "src/app"), or null. */
 export function detectAppDir(files: string[]): string | null {
@@ -62,56 +66,35 @@ export function detectAppDir(files: string[]): string | null {
 
 export class NextJsAnalyzer {
   readonly framework = "nextjs";
+  readonly detection;
 
-  constructor(private readonly workspace: RepoWorkspace) {}
-
-  detect(files: string[]): string | null {
-    return detectAppDir(files);
-  }
-
-  async analyze(): Promise<StaticAnalysis> {
-    const allFiles = this.workspace.listSourceFiles();
-    const appDir = detectAppDir(allFiles);
+  constructor(
+    private readonly workspace: RepoWorkspace,
+    appDir = detectAppDir(workspace.listSourceFiles()),
+  ) {
     if (!appDir) {
       throw new Error(
         "not a Next.js App Router repository (no app/ or src/app/ with route files)",
       );
     }
-    const projectRoot = appDir.endsWith("/src/app")
-      ? appDir.slice(0, -"/src/app".length)
-      : appDir === "src/app"
-        ? ""
-        : appDir.endsWith("/app")
-          ? appDir.slice(0, -"/app".length)
-          : appDir === "app"
-            ? ""
-            : "";
-    const files = projectRoot
-      ? allFiles.filter(
-          (file) => file === projectRoot || file.startsWith(projectRoot + "/"),
-        )
-      : allFiles;
+    this.detection = {
+      framework: this.framework,
+      projectRoot: projectRootForAppDir(appDir),
+      detail: `Next.js App Router (${appDir})`,
+    } as const;
+  }
+
+  async analyze(): Promise<StaticAnalysis> {
+    const allFiles = this.workspace.listSourceFiles();
+    const appDir = detectAppDir(allFiles)!;
+    const projectRoot = projectRootForAppDir(appDir);
+    const files = filesWithinProject(allFiles, projectRoot);
 
     const warnings: string[] = [];
-    const project = new Project({
-      useInMemoryFileSystem: true,
-      compilerOptions: {
-        jsx: ts.JsxEmit.Preserve,
-        allowJs: true,
-        target: ts.ScriptTarget.ESNext,
-      },
-    });
-
-    const fileTexts = new Map<string, string>();
-    let filesScanned = 0;
-    for (const filePath of files) {
-      if (!PARSE_EXTENSIONS.test(filePath)) continue;
-      const text = this.workspace.readFile(filePath);
-      if (text === null) continue;
-      fileTexts.set(filePath, text);
-      project.createSourceFile(filePath, text, { overwrite: true });
-      filesScanned++;
-    }
+    const { project, fileTexts, filesScanned } = loadSourceProject(
+      this.workspace,
+      files,
+    );
 
     const routes: RouteInfo[] = [];
     const serverActions: ServerActionInfo[] = [];
@@ -135,15 +118,20 @@ export class NextJsAnalyzer {
         });
       }
     }
-    const browserBindingRoots = new Map(pageRouteByFile);
+    const browserBindingRoots = new Map(
+      [...pageRouteByFile].map(([filePath, route]) => [filePath, [route]]),
+    );
     for (const filePath of fileTexts.keys()) {
       const route = routeForFile(filePath, appDir);
       if (route?.kind !== "layout") continue;
-      browserBindingRoots.set(filePath, {
-        urlPattern: route.urlPattern === "/" ? "/**" : `${route.urlPattern}/**`,
-        pathPattern:
-          route.pathPattern === "/" ? "/**" : `${route.pathPattern}/**`,
-      });
+      browserBindingRoots.set(filePath, [
+        {
+          urlPattern:
+            route.urlPattern === "/" ? "/**" : `${route.urlPattern}/**`,
+          pathPattern:
+            route.pathPattern === "/" ? "/**" : `${route.pathPattern}/**`,
+        },
+      ]);
     }
     const routeBindingsByFile = buildRouteBindings(
       project,
@@ -221,47 +209,11 @@ export class NextJsAnalyzer {
 
     warnings.push(...this.workspace.skipped.map((s) => `skipped ${s}`));
 
-    // A plain `form` selector is safe only when exactly one form is rendered
-    // by that route file. Multiple unlabelled forms remain analysis evidence,
-    // but are not executable until the application gives them stable ids.
-    const formsByRoute = new Map<string, FormInfo[]>();
-    for (const form of forms) {
-      for (const route of form.routeBindings ?? []) {
-        const list = formsByRoute.get(route.pathPattern) ?? [];
-        list.push(form);
-        formsByRoute.set(route.pathPattern, list);
-      }
-    }
-    for (const form of forms) {
-      if (form.selector) continue;
-      const coveredByExecutableControl =
-        form.fields.length === 0 &&
-        controls.some(
-          (control) =>
-            control.span.filePath === form.span.filePath &&
-            control.span.startLine >= form.span.startLine &&
-            control.span.endLine <= form.span.endLine,
-        );
-      if (coveredByExecutableControl) continue;
-      const bindings = form.routeBindings ?? [];
-      if (
-        bindings.length > 0 &&
-        bindings.every(
-          (route) =>
-            !route.pathPattern.includes("*") &&
-            (formsByRoute.get(route.pathPattern)?.length ?? 0) === 1,
-        )
-      ) {
-        form.selector = "form";
-      } else {
-        warnings.push(
-          `form in ${form.span.filePath} needs a stable id, name, or action attribute before it can become a tool`,
-        );
-      }
-    }
+    finalizeForms(forms, controls, warnings);
 
     return {
       framework: "nextjs",
+      projectRoot,
       appDir,
       routes: routes.sort((a, b) => a.urlPattern.localeCompare(b.urlPattern)),
       serverActions,
@@ -281,6 +233,13 @@ export class NextJsAnalyzer {
   }
 }
 
+export function projectRootForAppDir(appDir: string): string {
+  if (appDir === "app" || appDir === "src/app") return "";
+  if (appDir.endsWith("/src/app")) return appDir.slice(0, -"/src/app".length);
+  if (appDir.endsWith("/app")) return appDir.slice(0, -"/app".length);
+  return "";
+}
+
 function routeForFile(
   filePath: string,
   appDir: string,
@@ -296,124 +255,4 @@ function routeForFile(
   if (!kind) return null;
   const parsed = parseAppPath(parts.join("/"));
   return parsed.excluded ? null : { ...parsed, kind };
-}
-
-function buildRouteBindings(
-  project: Project,
-  fileTexts: Map<string, string>,
-  pageRouteByFile: Map<string, { urlPattern: string; pathPattern: string }>,
-  projectRoot: string,
-): Map<string, { urlPattern: string; pathPattern: string }[]> {
-  const files = new Set(fileTexts.keys());
-  const dependencies = new Map<string, string[]>();
-  for (const filePath of files) {
-    const source = project.getSourceFile(filePath);
-    if (!source) continue;
-    const specifiers = [
-      ...source
-        .getImportDeclarations()
-        .map((item) => item.getModuleSpecifierValue()),
-      ...source
-        .getExportDeclarations()
-        .map((item) => item.getModuleSpecifierValue())
-        .filter((item): item is string => Boolean(item)),
-    ];
-    dependencies.set(
-      filePath,
-      specifiers
-        .map((specifier) =>
-          resolveSourceImport(filePath, specifier, files, projectRoot),
-        )
-        .filter((item): item is string => Boolean(item)),
-    );
-  }
-
-  const bindings = new Map<
-    string,
-    Map<string, { urlPattern: string; pathPattern: string }>
-  >();
-  for (const [pageFile, route] of pageRouteByFile) {
-    const pending = [pageFile];
-    const visited = new Set<string>();
-    while (pending.length > 0 && visited.size <= 2_000) {
-      const current = pending.pop()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-      const routes = bindings.get(current) ?? new Map();
-      routes.set(`${route.urlPattern}\u0000${route.pathPattern}`, route);
-      bindings.set(current, routes);
-      pending.push(...(dependencies.get(current) ?? []));
-    }
-  }
-  return new Map(
-    [...bindings].map(([filePath, routes]) => [filePath, [...routes.values()]]),
-  );
-}
-
-function resolveSourceImport(
-  fromFile: string,
-  specifier: string,
-  files: Set<string>,
-  projectRoot: string,
-): string | null {
-  let base: string;
-  if (specifier.startsWith(".")) {
-    base = posix.normalize(posix.join(posix.dirname(fromFile), specifier));
-  } else if (specifier.startsWith("@/") || specifier.startsWith("~/")) {
-    const relative = specifier.slice(2);
-    for (const root of [
-      projectRoot ? `${projectRoot}/` : "",
-      projectRoot ? `${projectRoot}/src/` : "src/",
-    ]) {
-      const resolved = resolveSourceCandidate(root + relative, files);
-      if (resolved) return resolved;
-    }
-    return null;
-  } else {
-    return null;
-  }
-  return resolveSourceCandidate(base, files);
-}
-
-function resolveSourceCandidate(
-  base: string,
-  files: Set<string>,
-): string | null {
-  for (const candidate of [
-    base,
-    ...[".tsx", ".ts", ".jsx", ".js", ".mjs"].map((ext) => base + ext),
-    ...[".tsx", ".ts", ".jsx", ".js"].map((ext) => `${base}/index${ext}`),
-  ]) {
-    if (files.has(candidate)) return candidate;
-  }
-  return null;
-}
-
-function dedupeLinks(links: StaticAnalysis["links"]): StaticAnalysis["links"] {
-  const deduped = new Map<string, StaticAnalysis["links"][number]>();
-  for (const link of links) {
-    const key = `${link.href}\u0000${link.span.filePath}\u0000${link.span.startLine}`;
-    deduped.set(key, link);
-  }
-  return [...deduped.values()];
-}
-
-function dedupeControls(
-  controls: NonNullable<StaticAnalysis["controls"]>,
-): NonNullable<StaticAnalysis["controls"]> {
-  const deduped = new Map<
-    string,
-    NonNullable<StaticAnalysis["controls"]>[number]
-  >();
-  for (const control of controls) {
-    const routes = control.routeBindings
-      .map((route) => route.pathPattern)
-      .sort()
-      .join("\u0000");
-    deduped.set(
-      `${control.selector ?? `button:${control.accessibleName ?? ""}`}\u0000${routes}`,
-      control,
-    );
-  }
-  return [...deduped.values()];
 }

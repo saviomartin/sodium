@@ -1,6 +1,6 @@
 # Architecture
 
-Sodium converts existing Next.js sites into reviewed, verified, WebMCP-enabled applications:
+Sodium converts existing Next.js and browser React sites into reviewed, verified, WebMCP-enabled applications:
 connect a GitHub repository → analyze routes and actions → review proposed tools →
 enable selected tools. Each change automatically publishes the signed manifest consumed
 by the runtime integration.
@@ -76,7 +76,20 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
   files, dynamic `[param]`, catch-all `[...param]`, optional `[[...param]]`, groups
   `(group)`, parallel `@slot`, interception `(.)`, private `_folders`.
 
-### 1.3 Supabase (current, per docs + official `with-supabase` template)
+### 1.3 Browser React
+
+- Browser React packages require `react`, `react-dom`, and a statically proven
+  web entry point. Vite, Create React App, Rsbuild, Parcel, Webpack, and custom
+  React DOM entry points share one adapter.
+- React Router declarative/data routes, nested/dynamic/optional/splat segments,
+  basename, imported route arrays, and HashRouter are supported without running
+  repository code. Computed route configurations fail closed.
+- Client `onSubmit` forms and browser controls become the same framework-neutral
+  primitives used by Next.js. Dynamic accessible names require a stable selector.
+- Full detection, edge cases, and QA evidence are in
+  [`docs/react-support.md`](./react-support.md).
+
+### 1.4 Supabase (current, per docs + official `with-supabase` template)
 
 - **SSR auth**: `@supabase/ssr` (0.12.x) with the `getAll`/`setAll` cookie contract;
   per-request server clients (never module-scope); Next 16 `proxy.ts` runs `updateSession`.
@@ -115,7 +128,7 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
   `request.jwt.claim.sub`); types via `supabase gen types typescript --local`; run
   `supabase db advisors` (CLI ≥ 2.81) before shipping schema changes.
 
-### 1.4 GitHub OAuth
+### 1.5 GitHub OAuth
 
 - One Supabase GitHub OAuth authorization uses `repo user:email` for sign-in,
   verified email, private source, commits, and repository webhooks.
@@ -140,7 +153,7 @@ inputSchema (JSON Schema), execute(input, { signal }) → Promise<any>, annotati
 ```
 apps/web         Next.js home, repository workspace, Settings, API routes, public manifest + loader endpoints
 apps/worker      background worker: clone → static analysis → AI wording → validation; sync
-packages/analyzer    framework-neutral analysis engine + Next.js adapter (ts-morph AST, no execution)
+packages/analyzer    framework-neutral engine + Next.js/React adapters (ts-morph AST, no execution)
 packages/runtime     loader (agent.js), WebMCP adapter, declarative execution runtime
 packages/contracts   Zod schemas, DB types, versioned action contracts, deterministic validation, signing
 ```

@@ -85,9 +85,10 @@ export interface FormInfo {
   fields: FormFieldInfo[];
   /** Password, file, OTP, or CAPTCHA controls make partial agent submission unsafe. */
   hasSensitiveFields?: boolean;
-  /** Server action identifier, or a literal action URL. */
+  /** Server action, client submit handler, or a literal action URL. */
   action:
     | { kind: "server_action"; name: string }
+    | { kind: "event_handler"; name: string }
     | { kind: "url"; href: string; method: string }
     | { kind: "unknown" };
   excerpt: string;
@@ -95,7 +96,7 @@ export interface FormInfo {
 
 export interface LinkInfo {
   span: SourceSpan;
-  /** Literal same-origin destination found in an anchor or Next.js Link. */
+  /** Resolved same-origin destination found in an anchor or router Link. */
   href: string;
   /** Visible or accessible source label when statically recoverable. */
   label?: string;
@@ -133,9 +134,11 @@ export interface AuthSignalInfo {
 }
 
 export interface StaticAnalysis {
-  framework: "nextjs";
-  /** Root of the app directory relative to the repo root ("app" or "src/app"). */
-  appDir: string;
+  framework: "nextjs" | "react";
+  /** Package/application root relative to the connected repository. */
+  projectRoot: string;
+  /** Next.js App Router directory. Present only for Next.js analyses. */
+  appDir?: string;
   routes: RouteInfo[];
   serverActions: ServerActionInfo[];
   routeHandlers: RouteHandlerInfo[];
@@ -155,10 +158,16 @@ export interface StaticAnalysis {
   };
 }
 
-/** A framework adapter. Next.js is the only implementation in v1. */
+export interface FrameworkDetection {
+  framework: StaticAnalysis["framework"];
+  projectRoot: string;
+  /** Framework-specific evidence useful in progress messages and diagnostics. */
+  detail: string;
+}
+
+/** A read-only framework adapter selected from repository source evidence. */
 export interface FrameworkAnalyzer {
-  framework: string;
-  /** Returns null when the workspace does not look like this framework. */
-  detect(files: string[]): string | null;
+  framework: StaticAnalysis["framework"];
+  detection: FrameworkDetection;
   analyze(): Promise<StaticAnalysis>;
 }

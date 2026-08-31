@@ -9,7 +9,7 @@ import {
 import type { SourceSpan, ZodSchemaInfo } from "../types";
 
 /**
- * Best-effort static conversion of `z.object({...})` declarations to the
+ * Framework-neutral static conversion of `z.object({...})` declarations to the
  * JSON Schema subset. Purely syntactic — the customer's code is never
  * executed. Anything unrecognized degrades to a permissive `{}` schema and a
  * warning rather than a wrong guess.

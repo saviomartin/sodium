@@ -10,6 +10,7 @@ import { AiSdkProvider } from "../src/providers/ai-provider";
 
 const analysis: StaticAnalysis = {
   framework: "nextjs",
+  projectRoot: "",
   appDir: "app",
   routes: [
     {

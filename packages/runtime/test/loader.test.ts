@@ -134,6 +134,25 @@ describe("bootstrap", () => {
     await vi.waitFor(() => expect(handle!.registered()).toEqual([]));
   });
 
+  it("matches and re-syncs React HashRouter routes", async () => {
+    const manifest = makeManifest({
+      tools: [
+        makeTool({
+          name: "open_hash_settings",
+          title: "Open settings",
+          routes: [{ pathPattern: "/#/settings" }],
+        }),
+      ],
+    });
+    const { handle } = await boot(signedEnvelope(manifest), {
+      path: "/#/settings",
+    });
+    expect(handle!.registered()).toEqual(["open_hash_settings"]);
+
+    history.pushState(null, "", "/#/account");
+    await vi.waitFor(() => expect(handle!.registered()).toEqual([]));
+  });
+
   it("honors requiresSelector app-state conditions on refresh", async () => {
     const manifest = makeManifest({
       tools: [

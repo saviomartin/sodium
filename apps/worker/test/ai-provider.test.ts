@@ -16,6 +16,7 @@ import {
 
 const analysis: StaticAnalysis = {
   framework: "nextjs",
+  projectRoot: "",
   appDir: "app",
   routes: [
     {
@@ -1003,5 +1004,114 @@ describe("HeuristicAiProvider", () => {
       name: "open_start_practicing",
       handler: { kind: "navigate", urlTemplate: "/question-bank" },
     });
+  });
+
+  it("turns React Router parameters into safe navigation inputs", async () => {
+    const reactAnalysis: StaticAnalysis = {
+      ...analysis,
+      framework: "react",
+      projectRoot: "",
+      appDir: undefined,
+      routes: [
+        {
+          urlPattern: "/projects/:projectId",
+          pathPattern: "/projects/*",
+          kind: "page",
+          params: ["projectId"],
+          span: { filePath: "src/App.tsx", startLine: 10, endLine: 10 },
+        },
+      ],
+      forms: [],
+      links: [],
+      serverActions: [],
+    };
+    const result = await new HeuristicAiProvider().proposeTools({
+      analysis: reactAnalysis,
+      primitives: buildPrimitives(reactAnalysis),
+    });
+
+    expect(result.tools).toContainEqual(
+      expect.objectContaining({
+        handler: {
+          kind: "navigate",
+          urlTemplate: "/projects/{projectId}",
+        },
+        inputSchema: expect.objectContaining({ required: ["projectId"] }),
+      }),
+    );
+  });
+
+  it("keeps React onSubmit forms executable without a server action", async () => {
+    const reactAnalysis: StaticAnalysis = {
+      ...analysis,
+      framework: "react",
+      projectRoot: "",
+      appDir: undefined,
+      routes: [
+        {
+          urlPattern: "/contact",
+          pathPattern: "/contact",
+          kind: "page",
+          params: [],
+          span: { filePath: "src/App.tsx", startLine: 1, endLine: 30 },
+        },
+      ],
+      forms: [
+        {
+          urlPattern: "/contact",
+          pathPattern: "/contact",
+          routeBindings: [{ urlPattern: "/contact", pathPattern: "/contact" }],
+          selector: "#contact",
+          fields: [{ name: "email", type: "email", required: true }],
+          action: { kind: "event_handler", name: "submitContact" },
+          excerpt: '<form id="contact" onSubmit={submitContact}>...</form>',
+          span: { filePath: "src/App.tsx", startLine: 10, endLine: 20 },
+        },
+      ],
+      links: [],
+      serverActions: [],
+    };
+    const result = await new HeuristicAiProvider().proposeTools({
+      analysis: reactAnalysis,
+      primitives: buildPrimitives(reactAnalysis),
+    });
+
+    expect(result.tools).toContainEqual(
+      expect.objectContaining({
+        name: "submit_contact",
+        handler: {
+          kind: "form",
+          formSelector: "#contact",
+          fieldMap: { email: "email" },
+        },
+      }),
+    );
+  });
+
+  it("applies destructive confirmation floors to React submit handlers", async () => {
+    const destructiveForm = {
+      ...analysis.forms[0]!,
+      action: { kind: "event_handler" as const, name: "deleteAccount" },
+      selector: "#delete-account",
+    };
+    const reactAnalysis: StaticAnalysis = {
+      ...analysis,
+      framework: "react",
+      projectRoot: "",
+      appDir: undefined,
+      serverActions: [],
+      forms: [destructiveForm],
+    };
+    const result = await new HeuristicAiProvider().proposeTools({
+      analysis: reactAnalysis,
+      primitives: buildPrimitives(reactAnalysis),
+    });
+
+    expect(result.tools).toContainEqual(
+      expect.objectContaining({
+        riskLevel: "destructive",
+        confirmation: "required",
+      }),
+    );
   });
 });
