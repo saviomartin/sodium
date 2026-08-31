@@ -25,6 +25,7 @@ import type {
 import { findSchemaParseCalls } from "./zod-schemas";
 import { signalsWithin } from "./auth";
 
+// Shared JSX and TypeScript primitives used by every framework adapter.
 const HTTP_METHODS = new Set([
   "GET",
   "POST",
@@ -258,6 +259,12 @@ export function extractLinks(
   sourceFile: SourceFile,
   filePath: string,
   routeBindings: { urlPattern: string; pathPattern: string }[],
+  options: {
+    resolveHref?: (
+      href: string,
+      routes: { urlPattern: string; pathPattern: string }[],
+    ) => string | null;
+  } = {},
 ): LinkInfo[] {
   if (routeBindings.length === 0) return [];
   const links: LinkInfo[] = [];
@@ -265,13 +272,20 @@ export function extractLinks(
     .getDescendantsOfKind(SyntaxKind.JsxElement)
     .filter((element) => {
       const tag = element.getOpeningElement().getTagNameNode().getText();
-      return tag === "a" || tag === "Link";
+      return tag === "a" || tag === "Link" || tag === "NavLink";
     });
 
   for (const element of elements) {
     const opening = element.getOpeningElement();
-    const href = attributeText(opening, "href");
-    if (!isSafeLiteralPath(href)) continue;
+    const rawHref =
+      attributeText(opening, "href") ?? attributeText(opening, "to");
+    if (rawHref === undefined) continue;
+    const href = options.resolveHref
+      ? options.resolveHref(rawHref, routeBindings)
+      : isSafeLiteralPath(rawHref)
+        ? rawHref
+        : null;
+    if (!href || !isSafeLiteralPath(href)) continue;
     const label =
       attributeText(opening, "aria-label") ?? visibleJsxText(element.getText());
     links.push({
@@ -307,7 +321,8 @@ export function extractControls(
     const formAction = attributeText(element, "formAction");
     const owningForm = element.getAncestors().find((ancestor) => {
       if (!Node.isJsxElement(ancestor)) return false;
-      return ancestor.getOpeningElement().getTagNameNode().getText() === "form";
+      const tag = ancestor.getOpeningElement().getTagNameNode().getText();
+      return tag === "form" || tag === "Form";
     });
     const owningFormOpening =
       owningForm && Node.isJsxElement(owningForm)
@@ -331,15 +346,20 @@ export function extractControls(
       continue;
     const selector = controlSelector(element);
     const parent = element.getParentIfKind(SyntaxKind.JsxElement);
-    const label =
+    const expression = formAction ?? onClick ?? formActionExpression;
+    const actionName = expression?.match(/[A-Za-z_$][\w$]*/)?.[0];
+    const staticLabel =
       attributeText(element, "aria-label") ??
       attributeText(element, "value") ??
       (parent ? staticJsxText(parent) : undefined);
+    // A handler identifier is useful reviewer context only when the runtime can
+    // target the element through a stable selector. It is not the element's
+    // accessible name and must never be used for an exact role/name lookup.
+    const label = staticLabel ?? (selector ? actionName : undefined);
     if (!label) continue;
     const accessibleName = label.replace(/\s+/g, " ").trim().slice(0, 160);
-    if (!selector && (tag !== "button" || !accessibleName)) continue;
-    const expression = formAction ?? onClick ?? formActionExpression;
-    const actionName = expression?.match(/[A-Za-z_$][\w$]*/)?.[0];
+    if (!selector && (tag !== "button" || !staticLabel || !accessibleName))
+      continue;
     controls.push({
       span: {
         filePath,
@@ -358,6 +378,18 @@ export function extractControls(
 }
 
 function staticJsxText(element: Node): string | undefined {
+  if (
+    Node.isJsxElement(element) &&
+    element
+      .getJsxChildren()
+      .some(
+        (child) =>
+          Node.isJsxExpression(child) ||
+          child.getDescendantsOfKind(SyntaxKind.JsxExpression).length > 0,
+      )
+  ) {
+    return undefined;
+  }
   const text = element
     .getDescendantsOfKind(SyntaxKind.JsxText)
     .map((node) => node.getText())
@@ -446,7 +478,7 @@ function attributeOf(
   return undefined;
 }
 
-function attributeText(
+export function attributeText(
   element: JsxTagElement,
   name: string,
 ): string | undefined {
@@ -472,14 +504,16 @@ export function extractForms(
   sourceFile: SourceFile,
   filePath: string,
   route: { urlPattern: string; pathPattern: string } | null,
+  options: {
+    functionActionKind?: "server_action" | "event_handler";
+  } = {},
 ): FormInfo[] {
   const forms: FormInfo[] = [];
   const formElements = [
-    ...sourceFile
-      .getDescendantsOfKind(SyntaxKind.JsxElement)
-      .filter(
-        (el) => el.getOpeningElement().getTagNameNode().getText() === "form",
-      ),
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.JsxElement).filter((el) => {
+      const tag = el.getOpeningElement().getTagNameNode().getText();
+      return tag === "form" || tag === "Form";
+    }),
   ];
 
   for (const formElement of formElements) {
@@ -536,6 +570,7 @@ export function extractForms(
       });
     }
     const actionAttr = attributeOf(opening, "action");
+    const onSubmit = attributeText(opening, "onSubmit");
     let action: FormInfo["action"] = { kind: "unknown" };
     if (actionAttr) {
       const initializer = actionAttr.getInitializer();
@@ -548,14 +583,23 @@ export function extractForms(
       } else if (initializer && Node.isJsxExpression(initializer)) {
         const expr = initializer.getExpression();
         if (expr && Node.isIdentifier(expr)) {
-          action = { kind: "server_action", name: expr.getText() };
+          action = {
+            kind: options.functionActionKind ?? "server_action",
+            name: expr.getText(),
+          };
         } else if (expr) {
           action = {
-            kind: "server_action",
+            kind: options.functionActionKind ?? "server_action",
             name: expr.getText().slice(0, 128),
           };
         }
       }
+    }
+    if (action.kind === "unknown" && onSubmit) {
+      action = {
+        kind: "event_handler",
+        name: onSubmit.slice(0, 128),
+      };
     }
 
     const selector = formSelector(opening);

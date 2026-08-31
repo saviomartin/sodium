@@ -88,7 +88,7 @@ export function createToolRegistrar(
 
   const shouldBeActive = (tool: PublishedTool): boolean => {
     const win = doc.defaultView;
-    const path = win?.location?.pathname ?? "/";
+    const path = win ? routeLocationPath(win.location) : "/";
     return tool.routes.some((route) => {
       if (!matchesPathPattern(route.pathPattern, path)) return false;
       if (route.requiresSelector && !doc.querySelector(route.requiresSelector))
@@ -169,10 +169,21 @@ export function observeNavigation(
     queueMicrotask(onRouteChange);
   };
   const popHandler = () => queueMicrotask(onRouteChange);
+  const hashHandler = () => queueMicrotask(onRouteChange);
   win.addEventListener("popstate", popHandler);
+  win.addEventListener("hashchange", hashHandler);
   return () => {
     history.pushState = originalPushState;
     history.replaceState = originalReplaceState;
     win.removeEventListener("popstate", popHandler);
+    win.removeEventListener("hashchange", hashHandler);
   };
+}
+
+/** HashRouter URLs use /#/path; browser routers continue to use pathname. */
+export function routeLocationPath(
+  location: Pick<Location, "pathname" | "hash">,
+): string {
+  if (location.hash.startsWith("#/")) return `/#${location.hash.slice(1)}`;
+  return location.pathname || "/";
 }

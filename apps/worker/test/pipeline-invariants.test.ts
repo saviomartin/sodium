@@ -7,6 +7,7 @@ import {
 
 const emptyAnalysis: StaticAnalysis = {
   framework: "nextjs",
+  projectRoot: "",
   appDir: "app",
   routes: [
     {

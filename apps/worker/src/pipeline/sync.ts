@@ -1,6 +1,6 @@
 import {
-  NextJsAnalyzer,
   RepoWorkspace,
+  selectFrameworkAnalyzer,
   type StaticAnalysis,
 } from "@sodium/analyzer";
 import type {
@@ -71,9 +71,33 @@ export async function handleSyncCompare(
     repo: repo.name,
     sha: commitSha,
   });
-  const analysis = await new NextJsAnalyzer(
-    new RepoWorkspace(snapshotDir),
-  ).analyze();
+  const workspace = new RepoWorkspace(snapshotDir);
+  let analyzer: ReturnType<typeof selectFrameworkAnalyzer>;
+  try {
+    analyzer = selectFrameworkAnalyzer(workspace);
+  } catch (error) {
+    return {
+      kind: "fatal",
+      reason:
+        error instanceof Error ? error.message : "framework detection failed",
+    };
+  }
+  if (!analyzer) {
+    return {
+      kind: "fatal",
+      reason:
+        "unsupported repository: expected a Next.js App Router app or a browser React app",
+    };
+  }
+  let analysis: StaticAnalysis;
+  try {
+    analysis = await analyzer.analyze();
+  } catch (error) {
+    return {
+      kind: "fatal",
+      reason: error instanceof Error ? error.message : "static analysis failed",
+    };
+  }
 
   for (const site of published) {
     const manifest = site.manifest as ToolManifest;

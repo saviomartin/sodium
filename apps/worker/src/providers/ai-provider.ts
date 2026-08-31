@@ -119,7 +119,7 @@ const SYSTEM_PROMPT = [
   "",
   "Rules:",
   "- Cite only numbered PRIMITIVES. Never invent routes, selectors, fields, parameters, permissions, or capabilities.",
-  "- Any non-root page may become a navigate tool. Copy its URL pattern exactly, replacing [param] with {param}. Navigation is read_only.",
+  "- Any non-root page may become a navigate tool. Copy its URL pattern exactly, replacing Next.js [param] or React Router :param with {param}. Navigation is read_only.",
   "- A literal same-origin link may become a navigate tool. Copy its href exactly.",
   "- Set handlerKind to navigate or form. For navigate, set urlTemplate and leave formSelector and fieldMap empty. For form, copy detail.selector into formSelector, map inputName to formFieldName, and leave urlTemplate empty.",
   "- Express inputs as a flat inputFields list. Use the route parameter or extracted form field names exactly.",
@@ -310,11 +310,14 @@ export class HeuristicAiProvider implements AiProvider {
             )?.jsonSchema
           : null;
         const inputSchema = formInputSchema(form, schema);
-        const actionName = serverAction?.name ?? "form";
-        const riskLevel = actionRisk(
-          formActionName ??
-            (form.action.kind === "url" ? form.action.href : "form"),
-        );
+        const actionName =
+          serverAction?.name ??
+          (form.action.kind === "event_handler"
+            ? form.action.name
+            : form.action.kind === "url"
+              ? form.action.href
+              : "form");
+        const riskLevel = actionRisk(actionName);
         const baseName = snake(
           actionName === "form" ? form.pathPattern : actionName,
         );
@@ -446,7 +449,11 @@ export class HeuristicAiProvider implements AiProvider {
           params: string[];
           span: StaticAnalysis["routes"][number]["span"];
         };
-        if (detail.urlPattern.includes("...") || detail.urlPattern === "/")
+        if (
+          detail.urlPattern.includes("...") ||
+          detail.urlPattern.includes("*") ||
+          detail.urlPattern === "/"
+        )
           continue;
         const properties = Object.fromEntries(
           detail.params.map((param) => [
@@ -575,9 +582,11 @@ export function isScriptFormCapability(
   const target =
     form.action.kind === "server_action"
       ? form.action.name
-      : form.action.kind === "url"
-        ? form.action.href
-        : "";
+      : form.action.kind === "event_handler"
+        ? form.action.name
+        : form.action.kind === "url"
+          ? form.action.href
+          : "";
   return target.length > 0;
 }
 
@@ -1026,6 +1035,7 @@ function isGroundedProposal(
         typeof detail.urlPattern === "string" &&
         detail.urlPattern !== "/" &&
         !detail.urlPattern.includes("...") &&
+        !detail.urlPattern.includes("*") &&
         pageUrlTemplate(detail.urlPattern) === handler.urlTemplate &&
         templateParams.length === detail.params?.length &&
         Object.keys(schemaProperties).length === detail.params?.length &&
@@ -1075,7 +1085,8 @@ function isGroundedProposal(
 function pageUrlTemplate(urlPattern: string): string {
   return urlPattern
     .replace(/\[\.\.\.([a-zA-Z0-9_]+)\]/g, "{$1}")
-    .replace(/\[([a-zA-Z0-9_]+)\]/g, "{$1}");
+    .replace(/\[([a-zA-Z0-9_]+)\]/g, "{$1}")
+    .replace(/:([a-zA-Z0-9_]+)/g, "{$1}");
 }
 
 function formInputSchema(

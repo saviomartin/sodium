@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  NextJsAnalyzer,
   RepoWorkspace,
-  detectAppDir,
+  selectFrameworkAnalyzer,
   type StaticAnalysis,
 } from "@sodium/analyzer";
 import {
@@ -168,17 +167,31 @@ async function cloneStage(
   const snapshotDir = await ensureSnapshot(ctx, run);
   const workspace = new RepoWorkspace(snapshotDir);
   const files = workspace.listFiles();
-  const appDir = detectAppDir(files);
-  if (!appDir) {
+  let analyzer: ReturnType<typeof selectFrameworkAnalyzer>;
+  try {
+    analyzer = selectFrameworkAnalyzer(workspace);
+  } catch (error) {
     throw new StageError(
       "parse_failed",
-      "repository is not a Next.js App Router project",
+      error instanceof Error ? error.message : "framework detection failed",
+      false,
+    );
+  }
+  if (!analyzer) {
+    throw new StageError(
+      "parse_failed",
+      "unsupported repository: expected a Next.js App Router app or a browser React app with React DOM and a web entry point",
       false,
     );
   }
   return {
-    message: `snapshot ready (${files.length} files)`,
-    info: { files: files.length, appDir },
+    message: `${analyzer.detection.detail} detected (${files.length} files)`,
+    info: {
+      files: files.length,
+      framework: analyzer.detection.framework,
+      projectRoot: analyzer.detection.projectRoot,
+      detail: analyzer.detection.detail,
+    },
   };
 }
 
@@ -188,9 +201,7 @@ async function staticStage(
   run: RunRow,
 ): Promise<StageDetail> {
   const snapshotDir = await ensureSnapshot(ctx, run);
-  const analysis = await new NextJsAnalyzer(
-    new RepoWorkspace(snapshotDir),
-  ).analyze();
+  const analysis = await analyzeSnapshot(snapshotDir);
 
   await uploadArtifact(
     ctx,
@@ -213,8 +224,10 @@ async function staticStage(
   });
 
   return {
-    message: `found ${analysis.routes.length} routes, ${analysis.links.length} links, ${analysis.forms.length} forms, ${analysis.serverActions.length} actions, ${analysis.routeHandlers.length} handlers`,
+    message: `${analysis.framework}: found ${analysis.routes.length} routes, ${analysis.links.length} links, ${analysis.forms.length} forms, ${analysis.serverActions.length} actions, ${analysis.routeHandlers.length} handlers`,
     info: {
+      framework: analysis.framework,
+      projectRoot: analysis.projectRoot,
       routes: analysis.routes.length,
       forms: analysis.forms.length,
       links: analysis.links.length,
@@ -426,7 +439,8 @@ export function countPotentialCapabilities(analysis: StaticAnalysis): number {
         (route) =>
           route.kind === "page" &&
           route.urlPattern !== "/" &&
-          !route.urlPattern.includes("..."),
+          !route.urlPattern.includes("...") &&
+          !route.urlPattern.includes("*"),
       )
       .map((route) => route.urlPattern),
   );
@@ -611,9 +625,40 @@ async function downloadAnalysis(
     // Redelivery may land here before the static artifact exists (e.g. bucket
     // wiped). Recompute rather than fail: stages must be self-sufficient.
     const snapshotDir = await ensureSnapshot(ctx, run);
-    return new NextJsAnalyzer(new RepoWorkspace(snapshotDir)).analyze();
+    return analyzeSnapshot(snapshotDir);
   }
   return analysis;
+}
+
+async function analyzeSnapshot(snapshotDir: string): Promise<StaticAnalysis> {
+  const workspace = new RepoWorkspace(snapshotDir);
+  let analyzer: ReturnType<typeof selectFrameworkAnalyzer>;
+  try {
+    analyzer = selectFrameworkAnalyzer(workspace);
+  } catch (error) {
+    throw new StageError(
+      "parse_failed",
+      error instanceof Error ? error.message : "framework detection failed",
+      false,
+    );
+  }
+  if (!analyzer) {
+    throw new StageError(
+      "parse_failed",
+      "unsupported repository: expected a Next.js App Router app or a browser React app with React DOM and a web entry point",
+      false,
+    );
+  }
+  try {
+    return await analyzer.analyze();
+  } catch (error) {
+    if (error instanceof StageError) throw error;
+    throw new StageError(
+      "parse_failed",
+      error instanceof Error ? error.message : "static analysis failed",
+      false,
+    );
+  }
 }
 
 /** Re-used by fixture/dev tooling: read a snapshot file safely. */

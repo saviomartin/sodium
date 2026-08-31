@@ -1,6 +1,6 @@
 # Sodium
 
-Sodium converts an existing Next.js repository into a reviewed, verified,
+Sodium converts an existing Next.js or browser React repository into a reviewed, verified,
 WebMCP-enabled application.
 
 The product flow is deliberately short:
@@ -20,7 +20,7 @@ only as the RLS tenant boundary.
 | -------------------- | ----------------------------------------------------------------------------------- |
 | `apps/web`           | Next.js app: home/auth, repository connection, analysis, tool controls, Settings    |
 | `apps/worker`        | Background pipeline: GitHub snapshot, static analysis, AI wording, validation, sync |
-| `packages/analyzer`  | AST-only Next.js analysis; repository code is never executed                        |
+| `packages/analyzer`  | AST-only Next.js + browser React analysis; repository code is never executed        |
 | `packages/contracts` | Shared versioned schemas, risk rules, validation, manifest signing                  |
 | `packages/runtime`   | Signed manifest loader, WebMCP adapter, declarative browser/request handlers        |
 | `supabase`           | Auth-linked personal workspaces, RLS schema, queue, migrations                      |

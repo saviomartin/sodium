@@ -6,6 +6,7 @@ import type { StaticAnalysis } from "@sodium/analyzer";
 function analysis(overrides: Partial<StaticAnalysis> = {}): StaticAnalysis {
   return {
     framework: "nextjs",
+    projectRoot: "",
     appDir: "app",
     routes: [
       {

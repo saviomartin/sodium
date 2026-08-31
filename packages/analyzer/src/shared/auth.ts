@@ -1,7 +1,7 @@
 import type { AuthSignalInfo, AuthSignalKind } from "../types";
 
 /**
- * Heuristic auth-signal detection over source text. Signals are evidence for
+ * Framework-neutral auth-signal detection over source text. Signals are evidence for
  * reviewers and the synthesis stage — they are never treated as enforcement.
  */
 

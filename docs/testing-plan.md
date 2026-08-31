@@ -5,6 +5,10 @@ GitHub OAuth credentials. Acceptance QA uses a real GitHub identity and a real
 repository; it never inserts demo rows or seeded accounts. The standalone
 target repository is `foundative/webmcp-fixture-shop`.
 
+Browser React adapter coverage and the external-template matrix are documented
+in [`react-support.md`](./react-support.md). Framework QA must run both the
+existing Next.js fixture and current React templates before release.
+
 ## 1. Automated baseline
 
 ```bash
