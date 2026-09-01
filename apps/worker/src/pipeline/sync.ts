@@ -33,9 +33,10 @@ export async function handleSyncCompare(
       owner: string;
       name: string;
       github_connection_id: string;
+      project_root: string | null;
     }[]
   >`
-    select r.id, r.org_id, r.owner, r.name, r.github_connection_id
+    select r.id, r.org_id, r.owner, r.name, r.github_connection_id, r.project_root
     from repositories r
     where r.id = ${repositoryId} and r.github_connection_id is not null
   `;
@@ -74,7 +75,9 @@ export async function handleSyncCompare(
   const workspace = new RepoWorkspace(snapshotDir);
   let analyzer: ReturnType<typeof selectFrameworkAnalyzer>;
   try {
-    analyzer = selectFrameworkAnalyzer(workspace);
+    analyzer = selectFrameworkAnalyzer(workspace, {
+      projectRoot: repo.project_root,
+    });
   } catch (error) {
     return {
       kind: "fatal",

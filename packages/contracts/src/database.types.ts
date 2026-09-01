@@ -98,6 +98,7 @@ export type Database = {
           finished_at: string | null
           id: string
           org_id: string
+          project_root: string | null
           repository_id: string
           requested_by: string | null
           stage: Database["public"]["Enums"]["analysis_stage"]
@@ -113,6 +114,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           org_id: string
+          project_root?: string | null
           repository_id: string
           requested_by?: string | null
           stage?: Database["public"]["Enums"]["analysis_stage"]
@@ -128,6 +130,7 @@ export type Database = {
           finished_at?: string | null
           id?: string
           org_id?: string
+          project_root?: string | null
           repository_id?: string
           requested_by?: string | null
           stage?: Database["public"]["Enums"]["analysis_stage"]
@@ -682,6 +685,7 @@ export type Database = {
           name: string
           org_id: string
           owner: string
+          project_root: string | null
         }
         Insert: {
           created_at?: string
@@ -695,6 +699,7 @@ export type Database = {
           name: string
           org_id: string
           owner: string
+          project_root?: string | null
         }
         Update: {
           created_at?: string
@@ -708,6 +713,7 @@ export type Database = {
           name?: string
           org_id?: string
           owner?: string
+          project_root?: string | null
         }
         Relationships: [
           {
@@ -1160,6 +1166,14 @@ export type Database = {
           p_site_id: string
         }
         Returns: number
+      }
+      set_repository_project_root: {
+        Args: {
+          p_actor: string
+          p_project_root: string | null
+          p_repository_id: string
+        }
+        Returns: undefined
       }
       upsert_github_connection: {
         Args: {

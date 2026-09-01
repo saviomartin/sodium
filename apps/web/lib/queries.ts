@@ -69,7 +69,7 @@ export async function getRepository(repoId: string) {
   const { data, error } = await supabase
     .from("repositories")
     .select(
-      "id, org_id, full_name, owner, name, default_branch, github_repo_id, github_connection_id",
+      "id, org_id, full_name, owner, name, default_branch, github_repo_id, github_connection_id, project_root",
     )
     .eq("id", repoId)
     .maybeSingle();

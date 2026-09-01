@@ -4,10 +4,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   AmbiguousReactProjectError,
+  AmbiguousProjectError,
   RepoWorkspace,
+  SelectedProjectRootError,
   analyzeReactRepo,
   analyzeRepo,
   detectReactProject,
+  detectReactProjects,
   selectFrameworkAnalyzer,
 } from "../src/index";
 import {
@@ -72,6 +75,59 @@ describe("React project detection", () => {
     const root = fixture(files);
     expect(() => detectReactProject(new RepoWorkspace(root))).toThrow(
       AmbiguousReactProjectError,
+    );
+    expect(
+      detectReactProjects(new RepoWorkspace(root)).map(
+        (project) => project.projectRoot,
+      ),
+    ).toEqual(["apps/admin", "apps/store"]);
+  });
+
+  it("detects integrated Nx Vite apps without app-level package manifests", () => {
+    const root = fixture({
+      "package.json": JSON.stringify({
+        private: true,
+        dependencies: {
+          next: "latest",
+          react: "^19",
+          "react-dom": "^19",
+        },
+        devDependencies: { "@nx/vite": "latest", vite: "latest" },
+      }),
+      "apps/shop/project.json": JSON.stringify({
+        targets: { build: { executor: "@nx/vite:build" } },
+      }),
+      "apps/shop/vite.config.ts": "export default {};",
+      "apps/shop/index.html":
+        '<script type="module" src="/src/main.tsx"></script>',
+      "apps/shop/src/main.tsx": `import { createRoot } from "react-dom/client";
+createRoot(document.getElementById("root")!).render(<button id="buy">Buy</button>);`,
+    });
+    expect(detectReactProject(new RepoWorkspace(root))).toMatchObject({
+      projectRoot: "apps/shop",
+      buildTool: "Vite",
+      entryFiles: ["apps/shop/src/main.tsx"],
+    });
+  });
+
+  it("does not treat a shared React package as a deployable app", () => {
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({
+        private: true,
+        workspaces: ["apps/*", "packages/*"],
+      }),
+      "packages/ui/package.json": JSON.stringify({
+        peerDependencies: { react: "^19", "react-dom": "^19" },
+      }),
+      "packages/ui/src/Button.tsx": "export const Button = () => <button />;",
+    };
+    for (const [path, content] of Object.entries(viteReactFixture())) {
+      files[`apps/web/${path}`] = content;
+    }
+    const root = fixture(files);
+    expect(detectReactProjects(new RepoWorkspace(root))).toHaveLength(1);
+    expect(detectReactProject(new RepoWorkspace(root))?.projectRoot).toBe(
+      "apps/web",
     );
   });
 
@@ -298,5 +354,48 @@ describe("framework selection", () => {
     await expect(analyzeRepo(root)).rejects.toThrow(
       "expected a Next.js App Router app or a browser React app",
     );
+  });
+
+  it("requires and honors Application root for a multi-app Vite monorepo", async () => {
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ private: true, workspaces: ["apps/*"] }),
+    };
+    for (const app of ["admin", "store"]) {
+      for (const [path, content] of Object.entries(viteReactFixture())) {
+        files[`apps/${app}/${path}`] = content;
+      }
+      files[`apps/${app}/src/App.jsx`] = `export default function App() {
+  return <button id="${app}-only" onClick={() => {}}>${app}</button>;
+}`;
+    }
+    const root = fixture(files);
+    const workspace = new RepoWorkspace(root);
+
+    expect(() => selectFrameworkAnalyzer(workspace)).toThrow(
+      AmbiguousProjectError,
+    );
+    const store = await selectFrameworkAnalyzer(workspace, {
+      projectRoot: "apps/store",
+    })!.analyze();
+    expect(store.projectRoot).toBe("apps/store");
+    expect(store.controls).toContainEqual(
+      expect.objectContaining({ selector: "#store-only" }),
+    );
+    expect(store.controls).not.toContainEqual(
+      expect.objectContaining({ selector: "#admin-only" }),
+    );
+    await expect(
+      analyzeRepo(root, { projectRoot: "apps/missing" }),
+    ).rejects.toThrow(SelectedProjectRootError);
+  });
+
+  it("uses dot to select a root Vite app when nested apps also exist", async () => {
+    const files = viteReactFixture();
+    for (const [path, content] of Object.entries(viteReactFixture())) {
+      files[`apps/admin/${path}`] = content;
+    }
+    const root = fixture(files);
+    const analysis = await analyzeRepo(root, { projectRoot: "." });
+    expect(analysis.projectRoot).toBe("");
   });
 });

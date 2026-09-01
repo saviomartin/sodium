@@ -12,7 +12,10 @@ import {
   getSiteForRepository,
 } from "@/lib/queries";
 import { emptyAgentAnalytics } from "@/lib/agent-analytics";
-import { requestAnalysisAction } from "@/lib/actions";
+import {
+  requestAnalysisAction,
+  updateRepositoryProjectRootAction,
+} from "@/lib/actions";
 import { ActionForm, SubmitButton } from "@/components/action-form";
 import { RepositoryIntegration } from "@/components/repository-integration";
 import { AgentAnalyticsDashboard } from "@/components/agent-analytics-dashboard";
@@ -35,6 +38,7 @@ import {
   RunStatusBadge,
   buttonClass,
   frameClass,
+  inputClass,
   secondaryButtonClass,
 } from "@/components/ui";
 import {
@@ -46,6 +50,7 @@ import {
   GithubMarkIcon,
   InfoIcon,
   MagnifyingGlassIcon,
+  PathIcon,
   WarningIcon,
   WarningCircleIcon,
   WrenchIcon,
@@ -112,6 +117,8 @@ export default async function RepositoryPage({
         forms?: number;
         serverActions?: number;
         routeHandlers?: number;
+        framework?: string;
+        projectRoot?: string;
       }
     | undefined;
   const [candidates, publication, analytics] = await Promise.all([
@@ -248,6 +255,65 @@ export default async function RepositoryPage({
               ) : null}
             </div>
           </header>
+
+          <details className={frameClass}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
+              <span className="inline-flex items-center gap-2 font-medium text-neutral-200">
+                <PathIcon aria-hidden className="size-4 text-faint" />
+                Application root
+              </span>
+              <span className="font-mono text-xs text-neutral-400">
+                {repo.project_root ?? "Auto-detect"}
+              </span>
+            </summary>
+            <div className="border-t border-white/10 px-4 py-4">
+              <ActionForm
+                action={updateRepositoryProjectRootAction}
+                className="max-w-xl"
+                successMessage="Application root saved"
+              >
+                <input type="hidden" name="repositoryId" value={repo.id} />
+                <fieldset disabled={Boolean(activeRun)}>
+                  <label
+                    htmlFor="project-root"
+                    className="mb-1.5 block text-sm font-medium text-neutral-200"
+                  >
+                    Repository-relative directory
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      id="project-root"
+                      name="projectRoot"
+                      defaultValue={repo.project_root ?? ""}
+                      placeholder="apps/web"
+                      autoComplete="off"
+                      spellCheck={false}
+                      className={inputClass}
+                    />
+                    <SubmitButton
+                      className={secondaryButtonClass}
+                      pendingText="Checking…"
+                    >
+                      Save
+                    </SubmitButton>
+                  </div>
+                </fieldset>
+                <p className="mt-2 text-xs text-faint text-pretty">
+                  {activeRun
+                    ? "This setting is locked until the active analysis finishes."
+                    : "Leave blank to auto-detect one app. Use . for the repository root, or a path such as apps/web for a monorepo app."}
+                </p>
+                {staticDetail?.framework ? (
+                  <p className="mt-1 text-xs text-neutral-400 text-pretty">
+                    Last successful analysis: {staticDetail.framework}
+                    {staticDetail.projectRoot
+                      ? ` at ${staticDetail.projectRoot}`
+                      : " at repository root"}
+                  </p>
+                ) : null}
+              </ActionForm>
+            </div>
+          </details>
 
           <Card
             title="Proposed tools"

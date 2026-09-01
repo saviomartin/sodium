@@ -169,7 +169,9 @@ async function cloneStage(
   const files = workspace.listFiles();
   let analyzer: ReturnType<typeof selectFrameworkAnalyzer>;
   try {
-    analyzer = selectFrameworkAnalyzer(workspace);
+    analyzer = selectFrameworkAnalyzer(workspace, {
+      projectRoot: run.project_root,
+    });
   } catch (error) {
     throw new StageError(
       "parse_failed",
@@ -201,7 +203,7 @@ async function staticStage(
   run: RunRow,
 ): Promise<StageDetail> {
   const snapshotDir = await ensureSnapshot(ctx, run);
-  const analysis = await analyzeSnapshot(snapshotDir);
+  const analysis = await analyzeSnapshot(snapshotDir, run.project_root);
 
   await uploadArtifact(
     ctx,
@@ -625,16 +627,19 @@ async function downloadAnalysis(
     // Redelivery may land here before the static artifact exists (e.g. bucket
     // wiped). Recompute rather than fail: stages must be self-sufficient.
     const snapshotDir = await ensureSnapshot(ctx, run);
-    return analyzeSnapshot(snapshotDir);
+    return analyzeSnapshot(snapshotDir, run.project_root);
   }
   return analysis;
 }
 
-async function analyzeSnapshot(snapshotDir: string): Promise<StaticAnalysis> {
+async function analyzeSnapshot(
+  snapshotDir: string,
+  projectRoot: string | null,
+): Promise<StaticAnalysis> {
   const workspace = new RepoWorkspace(snapshotDir);
   let analyzer: ReturnType<typeof selectFrameworkAnalyzer>;
   try {
-    analyzer = selectFrameworkAnalyzer(workspace);
+    analyzer = selectFrameworkAnalyzer(workspace, { projectRoot });
   } catch (error) {
     throw new StageError(
       "parse_failed",

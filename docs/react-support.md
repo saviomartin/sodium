@@ -18,12 +18,12 @@ GitHub snapshot
   -> validation, review, publication, loader
 ```
 
-`selectFrameworkAnalyzer()` gives Next.js precedence when a valid App Router
-directory exists. Otherwise it looks for a runnable browser React package. Both
-adapters emit the same `StaticAnalysis` contract: pages, forms, links, controls,
-schemas, auth evidence, warnings, and scan statistics. The worker, AI provider,
-sync comparison, database rows, manifests, and runtime do not branch by
-framework.
+`selectFrameworkAnalyzer()` inventories deployable Next.js and React apps. It
+selects automatically only when exactly one app exists, or resolves the saved
+`Application root` when a repository contains several. Both adapters emit the
+same `StaticAnalysis` contract: pages, forms, links, controls, schemas, auth
+evidence, warnings, and scan statistics. The worker, AI provider, sync
+comparison, database rows, manifests, and runtime do not branch by framework.
 
 Shared code owns TypeScript/JSX parsing, import traversal, form/link/control
 extraction, Zod conversion, authentication signals, deduplication, and selector
@@ -44,8 +44,16 @@ A package is a browser React application only when all of these are true:
 
 This rejects component libraries, React Native-only packages, non-React repos,
 and dependency-only workspace roots. A monorepo containing one React app is
-selected automatically. Multiple independent React apps fail with their exact
-roots instead of silently mixing routes and tools from different sites.
+selected automatically. Integrated Nx Vite applications without app-level
+package manifests are detected from `project.json` and `vite.config.*` plus the
+nearest React-enabled workspace manifest.
+
+Multiple independent apps fail with their exact roots until the repository's
+`Application root` is set to a directory such as `apps/store`. A blank setting
+returns to auto-detection, while `.` explicitly selects a root application.
+Each analysis run snapshots the setting at enqueue time; queued work cannot be
+redirected by a later settings change. Continuous push comparison uses the same
+saved root, so analysis and compatibility checks never mix different apps.
 
 The detector recognizes the build tools the React team recommends for apps
 built without a full-stack framework: Vite, Parcel, and Rsbuild. Existing
@@ -115,8 +123,11 @@ the analyzer. Only the separate QA fixtures are run in a browser.
 | Vite JS/TS/React Compiler             | Detect and analyze from `index.html` plus `src/main.*`              |
 | Create React App                      | Detect from `react-scripts` plus `src/index.*`                      |
 | Rsbuild / Parcel / Webpack            | Detect from package scripts/dependencies and static entry evidence  |
-| One React app in a monorepo           | Select its package root                                             |
-| Multiple React apps                   | Fail with the candidate roots; never combine them                   |
+| One React app in a monorepo           | Select its package root automatically                               |
+| Multiple React apps                   | Require Application root; never combine apps                        |
+| Nx integrated Vite apps               | Detect from project/config files and root React dependencies        |
+| Turbo/pnpm shared React library       | Ignore unless it has a runnable browser entry                       |
+| Missing/stale selected root           | Fail with selected and detected roots                               |
 | Component library                     | Reject: no runnable browser entry                                   |
 | React Native / Expo without React DOM | Reject                                                              |
 | Preact without React                  | Reject rather than misclassify                                      |
