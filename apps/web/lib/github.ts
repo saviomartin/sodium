@@ -108,6 +108,34 @@ export async function resolveRepositoryHead(
   return data.sha;
 }
 
+/** Confirms that a selected application root is a directory at the branch head. */
+export async function verifyRepositoryDirectory(
+  connectionId: string,
+  owner: string,
+  repo: string,
+  ref: string,
+  path: string,
+): Promise<boolean> {
+  const octokit = await storedOctokit(connectionId);
+  try {
+    const { data } = await octokit.request(
+      "GET /repos/{owner}/{repo}/contents/{path}",
+      { owner, repo, path, ref },
+    );
+    return Array.isArray(data);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "status" in error &&
+      error.status === 404
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 const LEGACY_WEBHOOK_HOSTS = new Set(["sodium-webmcp.vercel.app"]);
 
 function isSodiumWebhookUrl(value: unknown, targetUrl: string): boolean {

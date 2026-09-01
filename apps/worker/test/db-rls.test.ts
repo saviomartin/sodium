@@ -35,6 +35,14 @@ const atomicAvailabilityMigration = readFileSync(
   "utf8",
 );
 
+const projectRootMigration = readFileSync(
+  new URL(
+    "../../../supabase/migrations/20260901174956_add_repository_project_root.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+
 /** Runs `fn` in a transaction that is ALWAYS rolled back. */
 async function withRollback(fn: (tx: Tx) => Promise<void>): Promise<void> {
   await sqlRef
@@ -65,6 +73,18 @@ async function ensureAtomicAvailabilityFunction(tx: Tx): Promise<void> {
     ) is not null as exists
   `;
   if (!existing?.exists) await tx.unsafe(atomicAvailabilityMigration);
+}
+
+async function ensureProjectRootMigration(tx: Tx): Promise<void> {
+  const [existing] = await tx<{ exists: boolean }[]>`
+    select exists (
+      select 1 from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'repositories'
+        and column_name = 'project_root'
+    )
+  `;
+  if (!existing?.exists) await tx.unsafe(projectRootMigration);
 }
 
 /**
@@ -258,6 +278,60 @@ describe.skipIf(!DB_URL)("RLS and database security", () => {
       expect(
         await tx`update repositories set name = 'blocked' where id = ${t.acmeRepo} returning id`,
       ).toHaveLength(0);
+    });
+  });
+
+  it("authorizes, validates, and snapshots repository Application root", async () => {
+    await withRollback(async (tx) => {
+      await ensureProjectRootMigration(tx);
+      const t = await seedTenants(tx);
+
+      await actAs(tx, t.carol);
+      await expectError(
+        tx,
+        /permission denied/,
+        (x) =>
+          x`select public.set_repository_project_root(${t.acmeRepo}, 'apps/store', ${t.carol})`,
+      );
+
+      await actAsService(tx);
+      await expectError(
+        tx,
+        /repository not found/,
+        (x) =>
+          x`select public.set_repository_project_root(${t.acmeRepo}, 'apps/store', ${t.carol})`,
+      );
+      await expectError(
+        tx,
+        /project_root_valid/,
+        (x) =>
+          x`update repositories set project_root = '../store' where id = ${t.acmeRepo}`,
+      );
+      await tx`select public.set_repository_project_root(${t.acmeRepo}, 'apps/store', ${t.alice})`;
+
+      const [commit] = await tx<{ id: string }[]>`
+        insert into repository_commits (repository_id, org_id, sha)
+        values (${t.acmeRepo}, ${t.acmeOrg}, ${"a".repeat(40)})
+        returning id
+      `;
+      const [run] = await tx<{ id: string; project_root: string | null }[]>`
+        insert into analysis_runs (repository_id, org_id, commit_id)
+        values (${t.acmeRepo}, ${t.acmeOrg}, ${commit!.id})
+        returning id, project_root
+      `;
+      expect(run!.project_root).toBe("apps/store");
+      await expectError(
+        tx,
+        /active analysis/,
+        (x) =>
+          x`select public.set_repository_project_root(${t.acmeRepo}, 'apps/admin', ${t.alice})`,
+      );
+      const [audit] = await tx<{ data: { after: string } }[]>`
+        select data from audit_events
+        where subject_id = ${t.acmeRepo}
+          and action = 'repository.project_root_changed'
+      `;
+      expect(audit!.data.after).toBe("apps/store");
     });
   });
 

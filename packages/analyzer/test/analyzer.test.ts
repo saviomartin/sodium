@@ -1,12 +1,15 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   analyzeNextJsRepo,
+  AmbiguousProjectError,
   detectAppDir,
+  detectAppDirs,
   parseAppPath,
   RepoWorkspace,
+  selectFrameworkAnalyzer,
   type StaticAnalysis,
 } from "../src/index";
 import { writeFixtureRepo } from "./fixture-repo";
@@ -61,6 +64,39 @@ describe("Next.js project detection", () => {
         "apps/web/src/app/page.tsx",
       ]),
     ).toBe("apps/web/src/app");
+  });
+
+  it("selects the requested Next.js app without falling back to the first app", async () => {
+    const monorepo = mkdtempSync(join(tmpdir(), "sodium-next-monorepo-"));
+    try {
+      for (const app of ["admin", "store"]) {
+        const appRoot = join(monorepo, "apps", app);
+        mkdirSync(join(appRoot, "app"), { recursive: true });
+        writeFileSync(
+          join(appRoot, "package.json"),
+          JSON.stringify({ dependencies: { next: "latest", react: "latest" } }),
+        );
+        writeFileSync(
+          join(appRoot, "app", "page.tsx"),
+          `export default function Page() { return <p>${app}</p>; }`,
+        );
+      }
+      const workspace = new RepoWorkspace(monorepo);
+      expect(detectAppDirs(workspace.listSourceFiles())).toEqual([
+        "apps/admin/app",
+        "apps/store/app",
+      ]);
+      expect(() => selectFrameworkAnalyzer(workspace)).toThrow(
+        AmbiguousProjectError,
+      );
+      const analysis = await selectFrameworkAnalyzer(workspace, {
+        projectRoot: "apps/store",
+      })!.analyze();
+      expect(analysis.projectRoot).toBe("apps/store");
+      expect(analysis.routes[0]?.span.filePath).toBe("apps/store/app/page.tsx");
+    } finally {
+      rmSync(monorepo, { recursive: true, force: true });
+    }
   });
 });
 

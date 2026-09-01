@@ -29,6 +29,11 @@ import {
 
 /** Finds the App Router directory ("app" or "src/app"), or null. */
 export function detectAppDir(files: string[]): string | null {
+  return detectAppDirs(files)[0] ?? null;
+}
+
+/** Finds every independently deployable App Router directory. */
+export function detectAppDirs(files: string[]): string[] {
   const fileSet = new Set(files);
   const candidates = new Set<string>();
   for (const file of files) {
@@ -56,17 +61,16 @@ export function detectAppDir(files: string[]): string | null {
     );
     if (fileSet.has(packagePath) || hasConfig) candidates.add(appDir);
   }
-  return (
-    [...candidates].sort((a, b) => {
-      const depth = a.split("/").length - b.split("/").length;
-      return depth || a.localeCompare(b);
-    })[0] ?? null
-  );
+  return [...candidates].sort((a, b) => {
+    const depth = a.split("/").length - b.split("/").length;
+    return depth || a.localeCompare(b);
+  });
 }
 
 export class NextJsAnalyzer {
   readonly framework = "nextjs";
   readonly detection;
+  private readonly appDir: string;
 
   constructor(
     private readonly workspace: RepoWorkspace,
@@ -77,6 +81,7 @@ export class NextJsAnalyzer {
         "not a Next.js App Router repository (no app/ or src/app/ with route files)",
       );
     }
+    this.appDir = appDir;
     this.detection = {
       framework: this.framework,
       projectRoot: projectRootForAppDir(appDir),
@@ -86,7 +91,7 @@ export class NextJsAnalyzer {
 
   async analyze(): Promise<StaticAnalysis> {
     const allFiles = this.workspace.listSourceFiles();
-    const appDir = detectAppDir(allFiles)!;
+    const appDir = this.appDir;
     const projectRoot = projectRootForAppDir(appDir);
     const files = filesWithinProject(allFiles, projectRoot);
 

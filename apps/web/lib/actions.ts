@@ -18,6 +18,7 @@ import {
   createRepositoryWebhook,
   listGithubRepositories,
   resolveRepositoryHead,
+  verifyRepositoryDirectory,
 } from "./github";
 import { siteUrl } from "./env";
 import { hasPaidRepositoryAccess } from "./billing-state";
@@ -26,6 +27,7 @@ import {
   createRepositoryCheckout,
   createRepositoryPortal,
 } from "./stripe";
+import { normalizeProjectRoot } from "./project-root";
 
 const siteIdAlphabet = customAlphabet(
   "abcdefghijklmnopqrstuvwxyz0123456789",
@@ -443,6 +445,77 @@ export async function selectRepositoryAction(
 // ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
+
+export async function updateRepositoryProjectRootAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const repositoryId = z
+    .string()
+    .uuid()
+    .safeParse(formData.get("repositoryId"));
+  if (!repositoryId.success) return { ok: false, error: "invalid repository" };
+  const projectRoot = normalizeProjectRoot(formData.get("projectRoot"));
+  if (!projectRoot.ok) return { ok: false, error: projectRoot.error };
+
+  const supabase = await createClient();
+  const { data: repository, error: repositoryError } = await supabase
+    .from("repositories")
+    .select(
+      "id, org_id, owner, name, default_branch, github_connection_id, project_root",
+    )
+    .eq("id", repositoryId.data)
+    .maybeSingle();
+  if (repositoryError) return { ok: false, error: repositoryError.message };
+  if (!repository) return { ok: false, error: "repository not found" };
+
+  const gate = await requireOrgRole(repository.org_id, ["owner", "admin"]);
+  if ("error" in gate) return { ok: false, error: gate.error };
+  if (projectRoot.value === repository.project_root) {
+    return { ok: true, error: "Application root is already up to date" };
+  }
+
+  if (projectRoot.value && projectRoot.value !== ".") {
+    if (!repository.github_connection_id) {
+      return {
+        ok: false,
+        error: "GitHub connection is unavailable; reconnect it and try again",
+      };
+    }
+    try {
+      const exists = await verifyRepositoryDirectory(
+        repository.github_connection_id,
+        repository.owner,
+        repository.name,
+        repository.default_branch,
+        projectRoot.value,
+      );
+      if (!exists) {
+        return {
+          ok: false,
+          error: `Directory ${projectRoot.value} was not found on ${repository.default_branch}`,
+        };
+      }
+    } catch {
+      return {
+        ok: false,
+        error: "GitHub could not verify that Application root",
+      };
+    }
+  }
+
+  const { error } = await createServiceClient().rpc(
+    "set_repository_project_root",
+    {
+      p_repository_id: repository.id,
+      p_project_root: projectRoot.value,
+      p_actor: gate.userId,
+    },
+  );
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/repos/${repository.id}`);
+  return { ok: true };
+}
 
 export async function requestAnalysisAction(
   _prev: ActionResult | null,

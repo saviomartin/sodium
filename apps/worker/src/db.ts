@@ -43,12 +43,13 @@ export interface RunRow {
   repo_name: string;
   default_branch: string;
   github_connection_id: string;
+  project_root: string | null;
 }
 
 export async function loadRun(sql: Sql, runId: string): Promise<RunRow | null> {
   const rows = await sql<RunRow[]>`
     select r.id, r.repository_id, r.org_id, r.commit_id, r.status, r.stage,
-           r.stage_statuses, c.sha,
+           r.stage_statuses, r.project_root, c.sha,
            repo.full_name as repo_full_name, repo.owner as repo_owner, repo.name as repo_name,
            repo.default_branch,
            repo.github_connection_id
