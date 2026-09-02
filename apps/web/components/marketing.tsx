@@ -125,8 +125,7 @@ export function MarketingSections() {
       <Section
         id="features"
         tone="light"
-        title="Built like the rest of your toolchain"
-        blurb="No dashboard to configure, no repository to upload, no analysis queue to wait on. Your agent surface is a file you review, deploy, and roll back the way you already do everything else."
+        title="A billion new customers with one line of code"
       >
         <LandingFeatures />
       </Section>

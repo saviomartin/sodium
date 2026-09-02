@@ -32,13 +32,13 @@ const STEPS: [Step, Step] = [
     command: "npx sodiumtools init",
     title: "Install and declare",
     detail:
-      "Detects your framework, adds the SDK, and writes a sodium.json you can edit yourself or hand to your coding agent.",
+      "Detects your framework, adds the SDK, and writes sodium.json.",
   },
   {
     command: "npx sodiumtools deploy",
     title: "Publish",
     detail:
-      "Validates the contract and publishes a version. Every WebMCP agent that opens your app can now use those tools.",
+      "Validates and publishes a signed version. Your tools go live.",
   },
 ];
 
@@ -111,7 +111,7 @@ export function CommandTimeline({ className }: { className?: string }) {
                     <code className="font-mono text-neutral-300">
                       sodium.json
                     </code>
-                    : your tools, in your repo, reviewed like any other file
+                    : your tools, in your repo
                   </span>
                 </p>
               )}
@@ -130,9 +130,9 @@ export function CommandTimeline({ className }: { className?: string }) {
           className="mt-0.5 size-4 shrink-0 text-emerald-400"
         />
         <p className="text-sm leading-6 text-neutral-300 text-pretty">
-          <span className="font-medium text-neutral-100">Done.</span> AI agents
-          can use your site now. Agent analytics, versioned deploys and answer
-          engine referrals all come with it.
+          <span className="font-medium text-neutral-100">Done!</span> AI agents
+          can understand and interact with your site. Agent analytics and AEO
+          features built-in.
         </p>
       </li>
     </ol>

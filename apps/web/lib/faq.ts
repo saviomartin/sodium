@@ -5,51 +5,54 @@
  * them: the FAQ section on the page, and the FAQPage block in the page's
  * structured data. Structured data has to describe what a reader actually
  * sees, so both have to come from one list.
+ *
+ * Keep answers to one or two short sentences. This is the page's reference
+ * section, not its documentation, and a reader scanning the list will not
+ * read a paragraph of any of them.
  */
 export const FAQ = [
   {
     question: "What is WebMCP?",
     answer:
-      "A way for a website to hand AI agents a set of typed tools instead of making them guess at your buttons. The agent asks the page what it can do, and the page answers. It is being standardized at the W3C, and Sodium is how you ship it.",
+      "A way for your site to hand AI agents typed tools instead of making them guess at your buttons. It is being standardized at the W3C.",
   },
   {
-    question: "What does Sodium actually add to my app?",
+    question: "What does Sodium add to my app?",
     answer:
-      "A sodium.json file that declares your tools, and a small SDK that registers them with the browser. Both live in your repository. Your handlers stay in your own code.",
+      "A sodium.json that declares your tools, and a small SDK that registers them with the browser. Both live in your repo.",
   },
   {
     question: "Does my code run on Sodium's servers?",
     answer:
-      "No. Tools execute in your app, in the visitor's browser. Sodium stores the published contract and the aggregate telemetry your app reports, and nothing else.",
+      "No. Your tools run in your app, in the visitor's browser. Sodium stores the published contract and aggregate telemetry.",
   },
   {
     question: "Which frameworks are supported?",
     answer:
-      "Next.js App Router, and browser React apps built with Vite, Create React App, Rsbuild, Parcel, or Webpack. The CLI detects which one you have during init.",
+      "All of them. Next.js, Nuxt, SvelteKit, Astro, Angular, Vite, or anything else that runs in a browser.",
   },
   {
-    question: "How do I control what agents are allowed to do?",
+    question: "How do I control what agents can do?",
     answer:
-      "Every tool declares a risk level, and the risk level sets the floor for how much the browser must confirm with the user. A destructive or financial tool cannot be published without a required confirmation.",
+      "Every tool declares a risk level, and risk sets the confirmation the browser must ask for. Destructive and financial tools always prompt.",
   },
   {
-    question: "Which agents can use the tools?",
+    question: "Which AI agents can use the tools?",
     answer:
-      "Any WebMCP-capable browser agent, while your app is open. That already includes ChatGPT's browser and Chrome, with others close behind.",
+      "Any WebMCP-capable browser agent, while your app is open. That already includes ChatGPT's browser and Chrome.",
+  },
+  {
+    question: "What happens when my website changes?",
+    answer:
+      "Ask your AI to update sodium.json. It reads your app and edits the file, the same way it wrote it.",
   },
   {
     question: "What happens when I change a tool?",
     answer:
-      "Deploy again. The SDK will not register an undeployed or changed contract. Each deploy publishes a new immutable version and signs the exact tool behavior and origins, so you can see exactly which version was live when a call was made.",
+      "Deploy again. Each deploy publishes a signed, immutable version, and the SDK will not register a contract you have not deployed.",
   },
   {
-    question: "What does Sodium record about my users?",
-    answer:
-      "Tool names, outcomes, and timing. Never prompts, tool inputs, tool outputs, page content, or anything that identifies a visitor.",
-  },
-  {
-    question: "How do I remove Sodium?",
-    answer:
-      "Delete sodium.json, remove the SDK call, and delete the project from your dashboard. That removes the contract and every event with it.",
+    question: "How much does Sodium cost?",
+    answer: "Nothing. Sodium is free during beta.",
   },
 ] as const;

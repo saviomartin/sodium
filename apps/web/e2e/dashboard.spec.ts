@@ -40,12 +40,10 @@ test("signed-out home explains the file-first workflow", async ({ page }) => {
   await expect(
     page.getByText("npx sodiumtools deploy", { exact: true }).first(),
   ).toBeVisible();
-  await expect(
-    page.getByText(/never requests repository access/),
-  ).toBeVisible();
+  // The hero no longer carries a privacy line; the footer is where it lives.
+  await expect(page.getByText(/never on Sodium/)).toBeVisible();
   await expect(page.getByRole("heading", { name: "FAQ" })).toBeVisible();
-  // The two features that are designed but not yet wired still have to be
-  // findable, because the marketing page makes a promise about them.
+  // Both feature cards the marketing page promises have to stay findable.
   await expect(
     page.getByRole("heading", { name: "Immutable deployment history" }),
   ).toBeVisible();

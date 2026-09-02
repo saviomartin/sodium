@@ -84,14 +84,16 @@ export default async function Home({
             </p>
           </header>
 
-          {projects.length === 0 ? (
-            /*
-             * Nothing deployed: one box that says what is missing and then how
-             * to fix it, centred, with no panel title. Two boxes and a heading
-             * would be chrome around a single idea, and the state is temporary
-             * by definition — the first deploy replaces it with the list.
-             */
-            <div className={cn(frameClass, "mt-6 overflow-hidden")}>
+          {/*
+           * One box, two bands: what you have, then how to add to it.
+           *
+           * These used to be two stacked frames, which read as two unrelated
+           * things when they are one idea — your projects, and the commands
+           * that make another. A hairline separates them instead, the way the
+           * panels everywhere else in the app separate a title from a body.
+           */}
+          <div className={cn(frameClass, "mt-6 overflow-hidden")}>
+            {projects.length === 0 ? (
               <div className="px-6 pt-10 pb-8 text-center">
                 <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-white/[0.06] text-neutral-300">
                   <CubeIcon aria-hidden className="size-5" />
@@ -100,49 +102,48 @@ export default async function Home({
                   No projects yet
                 </p>
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-400 text-pretty">
-                  Sodium creates a project the first time you deploy. Run these
-                  two commands in the app you want agents to be able to use.
+                  Sodium creates a project the first time you deploy.
                 </p>
               </div>
-              <div className="border-t border-white/[0.07] px-5 pt-6 pb-7 sm:px-7">
-                <CommandTimeline className="mx-auto max-w-2xl" />
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className={cn(frameClass, "mt-6 overflow-hidden")}>
-                <ProjectList projects={projects} />
-              </div>
+            ) : (
+              <ProjectList projects={projects} />
+            )}
 
-              {/* The same timeline the landing page teaches, in the same
-                  frame. Someone who has deployed once still needs the two
-                  commands for the next app, and they should not have to
-                  remember them. */}
-              <section
-                className={cn(frameClass, "mt-4 overflow-hidden")}
-                aria-labelledby="deploy-another-title"
-              >
-                <header className="flex items-center gap-2 border-b border-white/[0.07] px-5 py-3">
+            <section
+              className="border-t border-white/[0.07]"
+              aria-labelledby="deploy-another-title"
+            >
+              {/* The empty state above has already said what to do, so it
+                  carries no second heading. With a list above, this strip is
+                  what tells you the commands below are for a different app. */}
+              {projects.length > 0 && (
+                <header className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
                   <TerminalWindowIcon
                     aria-hidden
-                    className="size-4 text-faint"
+                    className="size-3.5 text-faint"
                   />
                   <h2
                     id="deploy-another-title"
-                    className="text-sm font-medium text-neutral-100"
+                    className="text-xs font-medium tracking-[0.08em] text-faint uppercase"
                   >
                     Deploy another app
                   </h2>
                 </header>
-                <div className="px-5 py-6 sm:px-7">
-                  {/* Capped to the measure the landing page gives it. A short
-                      command stretched across the full content column reads as
-                      a wide empty box rather than as a command. */}
-                  <CommandTimeline className="max-w-2xl" />
-                </div>
-              </section>
-            </>
-          )}
+              )}
+              <div className="px-5 pt-6 pb-7 sm:px-7">
+                {/* Capped to the measure the landing page gives it, and left
+                    aligned so the step markers line up with the strip label
+                    above and the project rows above that. Centring it inside a
+                    wider box left it floating out of that column. */}
+                <CommandTimeline className="max-w-2xl" />
+              </div>
+              {projects.length === 0 && (
+                <h2 id="deploy-another-title" className="sr-only">
+                  Deploy your first app
+                </h2>
+              )}
+            </section>
+          </div>
         </div>
 
         <MarketingSections />
