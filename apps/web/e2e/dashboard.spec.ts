@@ -1,6 +1,29 @@
-import { createHash } from "node:crypto";
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  randomBytes,
+} from "node:crypto";
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { compileSodiumConfig } from "sodium-webmcp-spec";
+import { verifySignedDeploymentReceipt } from "sodium-webmcp-spec/signing";
 import { adminClient, readState, signIn } from "./helpers";
+
+const developmentSigningKey = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../packages/runtime/keys/dev-deployment-key.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as { privateKeyPem: string };
+const developmentPublicKey = createPublicKey(
+  createPrivateKey(developmentSigningKey.privateKeyPem),
+)
+  .export({ type: "spki", format: "pem" })
+  .toString();
 
 test.describe.configure({ mode: "serial" });
 
@@ -253,4 +276,144 @@ test("device authorization binds one valid CLI request to the signed-in user", a
     .single();
   expect(authorized?.user_id).toBe(users.owner.id);
   expect(authorized?.authorized_at).not.toBeNull();
+});
+
+test("device authorization requires sign-in before approval", async ({
+  page,
+}) => {
+  const { users } = readState();
+  const admin = adminClient();
+  const code = "AUTH-TEST";
+  const { data: request, error } = await admin
+    .from("cli_auth_requests")
+    .insert({
+      device_hash: createHash("sha256")
+        .update(crypto.randomUUID())
+        .digest("hex"),
+      user_code: code,
+      expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error || !request) throw error;
+
+  await page.context().clearCookies();
+  await page.goto(`/activate?code=${code}`);
+  await expect(
+    page.getByRole("heading", { name: "Sign in before authorizing" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Authorize this device" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Continue with Google" }),
+  ).toBeVisible();
+
+  const { data: before } = await admin
+    .from("cli_auth_requests")
+    .select("user_id, authorized_at")
+    .eq("id", request.id)
+    .single();
+  expect(before).toEqual({ user_id: null, authorized_at: null });
+
+  await signIn(page, users.owner.email, `/activate?code=${code}`);
+  await expect(
+    page.getByRole("button", { name: "Authorize this device" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Authorize this device" }).click();
+  await expect(
+    page.getByRole("heading", { name: "CLI authorized" }),
+  ).toBeVisible();
+});
+
+test("deployment API persists and returns a verifiable signed receipt", async ({
+  page,
+}) => {
+  const { users } = readState();
+  const admin = adminClient();
+  const apiToken = `sod_cli_${randomBytes(32).toString("base64url")}`;
+  const { error: tokenError } = await admin.from("api_tokens").insert({
+    owner_id: users.owner.id,
+    token_hash: createHash("sha256").update(apiToken).digest("hex"),
+    last_four: apiToken.slice(-4),
+  });
+  if (tokenError) throw tokenError;
+
+  const projectResponse = await page.request.post("/api/v1/projects", {
+    headers: { authorization: `Bearer ${apiToken}` },
+    data: { name: `Signed fixture ${Date.now().toString(36)}` },
+  });
+  expect(projectResponse.status()).toBe(200);
+  const project = (await projectResponse.json()) as { projectId: string };
+  expect(project.projectId).toMatch(/^prj_[a-z0-9]{12}$/);
+
+  const config = {
+    schemaVersion: 1,
+    app: {
+      name: "Signed fixture",
+      origins: ["https://fixture.example"],
+    },
+    tools: [
+      {
+        id: "tl_signed01",
+        name: "read_status",
+        description: "Reads the current fixture status from the visible page.",
+        run: {
+          extract: { fields: [{ name: "status", selector: "#status" }] },
+        },
+        risk: "read_only",
+      },
+    ],
+  };
+  const configHash = createHash("sha256")
+    .update(JSON.stringify(compileSodiumConfig(config)))
+    .digest("hex");
+
+  const mismatch = await page.request.post(
+    `/api/v1/projects/${project.projectId}/deployments`,
+    {
+      headers: { authorization: `Bearer ${apiToken}` },
+      data: { config, configHash: "0".repeat(64) },
+    },
+  );
+  expect(mismatch.status()).toBe(409);
+
+  const deploymentResponse = await page.request.post(
+    `/api/v1/projects/${project.projectId}/deployments`,
+    {
+      headers: { authorization: `Bearer ${apiToken}` },
+      data: { config, configHash },
+    },
+  );
+  expect(deploymentResponse.status()).toBe(200);
+  const deployment = (await deploymentResponse.json()) as {
+    id: string;
+    version: number;
+    configHash: string;
+    receipt: unknown;
+  };
+  expect(deployment).toMatchObject({ version: 1, configHash });
+  expect(
+    verifySignedDeploymentReceipt(deployment.receipt, developmentPublicKey),
+  ).toEqual({
+    receiptVersion: 1,
+    projectId: project.projectId,
+    deploymentId: deployment.id,
+    version: 1,
+    configHash,
+    origins: config.app.origins,
+  });
+
+  const { data: persisted, error: persistedError } = await admin
+    .from("deployments")
+    .select("id, version, config_hash, tool_count")
+    .eq("id", deployment.id)
+    .single();
+  if (persistedError) throw persistedError;
+  expect(persisted).toEqual({
+    id: deployment.id,
+    version: 1,
+    config_hash: configHash,
+    tool_count: 1,
+  });
 });

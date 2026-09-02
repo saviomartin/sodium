@@ -218,9 +218,9 @@ describe("agent-assisted init", () => {
         details: expect.arrayContaining([["Application", "Browser app"]]),
       }),
     );
-    await expect(readFile(join(cwd, ".sodium/project.json"), "utf8")).resolves.toBe(
-      "null\n",
-    );
+    await expect(
+      readFile(join(cwd, ".sodium/project.json"), "utf8"),
+    ).resolves.toBe("null\n");
   });
 
   it("hands an existing sodium.json without browser wiring back to the coding agent", async () => {
@@ -276,6 +276,12 @@ describe("integration verification", () => {
           id: "dep_abcdefghijklmnop",
           version: 3,
           configHash: configHash(await readSodiumConfig(cwd)),
+          receipt: {
+            algorithm: "Ed25519",
+            keyId: "key_test",
+            payload: "e30",
+            signature: "c2ln",
+          },
         },
       }),
     );
@@ -306,10 +312,7 @@ describe("integration verification", () => {
     expect(context.result).toHaveBeenCalledWith(
       expect.objectContaining({
         details: expect.arrayContaining([
-          [
-            "Browser",
-            "1 tool registered at https://app.example/products/1",
-          ],
+          ["Browser", "1 tool registered at https://app.example/products/1"],
         ]),
       }),
     );
@@ -322,6 +325,28 @@ describe("integration verification", () => {
 
     await expect(doctorCommand(context)).rejects.toThrow(
       "No deployment found. Run npx sodiumtools deploy.",
+    );
+  });
+
+  it("requires older unsigned deployments to be deployed again", async () => {
+    const { cwd } = await integratedFixture();
+    await writeFile(
+      join(cwd, ".sodium/project.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        projectId: "prj_abcdefghijkl",
+        publishableKey: `sod_pk_${"a".repeat(32)}`,
+        endpoint: "https://sodium.result.dev",
+        deployment: {
+          id: "dep_abcdefghijklmnop",
+          version: 1,
+          configHash: configHash(await readSodiumConfig(cwd)),
+        },
+      }),
+    );
+
+    await expect(doctorCommand(contextFor(cwd))).rejects.toThrow(
+      "The deployment predates signed receipts. Run npx sodiumtools deploy.",
     );
   });
 });

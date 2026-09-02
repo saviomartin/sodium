@@ -1,6 +1,6 @@
 {
   "name": "sodium-webmcp-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local WebMCP runtime and telemetry SDK for Sodium",
   "type": "module",
   "files": [
@@ -19,6 +19,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs && tsc -p tsconfig.build.json",
+    "prepack": "node scripts/build.mjs --release && tsc -p tsconfig.build.json",
     "lint": "eslint --max-warnings 0 src test",
     "check-types": "tsc --noEmit",
     "test": "vitest run"

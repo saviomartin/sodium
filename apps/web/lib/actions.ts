@@ -5,11 +5,7 @@ import { z } from "zod";
 import { createClient } from "./supabase/server";
 import { createServiceClient } from "./supabase/service";
 import { siteUrl } from "./env";
-
-function safeNext(value: FormDataEntryValue | null): string {
-  const next = typeof value === "string" ? value : "/";
-  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
-}
+import { pathWithError, safeNextPath } from "./safe-next";
 
 type OAuthProvider = "github" | "google";
 
@@ -17,7 +13,7 @@ async function signInWithOAuthAction(
   provider: OAuthProvider,
   formData: FormData,
 ): Promise<void> {
-  const next = safeNext(formData.get("next"));
+  const next = safeNextPath(formData.get("next"));
   const supabase = await createClient();
   const callback = new URL("/auth/callback", siteUrl());
   callback.searchParams.set("next", next);
@@ -25,10 +21,10 @@ async function signInWithOAuthAction(
     provider,
     options: { redirectTo: callback.toString() },
   });
-  if (error || !data.url)
-    redirect(
-      `/?error=${encodeURIComponent(error?.message ?? "Sign in failed")}`,
-    );
+  if (error || !data.url) {
+    const key = next.startsWith("/activate") ? "authError" : "error";
+    redirect(pathWithError(next, key, error?.message ?? "Sign in failed"));
+  }
   redirect(data.url);
 }
 
@@ -54,12 +50,16 @@ export async function authorizeCliAction(formData: FormData): Promise<void> {
   const code = String(formData.get("code") ?? "")
     .trim()
     .toUpperCase();
+  if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) {
+    redirect("/activate?error=invalid");
+  }
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user)
-    redirect(`/login?next=${encodeURIComponent(`/activate?code=${code}`)}`);
+  if (!user) {
+    redirect(`/activate?code=${encodeURIComponent(code)}&authError=required`);
+  }
   const service = createServiceClient();
   const { data, error } = await service
     .from("cli_auth_requests")

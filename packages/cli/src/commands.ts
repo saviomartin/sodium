@@ -202,8 +202,8 @@ async function authenticatedApi(context: CommandContext): Promise<SodiumApi> {
   const opened = await context.open(login.verificationUrl);
   context.info(
     opened
-      ? `Browser opened · enter code ${login.userCode}`
-      : `Open ${login.verificationUrl} · enter code ${login.userCode}`,
+      ? `Browser opened · sign in, then approve code ${login.userCode}`
+      : `Open ${login.verificationUrl} · sign in, then approve code ${login.userCode}`,
   );
   const progress = context.progress("Waiting for browser authorization");
   const deadline = Date.now() + login.expiresIn * 1000;
@@ -628,10 +628,14 @@ async function liveBrowserSmoke(
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error("--url must be a valid http:// or https:// application URL");
+    throw new Error(
+      "--url must be a valid http:// or https:// application URL",
+    );
   }
   if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("--url must be a valid http:// or https:// application URL");
+    throw new Error(
+      "--url must be a valid http:// or https:// application URL",
+    );
   }
   if (!(await context.hasCommand("agent-browser"))) {
     throw new Error(
@@ -700,6 +704,11 @@ export async function doctorCommand(
     }
     if (!project.deployment) {
       throw new Error(`No deployment found. Run ${SODIUM_COMMAND} deploy.`);
+    }
+    if (!project.deployment.receipt) {
+      throw new Error(
+        `The deployment predates signed receipts. Run ${SODIUM_COMMAND} deploy.`,
+      );
     }
     if (configHash(config) !== project.deployment.configHash) {
       throw new Error(

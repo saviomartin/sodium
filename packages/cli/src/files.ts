@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import {
   SodiumProjectSchema,
+  compileSodiumConfig,
   validateSodiumConfig,
   type SodiumConfig,
   type SodiumProject,
@@ -59,7 +60,8 @@ export async function writeProject(
 ): Promise<void> {
   const path = join(cwd, PROJECT_FILE);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(project, null, 2)}\n`, {
+  const validated = SodiumProjectSchema.parse(project);
+  await writeFile(path, `${JSON.stringify(validated, null, 2)}\n`, {
     mode: 0o644,
   });
 }
@@ -117,7 +119,9 @@ export async function writeInit(cwd: string, value: SodiumInit): Promise<void> {
 }
 
 export function configHash(config: SodiumConfig): string {
-  return createHash("sha256").update(JSON.stringify(config)).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(compileSodiumConfig(config)))
+    .digest("hex");
 }
 
 interface UserConfig {

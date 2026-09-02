@@ -1,4 +1,10 @@
-import type { SodiumConfig, SodiumProject } from "sodium-webmcp-spec";
+import {
+  SodiumDeploymentSchema,
+  SodiumProjectSchema,
+  type SodiumConfig,
+  type SodiumDeployment,
+  type SodiumProject,
+} from "sodium-webmcp-spec";
 
 export class SodiumApiError extends Error {
   constructor(
@@ -60,25 +66,34 @@ export class SodiumApi {
     return this.request("/api/cli/me");
   }
 
-  createProject(name: string): Promise<SodiumProject> {
-    return this.request("/api/v1/projects", {
+  async createProject(name: string): Promise<SodiumProject> {
+    const result = await this.request<unknown>("/api/v1/projects", {
       method: "POST",
       body: JSON.stringify({ name }),
     });
+    const parsed = SodiumProjectSchema.safeParse(result);
+    if (!parsed.success) {
+      throw new Error("Sodium API returned an invalid project");
+    }
+    return parsed.data;
   }
 
-  deploy(
+  async deploy(
     projectId: string,
     config: SodiumConfig,
     hash: string,
-  ): Promise<{
-    id: string;
-    version: number;
-    configHash: string;
-  }> {
-    return this.request(`/api/v1/projects/${projectId}/deployments`, {
-      method: "POST",
-      body: JSON.stringify({ config, configHash: hash }),
-    });
+  ): Promise<SodiumDeployment> {
+    const result = await this.request<unknown>(
+      `/api/v1/projects/${projectId}/deployments`,
+      {
+        method: "POST",
+        body: JSON.stringify({ config, configHash: hash }),
+      },
+    );
+    const parsed = SodiumDeploymentSchema.safeParse(result);
+    if (!parsed.success || !parsed.data.receipt) {
+      throw new Error("Sodium API returned an unsigned deployment");
+    }
+    return parsed.data;
   }
 }

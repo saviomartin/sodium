@@ -45,7 +45,11 @@ export function readState(): E2eState {
  * (the standard @supabase/ssr token-hash verifier) turns it into a real
  * cookie session — the same machinery emailed links use in production.
  */
-export async function signIn(page: Page, email: string): Promise<void> {
+export async function signIn(
+  page: Page,
+  email: string,
+  next = "/",
+): Promise<void> {
   const admin = adminClient();
   const { data, error } = await admin.auth.admin.generateLink({
     type: "magiclink",
@@ -58,7 +62,9 @@ export async function signIn(page: Page, email: string): Promise<void> {
   }
   await page.context().clearCookies();
   await page.goto(
-    `/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink&next=/`,
+    `/auth/confirm?token_hash=${encodeURIComponent(data.properties.hashed_token)}&type=magiclink&next=${encodeURIComponent(next)}`,
   );
-  await page.waitForURL(/\/$/);
+  await page.waitForURL(
+    new RegExp(`${next.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+  );
 }

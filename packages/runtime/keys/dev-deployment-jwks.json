@@ -1,0 +1,7 @@
+{
+  "dev-insecure-1": {
+    "crv": "Ed25519",
+    "x": "7e0Fb_cIod4n1cyJaOLtBbvuIdvSlJcbGkISs35yg-Y",
+    "kty": "OKP"
+  }
+}

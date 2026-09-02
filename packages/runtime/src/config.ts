@@ -77,11 +77,10 @@ function handlerFromRun(run: AuthoredRun): HandlerBinding {
 }
 
 function titleFromName(name: string): string {
-  return name
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
+  const words = name.split("_").filter(Boolean);
+  if (words.length === 0) return name;
+  const [first, ...rest] = words as [string, ...string[]];
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
 function compileTool(tool: SodiumTool): CompiledTool {

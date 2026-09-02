@@ -6,7 +6,11 @@ describe("Sodium API", () => {
     const fetcher = vi.fn(async () =>
       Response.json({ id: "user-1", email: "dev@example.com" }),
     );
-    const api = new SodiumApi("https://sodium.example", "sod_cli_token", fetcher);
+    const api = new SodiumApi(
+      "https://sodium.example",
+      "sod_cli_token",
+      fetcher,
+    );
 
     await expect(api.me()).resolves.toEqual({
       id: "user-1",
@@ -26,7 +30,8 @@ describe("Sodium API", () => {
     const api = new SodiumApi(
       "https://sodium.example",
       "sod_cli_token",
-      async () => Response.json({ error: "invalid API token" }, { status: 401 }),
+      async () =>
+        Response.json({ error: "invalid API token" }, { status: 401 }),
     );
 
     await expect(api.me()).rejects.toEqual(
@@ -36,5 +41,53 @@ describe("Sodium API", () => {
         status: 401,
       }),
     );
+  });
+
+  it("accepts only a signed deployment response", async () => {
+    const response = {
+      id: "dep_abcdefghijklmnop",
+      version: 1,
+      configHash: "a".repeat(64),
+      receipt: {
+        algorithm: "Ed25519",
+        keyId: "key_test",
+        payload: "e30",
+        signature: "c2ln",
+      },
+    };
+    const api = new SodiumApi(
+      "https://sodium.example",
+      "sod_cli_token",
+      async () => Response.json(response),
+    );
+
+    await expect(
+      api.deploy(
+        "prj_abcdefghijkl",
+        {} as Parameters<SodiumApi["deploy"]>[1],
+        "a".repeat(64),
+      ),
+    ).resolves.toEqual(response);
+  });
+
+  it("rejects an unsigned deployment response", async () => {
+    const api = new SodiumApi(
+      "https://sodium.example",
+      "sod_cli_token",
+      async () =>
+        Response.json({
+          id: "dep_abcdefghijklmnop",
+          version: 1,
+          configHash: "a".repeat(64),
+        }),
+    );
+
+    await expect(
+      api.deploy(
+        "prj_abcdefghijkl",
+        {} as Parameters<SodiumApi["deploy"]>[1],
+        "a".repeat(64),
+      ),
+    ).rejects.toThrow("Sodium API returned an unsigned deployment");
   });
 });

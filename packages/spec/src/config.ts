@@ -24,6 +24,7 @@ import {
   type RiskLevel,
 } from "./risk";
 import { JsonSchemaSubsetSchema, type JsonSchemaSubset } from "./json-schema";
+import { SignedDeploymentReceiptSchema } from "./deployment";
 
 export const SODIUM_SCHEMA_VERSION = 1;
 
@@ -179,20 +180,25 @@ export const SodiumConfigSchema = z
   .strict();
 export type SodiumConfig = z.infer<typeof SodiumConfigSchema>;
 
+export const SodiumDeploymentSchema = z
+  .object({
+    id: DeploymentIdSchema,
+    version: z.number().int().positive(),
+    configHash: z.string().regex(/^[a-f0-9]{64}$/),
+    // Optional only so projects created by older CLI versions can be
+    // upgraded in place. The browser runtime requires it before use.
+    receipt: SignedDeploymentReceiptSchema.optional(),
+  })
+  .strict();
+export type SodiumDeployment = z.infer<typeof SodiumDeploymentSchema>;
+
 export const SodiumProjectSchema = z
   .object({
     schemaVersion: z.literal(SODIUM_SCHEMA_VERSION),
     projectId: ProjectIdSchema,
     publishableKey: PublishableKeySchema,
     endpoint: z.string().url(),
-    deployment: z
-      .object({
-        id: DeploymentIdSchema,
-        version: z.number().int().positive(),
-        configHash: z.string().regex(/^[a-f0-9]{64}$/),
-      })
-      .strict()
-      .optional(),
+    deployment: SodiumDeploymentSchema.optional(),
   })
   .strict();
 export type SodiumProject = z.infer<typeof SodiumProjectSchema>;

@@ -11,6 +11,7 @@ import {
   detectModelContext,
   observeNavigation,
 } from "./webmcp-adapter";
+import { verifyDeployment } from "./deployment-verify";
 
 export interface InstallSodiumOptions {
   config: SodiumConfig | unknown;
@@ -44,6 +45,21 @@ export async function installSodium(
   if (!compiled) {
     if (options.debug) {
       win.console.error("[sodium] invalid sodium.json");
+    }
+    return empty;
+  }
+
+  const deployment = await verifyDeployment(
+    compiled,
+    options.project,
+    win.location.origin,
+    win.crypto,
+  );
+  if (!deployment.ok) {
+    if (options.debug) {
+      win.console.warn(
+        `[sodium] tools disabled (${deployment.error}). Run npx sodiumtools deploy, then rebuild the application.`,
+      );
     }
     return empty;
   }
