@@ -1,6 +1,6 @@
 import type { Framework } from "./install";
 
-export const CLI_VERSION = "0.2.2";
+export const CLI_VERSION = "0.2.3";
 export const SODIUM_COMMAND = "npx sodiumtools";
 
 export type ResultTone = "success" | "warning" | "info";
