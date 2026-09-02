@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   if (!code) {
     const message =
       request.nextUrl.searchParams.get("error_description") ??
-      "GitHub sign-in was cancelled";
+      "Sign-in was cancelled";
     return NextResponse.redirect(
       new URL(`/?error=${encodeURIComponent(message)}`, request.nextUrl.origin),
     );

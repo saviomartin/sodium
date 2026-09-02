@@ -2,29 +2,22 @@ import Link from "next/link";
 import { SodiumConfigSchema } from "sodium-webmcp-spec";
 import { AgentAnalyticsDashboard } from "@/components/agent-analytics-dashboard";
 import { DeleteProjectDialog } from "@/components/delete-project-dialog";
-import { Card, frameClass } from "@/components/ui";
+import { DeploymentHistory } from "@/components/deployment-history";
+import { ToolTable } from "@/components/tool-table";
+import { Card, cn, dangerButtonClass, frameClass } from "@/components/ui";
 import { getProjectDashboard } from "@/lib/queries";
-import { summarizeToolAnalytics } from "@/lib/tool-analytics";
+import { normalizeToolAnalytics } from "@/lib/tool-analytics";
+import { toolDetails } from "@/lib/tool-details";
 import {
   ArrowLeftIcon,
-  ChartLineUpIcon,
+  BroadcastIcon,
   ClockIcon,
-  StackIcon,
+  GlobeIcon,
+  SealCheckIcon,
+  WrenchIcon,
 } from "@/components/icons";
 
-function percentage(value: number | null): string {
-  return value === null ? "—" : `${Math.round(value * 100)}%`;
-}
-
-function duration(value: number | null): string {
-  return value === null
-    ? "—"
-    : value < 1000
-      ? `${value} ms`
-      : `${(value / 1000).toFixed(1)} s`;
-}
-
-function date(value: string): string {
+function timestamp(value: string): string {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -45,194 +38,163 @@ export default async function ProjectPage({
 }) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
   const periodDays = range(query.range);
-  const { project, deployments, events } = await getProjectDashboard(
-    projectId,
-    periodDays,
-  );
+  const {
+    project,
+    deployments,
+    analytics: analyticsData,
+  } = await getProjectDashboard(projectId, periodDays);
   const current =
     deployments.find(
       (deployment) => deployment.id === project.current_deployment_id,
     ) ?? deployments[0];
   const parsed = SodiumConfigSchema.safeParse(current?.config);
-  const tools = parsed.success ? parsed.data.tools : [];
-  const analytics = summarizeToolAnalytics(events, tools, { periodDays });
+  const config = parsed.success ? parsed.data : null;
+  const analytics = normalizeToolAnalytics(
+    analyticsData,
+    config?.tools ?? [],
+    periodDays,
+  );
+  const tools = toolDetails(config?.tools ?? [], analytics.tools);
 
   return (
-    <div className="space-y-10 pb-10">
+    <div className="space-y-8 pb-10">
       <header>
         <Link
           href="/"
-          className="mb-5 inline-flex items-center gap-2 text-sm text-neutral-500 transition-colors hover:text-neutral-200"
+          className="group mb-5 inline-flex items-center gap-1.5 text-sm text-neutral-400 transition-colors hover:text-neutral-100"
         >
-          <ArrowLeftIcon aria-hidden className="size-4" /> Projects
+          <ArrowLeftIcon
+            aria-hidden
+            weight="bold"
+            className="size-4 transition-transform group-hover:-translate-x-0.5 motion-reduce:transition-none"
+          />
+          Projects
         </Link>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.18em] text-emerald-300">
-              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_9px_rgba(52,211,153,.7)]" />
-              {current
-                ? `Live · version ${current.version}`
-                : "Awaiting deployment"}
-            </div>
-            <h1 className="mt-2 text-4xl font-medium tracking-[-0.035em] text-neutral-100">
+            <h1 className="text-2xl font-medium text-neutral-100 text-balance">
               {project.name}
             </h1>
-          </div>
-          <div className="text-left sm:text-right">
-            <code className="text-xs text-neutral-500">{project.id}</code>
-            <p className="mt-1 text-xs text-neutral-600">
-              Updated {date(project.updated_at)}
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-faint">
+              <span>{project.id}</span>
+              {config && (
+                <span className="inline-flex items-center gap-1.5">
+                  <GlobeIcon aria-hidden className="size-3.5" />
+                  {config.app.origins.join(", ")}
+                </span>
+              )}
             </p>
           </div>
+          <dl className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs sm:justify-end">
+            <div className="inline-flex items-baseline gap-1.5">
+              <dt className="text-faint">Live</dt>
+              <dd
+                className={cn(
+                  "inline-flex items-center gap-1.5 font-medium",
+                  current ? "text-emerald-400" : "text-neutral-400",
+                )}
+              >
+                <SealCheckIcon aria-hidden weight="fill" className="size-3.5" />
+                {current ? `v${current.version}` : "not deployed"}
+              </dd>
+            </div>
+            <div className="inline-flex items-baseline gap-1.5">
+              <dt className="text-faint">Tools</dt>
+              <dd className="font-medium text-neutral-200 tabular-nums">
+                {tools.length}
+              </dd>
+            </div>
+            <div className="inline-flex items-baseline gap-1.5">
+              <dt className="text-faint">Updated</dt>
+              <dd className="font-medium text-neutral-200">
+                <time dateTime={project.updated_at}>
+                  {timestamp(project.updated_at)}
+                </time>
+              </dd>
+            </div>
+          </dl>
         </div>
       </header>
 
       <AgentAnalyticsDashboard projectId={projectId} analytics={analytics} />
 
-      <section className="space-y-4" aria-labelledby="tool-performance-title">
-        <header>
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-neutral-600">
-            Deployed surface
-          </p>
+      <section className="space-y-4" aria-labelledby="deployed-tools-title">
+        <div>
           <h2
-            id="tool-performance-title"
-            className="mt-2 text-xl font-medium text-neutral-100"
+            id="deployed-tools-title"
+            className="flex items-center gap-2 text-base font-medium text-balance"
           >
-            Tool performance
+            <WrenchIcon aria-hidden className="size-4.5 shrink-0 text-faint" />
+            Deployed tools
           </h2>
-        </header>
-        <Card icon={ChartLineUpIcon}>
-          {tools.length === 0 ? (
-            <EmptyDeploy />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-left text-sm">
-                <thead className="font-mono text-[10px] uppercase tracking-[0.12em] text-neutral-600">
-                  <tr>
-                    <th className="pb-3">Tool</th>
-                    <th className="pb-3">Risk</th>
-                    <th className="pb-3 text-right">Calls</th>
-                    <th className="pb-3 text-right">Success</th>
-                    <th className="pb-3 text-right">Failed</th>
-                    <th className="pb-3 text-right">P95</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/[0.07]">
-                  {analytics.tools.map((tool) => (
-                    <tr key={tool.id}>
-                      <td className="py-3">
-                        <span className="block font-medium text-neutral-200">
-                          {tool.title}
-                        </span>
-                        <code className="text-xs text-neutral-600">
-                          {tool.name}
-                        </code>
-                      </td>
-                      <td className="py-3 text-neutral-500">
-                        {tool.risk.replaceAll("_", " ")}
-                      </td>
-                      <td className="py-3 text-right tabular-nums text-neutral-300">
-                        {tool.calls}
-                      </td>
-                      <td className="py-3 text-right tabular-nums text-neutral-300">
-                        {percentage(tool.successRate)}
-                      </td>
-                      <td className="py-3 text-right tabular-nums text-neutral-300">
-                        {tool.failures}
-                      </td>
-                      <td className="py-3 text-right tabular-nums text-neutral-300">
-                        {duration(tool.p95Ms)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+          <p className="mt-1 max-w-2xl text-sm text-neutral-400 text-pretty">
+            The contract that is live right now. Open a tool to read its input
+            schema, its routes, and how it runs.
+          </p>
+        </div>
+        <div className={cn(frameClass, "overflow-hidden")}>
+          <ToolTable tools={tools} />
+        </div>
       </section>
 
       <section
-        className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
+        className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] lg:items-start"
         aria-label="Deployment details"
       >
-        <Card title="Deployment history" icon={StackIcon}>
-          {deployments.length === 0 ? (
-            <EmptyDeploy />
-          ) : (
-            <ol className="divide-y divide-white/[0.07]">
-              {deployments.map((deployment) => (
-                <li
-                  key={deployment.id}
-                  className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
-                >
-                  <span className="flex size-8 items-center justify-center rounded-md bg-white/[0.05] font-mono text-xs text-neutral-400">
-                    v{deployment.version}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-neutral-300">
-                      {deployment.tool_count} tools
-                    </span>
-                    <code className="block truncate text-xs text-neutral-600">
-                      {deployment.config_hash.slice(0, 12)}
-                    </code>
-                  </span>
-                  {deployment.id === current?.id && (
-                    <span className="rounded-full bg-emerald-400/10 px-2 py-1 font-mono text-[10px] uppercase text-emerald-300">
-                      live
-                    </span>
-                  )}
-                  <time
-                    className="hidden text-xs text-neutral-600 sm:block"
-                    dateTime={deployment.created_at}
-                  >
-                    {date(deployment.created_at)}
-                  </time>
-                </li>
-              ))}
-            </ol>
-          )}
-        </Card>
+        <DeploymentHistory deployments={deployments} currentId={current?.id} />
 
-        <div className={`${frameClass} h-fit p-4`}>
-          <p className="flex items-center gap-2 text-xs text-neutral-500">
-            <ClockIcon aria-hidden className="size-4" /> Latest telemetry
-          </p>
-          <p className="mt-3 text-sm text-neutral-200">
-            {analytics.lastSeenAt
-              ? date(analytics.lastSeenAt)
-              : "Waiting for traffic"}
-          </p>
-          <p className="mt-4 border-t border-white/[0.07] pt-4 text-xs leading-5 text-neutral-500">
-            Analytics may take a few seconds to appear after a tool runs.
-          </p>
+        <div className="space-y-4">
+          <Card title="Last event" icon={ClockIcon}>
+            <p className="text-sm text-neutral-200">
+              {analytics.lastSeenAt
+                ? timestamp(analytics.lastSeenAt)
+                : "Waiting for traffic"}
+            </p>
+            <p className="mt-3 border-t border-white/[0.07] pt-3 text-xs leading-5 text-faint text-pretty">
+              Events are written as they arrive, so a call can take a few
+              seconds to appear here.
+            </p>
+          </Card>
+
+          <Card title="Collecting from" icon={BroadcastIcon}>
+            {config ? (
+              <ul className="space-y-1.5 font-mono text-xs text-neutral-200">
+                {config.app.origins.map((origin) => (
+                  <li key={origin} className="truncate" title={origin}>
+                    {origin}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-neutral-400 text-pretty">
+                No origins yet. They come from the{" "}
+                <code className="font-mono text-xs text-neutral-300">
+                  app.origins
+                </code>{" "}
+                list in your sodium.json.
+              </p>
+            )}
+            <p className="mt-3 border-t border-white/[0.07] pt-3 text-xs leading-5 text-faint text-pretty">
+              Events from any other origin are discarded.
+            </p>
+          </Card>
         </div>
       </section>
 
       <section className="flex flex-col gap-4 border-t border-white/[0.07] pt-6 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-sm font-medium text-neutral-200">Danger zone</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            Permanently remove this project and its telemetry.
+          <p className="mt-1 text-sm text-neutral-400 text-pretty">
+            Deleting this project removes every deployment and every event with
+            it. Your application repository is untouched.
           </p>
         </div>
         <DeleteProjectDialog
           projectId={project.id}
           projectName={project.name}
+          className={dangerButtonClass}
         />
       </section>
-    </div>
-  );
-}
-
-function EmptyDeploy() {
-  return (
-    <div className="py-5 text-center">
-      <p className="text-sm text-neutral-300">No deployment yet</p>
-      <p className="mt-2 text-sm text-neutral-500">
-        Run <code className="text-neutral-300">npx sodiumtools deploy</code> in
-        your app.
-      </p>
     </div>
   );
 }

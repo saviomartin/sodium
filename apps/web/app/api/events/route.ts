@@ -1,39 +1,7 @@
-import { z } from "zod";
-import {
-  DEPLOYMENT_ID_PATTERN,
-  PROJECT_ID_PATTERN,
-  PUBLISHABLE_KEY_PATTERN,
-  SodiumConfigSchema,
-  TOOL_ID_PATTERN,
-  TOOL_NAME_PATTERN,
-} from "sodium-webmcp-spec";
+import { SodiumConfigSchema } from "sodium-webmcp-spec";
 import { sha256 } from "@/lib/server-crypto";
 import { createServiceClient } from "@/lib/supabase/service";
-
-const EventSchema = z
-  .object({
-    projectId: z.string().regex(PROJECT_ID_PATTERN),
-    key: z.string().regex(PUBLISHABLE_KEY_PATTERN),
-    deploymentId: z.string().regex(DEPLOYMENT_ID_PATTERN).optional(),
-    configVersion: z.number().int().positive().optional(),
-    sdkVersion: z.string().min(1).max(32),
-    event: z.enum([
-      "sdk_ready",
-      "tool_registered",
-      "tool_register_failed",
-      "tool_started",
-      "tool_succeeded",
-      "tool_failed",
-      "confirmation_denied",
-    ]),
-    toolId: z.string().regex(TOOL_ID_PATTERN).optional(),
-    toolName: z.string().regex(TOOL_NAME_PATTERN).optional(),
-    invocationId: z.string().uuid().optional(),
-    durationMs: z.number().int().min(0).max(3_600_000).optional(),
-    errorCode: z.string().min(1).max(80).optional(),
-    ts: z.number().int().positive(),
-  })
-  .strict();
+import { UsageEventSchema } from "@/lib/usage-event-schema";
 
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -51,7 +19,7 @@ export async function POST(request: Request) {
   } catch {
     body = null;
   }
-  const parsed = EventSchema.safeParse(body);
+  const parsed = UsageEventSchema.safeParse(body);
   if (!parsed.success)
     return new Response(null, { status: 400, headers: CORS_HEADERS });
 
@@ -102,6 +70,9 @@ export async function POST(request: Request) {
     invocation_id: parsed.data.invocationId ?? null,
     duration_ms: parsed.data.durationMs ?? null,
     error_code: parsed.data.errorCode ?? null,
+    session_id: parsed.data.sessionId ?? null,
+    answer_engine: parsed.data.answerEngine ?? null,
+    attribution_method: parsed.data.attributionMethod ?? null,
     occurred_at: occurredAt.toISOString(),
   });
   return new Response(null, { status: 202, headers: CORS_HEADERS });

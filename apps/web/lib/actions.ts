@@ -11,7 +11,10 @@ function safeNext(value: FormDataEntryValue | null): string {
   return next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
-export async function signInWithGithubAction(
+type OAuthProvider = "github" | "google";
+
+async function signInWithOAuthAction(
+  provider: OAuthProvider,
   formData: FormData,
 ): Promise<void> {
   const next = safeNext(formData.get("next"));
@@ -19,7 +22,7 @@ export async function signInWithGithubAction(
   const callback = new URL("/auth/callback", siteUrl());
   callback.searchParams.set("next", next);
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "github",
+    provider,
     options: { redirectTo: callback.toString() },
   });
   if (error || !data.url)
@@ -27,6 +30,18 @@ export async function signInWithGithubAction(
       `/?error=${encodeURIComponent(error?.message ?? "Sign in failed")}`,
     );
   redirect(data.url);
+}
+
+export async function signInWithGithubAction(
+  formData: FormData,
+): Promise<void> {
+  return signInWithOAuthAction("github", formData);
+}
+
+export async function signInWithGoogleAction(
+  formData: FormData,
+): Promise<void> {
+  return signInWithOAuthAction("google", formData);
 }
 
 export async function signOutAction(): Promise<void> {
@@ -70,7 +85,7 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   await supabase.auth.signOut({ scope: "global" });
   const { error } = await createServiceClient().auth.admin.deleteUser(user.id);
   if (error) redirect(`/settings?error=${encodeURIComponent(error.message)}`);
-  redirect("/?deleted=1");
+  redirect("/?deleted=account");
 }
 
 export interface DeleteProjectState {
@@ -118,5 +133,8 @@ export async function deleteProjectAction(
   if (deleteError || !deleted) {
     return { error: "The project could not be deleted. Try again." };
   }
-  redirect("/dashboard?deleted=1");
+  // Straight to the home page, not through /dashboard: that route is a bare
+  // redirect and drops the query string, which is why this confirmation never
+  // reached the user.
+  redirect("/?deleted=project");
 }

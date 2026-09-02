@@ -97,36 +97,48 @@ strong {
 /*
  * The modal fade: how every dialog and its scrim enter and leave.
  *
- * Radix stamps `data-state` on both the overlay and the panel and holds the
- * unmount until the exit animation ends, so one pair of keyframes drives both
- * directions. Opacity only — the panel centres itself with a transform, and
- * leaving that alone keeps the fade from fighting it.
+ * Every dialog in this app is a native `<dialog>` opened with `showModal()`,
+ * which is what supplies the top layer, the focus trap and Escape for free.
+ * That leaves only the transition, and it needs three declarations working
+ * together: `display` and `overlay` in `transition-behavior: allow-discrete`
+ * so the element stays painted while it leaves, `@starting-style` for the
+ * frame before it opens, and the plain `[open]` rule for the resting state.
+ *
+ * Opacity only. The panel centres itself with `margin: auto`, and animating
+ * anything geometric would fight the browser's own centring.
  */
 @layer components {
-  .modal-fade[data-state="open"] {
-    animation: modal-fade-in 150ms ease-out;
-  }
-
-  .modal-fade[data-state="closed"] {
-    animation: modal-fade-out 120ms ease-in;
-  }
-}
-
-@keyframes modal-fade-in {
-  from {
+  .modal,
+  .modal::backdrop {
     opacity: 0;
+    transition:
+      opacity 150ms ease-out,
+      display 150ms allow-discrete,
+      overlay 150ms allow-discrete;
+  }
+
+  .modal[open],
+  .modal[open]::backdrop {
+    opacity: 1;
+  }
+
+  /* The frame before opening, which is what there is to animate away from. */
+  @starting-style {
+    .modal[open],
+    .modal[open]::backdrop {
+      opacity: 0;
+    }
+  }
+
+  .modal::backdrop {
+    background-color: color-mix(in srgb, var(--color-ink-950) 72%, transparent);
+    backdrop-filter: blur(2px);
   }
 }
 
-@keyframes modal-fade-out {
-  to {
-    opacity: 0;
-  }
-}
-
-/* Radix unmounts straight away when there is no animation to wait on. */
 @media (prefers-reduced-motion: reduce) {
-  .modal-fade[data-state] {
-    animation: none;
+  .modal,
+  .modal::backdrop {
+    transition: none;
   }
 }

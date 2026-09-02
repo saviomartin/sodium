@@ -62,29 +62,23 @@ export async function getProjectDashboard(projectId: string, days = 30) {
   if (projectError) throw new Error(projectError.message);
   if (!project) notFound();
 
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const [deploymentResult, eventResult] = await Promise.all([
+  const [deploymentResult, analyticsResult] = await Promise.all([
     supabase
       .from("deployments")
       .select("id, version, config_hash, tool_count, config, created_at")
       .eq("project_id", projectId)
       .order("version", { ascending: false })
       .limit(20),
-    supabase
-      .from("usage_events")
-      .select(
-        "event, tool_id, tool_name, invocation_id, duration_ms, error_code, received_at",
-      )
-      .eq("project_id", projectId)
-      .gte("received_at", since)
-      .order("received_at", { ascending: false })
-      .limit(5000),
+    supabase.rpc("get_project_agent_analytics", {
+      p_project_id: projectId,
+      p_days: days,
+    }),
   ]);
   if (deploymentResult.error) throw new Error(deploymentResult.error.message);
-  if (eventResult.error) throw new Error(eventResult.error.message);
+  if (analyticsResult.error) throw new Error(analyticsResult.error.message);
   return {
     project,
     deployments: deploymentResult.data ?? [],
-    events: eventResult.data ?? [],
+    analytics: analyticsResult.data,
   };
 }

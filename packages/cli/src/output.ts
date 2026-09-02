@@ -1,6 +1,4 @@
-import type { Framework } from "./install";
-
-export const CLI_VERSION = "0.2.3";
+export const CLI_VERSION = "0.2.4";
 export const SODIUM_COMMAND = "npx sodiumtools";
 
 export type ResultTone = "success" | "warning" | "info";
@@ -39,12 +37,11 @@ export const HELP_COMMANDS: HelpCommand[] = [
     name: "deploy [--no-open]",
     description: "Publish a version and open its dashboard",
   },
-  { name: "doctor", description: "Verify the complete local integration" },
+  {
+    name: "doctor [--url <app-url>]",
+    description: "Verify local wiring and optionally live WebMCP tools",
+  },
 ];
-
-export function frameworkName(framework: Framework): string {
-  return framework === "next" ? "Next.js" : "React with Vite";
-}
 
 export function dashboardUrl(endpoint: string, projectId?: string): string {
   const path = projectId ? `/projects/${projectId}` : "/dashboard";

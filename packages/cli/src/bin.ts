@@ -60,7 +60,10 @@ async function main() {
       });
       break;
     case "doctor":
-      await doctorCommand(context);
+      if (args.includes("--url") && !valueFor("--url")) {
+        throw new Error("--url requires an application URL");
+      }
+      await doctorCommand(context, { url: valueFor("--url") });
       break;
     case "--version":
     case "-v":

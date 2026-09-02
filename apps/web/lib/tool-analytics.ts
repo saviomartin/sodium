@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface ToolEvent {
   event: string;
   tool_id: string | null;
@@ -15,6 +17,11 @@ export interface ToolDefinition {
   risk?: string;
 }
 
+export interface ToolDailyCalls {
+  date: string;
+  calls: number;
+}
+
 export interface ToolRollup {
   id: string;
   name: string;
@@ -26,6 +33,12 @@ export interface ToolRollup {
   denied: number;
   successRate: number | null;
   p95Ms: number | null;
+  /**
+   * Calls per UTC day, over the same window as `AnalyticsSummary.days`, so a
+   * tool's lane in the timeline lines up with the activity chart above it.
+   * Only days the tool was actually called appear.
+   */
+  daily: ToolDailyCalls[];
 }
 
 export interface AnalyticsSummary {
@@ -40,6 +53,8 @@ export interface AnalyticsSummary {
   successRate: number | null;
   p95Ms: number | null;
   lastSeenAt: string | null;
+  answerEngineVisits: number;
+  engines: EngineReferralRollup[];
   tools: ToolRollup[];
   days: DailyAnalytics[];
 }
@@ -51,7 +66,125 @@ export interface DailyAnalytics {
   failures: number;
   denied: number;
   sdkSessions: number;
+  answerEngineVisits: number;
   p95Ms: number | null;
+}
+
+export interface EngineReferralRollup {
+  name: string;
+  visits: number;
+  sessions: number;
+  toolCalls: number;
+  successes: number;
+  referrerVisits: number;
+  campaignVisits: number;
+  lastSeenAt: string;
+}
+
+const DailyAnalyticsSchema = z.object({
+  date: z.string(),
+  calls: z.number().int().nonnegative(),
+  successes: z.number().int().nonnegative(),
+  failures: z.number().int().nonnegative(),
+  denied: z.number().int().nonnegative(),
+  sdkSessions: z.number().int().nonnegative(),
+  answerEngineVisits: z.number().int().nonnegative(),
+  p95Ms: z.number().int().nonnegative().nullable(),
+});
+
+const RpcAnalyticsSchema = z.object({
+  periodDays: z.number().int().min(7).max(90),
+  calls: z.number().int().nonnegative(),
+  successes: z.number().int().nonnegative(),
+  failures: z.number().int().nonnegative(),
+  denied: z.number().int().nonnegative(),
+  sdkSessions: z.number().int().nonnegative(),
+  registrations: z.number().int().nonnegative(),
+  registrationFailures: z.number().int().nonnegative(),
+  successRate: z.number().min(0).max(1).nullable(),
+  p95Ms: z.number().int().nonnegative().nullable(),
+  lastSeenAt: z.string().nullable(),
+  answerEngineVisits: z.number().int().nonnegative(),
+  days: z.array(DailyAnalyticsSchema),
+  tools: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      calls: z.number().int().nonnegative(),
+      successes: z.number().int().nonnegative(),
+      failures: z.number().int().nonnegative(),
+      denied: z.number().int().nonnegative(),
+      successRate: z.number().min(0).max(1).nullable(),
+      p95Ms: z.number().int().nonnegative().nullable(),
+      daily: z.array(
+        z.object({
+          date: z.string(),
+          calls: z.number().int().nonnegative(),
+        }),
+      ),
+    }),
+  ),
+  engines: z.array(
+    z.object({
+      name: z.string(),
+      visits: z.number().int().nonnegative(),
+      sessions: z.number().int().nonnegative(),
+      toolCalls: z.number().int().nonnegative(),
+      successes: z.number().int().nonnegative(),
+      referrerVisits: z.number().int().nonnegative(),
+      campaignVisits: z.number().int().nonnegative(),
+      lastSeenAt: z.string(),
+    }),
+  ),
+});
+
+function emptyTool(tool: ToolDefinition): ToolRollup {
+  return {
+    id: tool.id,
+    name: tool.name,
+    title: tool.title ?? tool.name,
+    risk: tool.risk ?? "unknown",
+    calls: 0,
+    successes: 0,
+    failures: 0,
+    denied: 0,
+    successRate: null,
+    p95Ms: null,
+    daily: [],
+  };
+}
+
+export function normalizeToolAnalytics(
+  value: unknown,
+  definitions: ToolDefinition[],
+  periodDays: number,
+): AnalyticsSummary {
+  const parsed = RpcAnalyticsSchema.safeParse(value);
+  if (!parsed.success) {
+    return summarizeToolAnalytics([], definitions, { periodDays });
+  }
+
+  const definitionsById = new Map(
+    definitions.map((definition) => [definition.id, definition]),
+  );
+  const measuredById = new Map(
+    parsed.data.tools.map((tool) => [tool.id, tool]),
+  );
+  const tools = [
+    ...definitions.map((definition) => ({
+      ...emptyTool(definition),
+      ...measuredById.get(definition.id),
+    })),
+    ...parsed.data.tools
+      .filter((tool) => !definitionsById.has(tool.id))
+      .map((tool) => ({
+        ...tool,
+        title: tool.name,
+        risk: "unknown",
+      })),
+  ].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name));
+
+  return { ...parsed.data, tools };
 }
 
 function percentile95(values: number[]): number | null {
@@ -81,6 +214,7 @@ export function summarizeToolAnalytics(
       denied: 0,
       successRate: null,
       p95Ms: null,
+      daily: [],
     });
   }
 
@@ -111,6 +245,7 @@ export function summarizeToolAnalytics(
       denied: 0,
       successRate: null,
       p95Ms: null,
+      daily: [],
     };
     byTool.set(event.tool_id, rollup);
     if (event.event === "tool_started") rollup.calls++;
@@ -155,15 +290,25 @@ export function summarizeToolAnalytics(
       failures: 0,
       denied: 0,
       sdkSessions: 0,
+      answerEngineVisits: 0,
       p95Ms: null,
     });
   }
   const dailyDurations = new Map<string, number[]>();
+  /** Calls per tool per day, keyed `<tool id>` then `<date>`. */
+  const callsByToolDate = new Map<string, Map<string, number>>();
   for (const event of uniqueEvents) {
     const date = event.received_at.slice(0, 10);
     const day = dayMap.get(date);
     if (!day) continue;
-    if (event.event === "tool_started") day.calls++;
+    if (event.event === "tool_started") {
+      day.calls++;
+      if (event.tool_id) {
+        const lane = callsByToolDate.get(event.tool_id) ?? new Map();
+        lane.set(date, (lane.get(date) ?? 0) + 1);
+        callsByToolDate.set(event.tool_id, lane);
+      }
+    }
     if (event.event === "tool_succeeded") day.successes++;
     if (event.event === "tool_failed") day.failures++;
     if (event.event === "confirmation_denied") day.denied++;
@@ -183,6 +328,16 @@ export function summarizeToolAnalytics(
     const day = dayMap.get(date);
     if (day) day.p95Ms = percentile95(values);
   }
+  // Lanes are ordered by the window rather than by insertion, so a tool called
+  // out of order still reads left to right against the chart above it.
+  const dates = [...dayMap.keys()];
+  for (const tool of tools) {
+    const lane = callsByToolDate.get(tool.id);
+    if (!lane) continue;
+    tool.daily = dates
+      .filter((date) => lane.has(date))
+      .map((date) => ({ date, calls: lane.get(date)! }));
+  }
   return {
     periodDays,
     calls,
@@ -195,6 +350,8 @@ export function summarizeToolAnalytics(
     successRate: completed > 0 ? successes / completed : null,
     p95Ms: percentile95([...durations.values()].flat()),
     lastSeenAt: events[0]?.received_at ?? null,
+    answerEngineVisits: 0,
+    engines: [],
     tools,
     days: [...dayMap.values()],
   };

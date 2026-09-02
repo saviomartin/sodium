@@ -10,6 +10,8 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | Package boundary   | Packed spec, SDK, and CLI tarballs install in the fixture without workspace imports                                                       | Pass                       |
 | Login              | Device code is approved by the signed-in dashboard account; token file mode is `0600`; a second login reuses the session                  | Pass                       |
 | Init               | `npx sodiumtools init` installs the SDK and project-local skill without requiring auth or creating a cloud project                        | Pass: packed 0.2.1         |
+| Framework neutrality | Unknown browser stacks initialize; popular stacks are recognized only to guide the agent                                                  | Pass: published 0.2.4 + 8 profiles |
+| Integration proof  | `validate` verifies the receipt and mount; `doctor --url` finds route-eligible tools in the running app                                  | Pass: Next build + 3 live tools |
 | Deployments        | Changed config increments the version; unchanged config returns the same deployment                                                       | Pass: versions 1, 2, and 3 |
 | Diagnostics        | `validate` accepts five tools; `doctor` detects drift and returns healthy after deployment                                                | Pass                       |
 | WebMCP discovery   | `agent-browser webmcp list` sees route-eligible tools and updates after application state changes                                         | Pass                       |
@@ -51,8 +53,8 @@ After installation, both `sodiumtools` and the short `sodium` binary are availab
 
 ## Repeat before publishing
 
-1. Remove and recreate `.testing/sodium-next-fixture` with the current `create-next-app`.
-2. Pack and install the three workspace packages as tarballs; never link the fixture to workspace source.
-3. Execute login, init, drift detection, changed deploy, and unchanged deploy against the development control plane.
-4. Run the WebMCP calls with `agent-browser`, then verify event rows and the signed-in project dashboard.
+1. Recreate the popular-framework and unknown browser fixtures listed in `testing-plan.md` with their current generators.
+2. Pack and install the three workspace packages as tarballs; never link a fixture to workspace source.
+3. Let the coding agent author each native bootstrap, then require `validate`, the application build, and `doctor --url` to pass.
+4. Execute login, changed deploy, and unchanged deploy against the development control plane; run WebMCP calls and verify event rows and the signed-in dashboard.
 5. Delete the disposable auth user and confirm its project, deployments, CLI tokens, and events cascade to zero rows.

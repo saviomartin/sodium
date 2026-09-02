@@ -1,14 +1,43 @@
 import {
   access,
   copyFile,
-  readFile,
-  writeFile,
   mkdir,
+  readFile,
+  realpath,
+  stat,
 } from "node:fs/promises";
-import { dirname, relative, join, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type Framework = "next" | "vite-react";
+export type AppProfileId =
+  | "next-app"
+  | "next-pages"
+  | "next"
+  | "nuxt"
+  | "sveltekit"
+  | "astro"
+  | "angular"
+  | "vite-react"
+  | "vite"
+  | "browser";
+
+export interface AppProfile {
+  id: AppProfileId;
+  label: string;
+  recognized: boolean;
+}
+
+export type IntegrationStrategy = "installSodium" | "react-provider";
+
+export interface SodiumIntegration {
+  schemaVersion: 1;
+  entry: string;
+  mount: string;
+  strategy: IntegrationStrategy;
+  files: string[];
+}
+
+export const INTEGRATION_FILE = join(".sodium", "integration.json");
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -19,41 +48,116 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export async function detectFramework(cwd: string): Promise<Framework> {
-  const pkg = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-  };
-  const all = { ...pkg.dependencies, ...pkg.devDependencies };
-  if (all.next) return "next";
-  if (all.vite && (all.react || all["react-dom"])) return "vite-react";
-  throw new Error("supported frameworks are Next.js and React with Vite");
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function hasAny(cwd: string, candidates: string[]): Promise<boolean> {
+  return (await Promise.all(candidates.map((file) => exists(join(cwd, file))))).some(
+    Boolean,
+  );
+}
+
+async function packageDependencies(
+  cwd: string,
+): Promise<Record<string, string>> {
+  try {
+    const pkg = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    return {
+      ...pkg.dependencies,
+      ...pkg.devDependencies,
+      ...pkg.optionalDependencies,
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw new Error("package.json is not valid JSON", { cause: error });
+  }
+}
+
+/** Recognition chooses better agent guidance; it never decides support. */
+export async function detectAppProfile(cwd: string): Promise<AppProfile> {
+  const dependencies = await packageDependencies(cwd);
+  if (dependencies.next) {
+    if (
+      await hasAny(cwd, [
+        "app/layout.tsx",
+        "app/layout.jsx",
+        "app/layout.js",
+        "src/app/layout.tsx",
+        "src/app/layout.jsx",
+        "src/app/layout.js",
+      ])
+    ) {
+      return { id: "next-app", label: "Next.js · App Router", recognized: true };
+    }
+    if (
+      await hasAny(cwd, [
+        "pages/_app.tsx",
+        "pages/_app.jsx",
+        "pages/_app.js",
+        "src/pages/_app.tsx",
+        "src/pages/_app.jsx",
+        "src/pages/_app.js",
+      ])
+    ) {
+      return {
+        id: "next-pages",
+        label: "Next.js · Pages Router",
+        recognized: true,
+      };
+    }
+    return { id: "next", label: "Next.js", recognized: true };
+  }
+  if (dependencies.nuxt) return { id: "nuxt", label: "Nuxt", recognized: true };
+  if (dependencies["@sveltejs/kit"])
+    return { id: "sveltekit", label: "SvelteKit", recognized: true };
+  if (dependencies.astro)
+    return { id: "astro", label: "Astro", recognized: true };
+  if (dependencies["@angular/core"])
+    return { id: "angular", label: "Angular", recognized: true };
+  if (dependencies.vite && (dependencies.react || dependencies["react-dom"])) {
+    return { id: "vite-react", label: "React with Vite", recognized: true };
+  }
+  if (dependencies.vite)
+    return { id: "vite", label: "Vite", recognized: true };
+  return { id: "browser", label: "Browser app", recognized: false };
 }
 
 export async function hasSodiumSdk(cwd: string): Promise<boolean> {
-  const pkg = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-    optionalDependencies?: Record<string, string>;
-  };
-  return Boolean(
-    pkg.dependencies?.["sodium-webmcp-sdk"] ??
-      pkg.devDependencies?.["sodium-webmcp-sdk"] ??
-      pkg.optionalDependencies?.["sodium-webmcp-sdk"],
-  );
+  const dependencies = await packageDependencies(cwd);
+  return Boolean(dependencies["sodium-webmcp-sdk"]);
 }
 
 export async function installSkill(cwd: string): Promise<string[]> {
   const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
   const sourceRoot = join(packageRoot, "templates", "sodium-webmcp");
-  const targetRoot = join(cwd, ".agents", "skills", "sodium-webmcp");
-  const files = ["SKILL.md", join("references", "schema.md")];
-  for (const file of files) {
-    const target = join(targetRoot, file);
-    await mkdir(dirname(target), { recursive: true });
-    await copyFile(join(sourceRoot, file), target);
+  const targetRoots = [join(cwd, ".agents", "skills", "sodium-webmcp")];
+  if (await isDirectory(join(cwd, ".claude"))) {
+    targetRoots.push(join(cwd, ".claude", "skills", "sodium-webmcp"));
   }
-  return files.map((file) => join(targetRoot, file));
+  const files = [
+    "SKILL.md",
+    join("references", "schema.md"),
+    join("references", "integration.md"),
+  ];
+  for (const targetRoot of targetRoots) {
+    for (const file of files) {
+      const target = join(targetRoot, file);
+      await mkdir(dirname(target), { recursive: true });
+      await copyFile(join(sourceRoot, file), target);
+    }
+  }
+  return targetRoots.flatMap((targetRoot) =>
+    files.map((file) => join(targetRoot, file)),
+  );
 }
 
 export async function detectPackageManager(
@@ -69,76 +173,147 @@ export async function detectPackageManager(
   return "npm";
 }
 
-function importPath(fromFile: string, toFile: string): string {
-  let path = relative(dirname(fromFile), toFile).split(sep).join("/");
-  if (!path.startsWith(".")) path = `./${path}`;
-  return path.replace(/\.(tsx?|jsx?)$/, "");
+function integrationError(detail: string): Error {
+  return new Error(
+    `Sodium is not mounted in this browser app: ${detail}. Ask your coding agent to use $sodium-webmcp, then rerun npx sodiumtools deploy.`,
+  );
 }
 
-async function nextLayout(cwd: string): Promise<string> {
-  for (const candidate of [
-    "app/layout.tsx",
-    "src/app/layout.tsx",
-    "app/layout.jsx",
-    "src/app/layout.jsx",
-  ]) {
-    const path = join(cwd, candidate);
-    if (await exists(path)) return path;
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function integrationPath(cwd: string, value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw integrationError(`${field} must be a project-relative source file`);
   }
-  throw new Error("Next.js root layout was not found");
-}
-
-async function viteEntry(cwd: string): Promise<string> {
-  for (const candidate of [
-    "src/main.tsx",
-    "src/main.jsx",
-    "src/main.ts",
-    "src/main.js",
-  ]) {
-    const path = join(cwd, candidate);
-    if (await exists(path)) return path;
+  const candidate = value.trim();
+  if (isAbsolute(candidate)) {
+    throw integrationError(`${field} must stay inside the project`);
   }
-  throw new Error("Vite React entry file was not found");
+  const absolute = resolve(cwd, candidate);
+  const local = relative(resolve(cwd), absolute);
+  if (local === ".." || local.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+    throw integrationError(`${field} must stay inside the project`);
+  }
+  if (!/[cm]?[jt]sx?$/.test(extname(absolute)) &&
+      ![".astro", ".svelte", ".vue"].includes(extname(absolute))) {
+    throw integrationError(
+      `${field} must point to browser source code`,
+    );
+  }
+  return absolute;
 }
 
-export async function installIntegration(
+async function readIntegrationSource(
   cwd: string,
-  framework: Framework,
-): Promise<string[]> {
-  const sodiumDir = join(cwd, "sodium");
-  await mkdir(sodiumDir, { recursive: true });
-  const handlersPath = join(sodiumDir, "handlers.ts");
-  if (!(await exists(handlersPath))) {
-    await writeFile(
-      handlersPath,
-      `import type { SodiumHandlers } from "sodium-webmcp-sdk";\n\nexport const handlers = {} satisfies SodiumHandlers;\n`,
-    );
-  }
-
-  if (framework === "next") {
-    const componentPath = join(sodiumDir, "Sodium.tsx");
-    await writeFile(
-      componentPath,
-      `"use client";\n\nimport config from "../sodium.json";\nimport project from "../.sodium/project.json";\nimport type { SodiumProject } from "sodium-webmcp-sdk";\nimport { SodiumProvider } from "sodium-webmcp-sdk/react";\nimport { handlers } from "./handlers";\n\nexport function Sodium() {\n  return <SodiumProvider config={config} project={project as SodiumProject} handlers={handlers} />;\n}\n`,
-    );
-    const layoutPath = await nextLayout(cwd);
-    let source = await readFile(layoutPath, "utf8");
-    if (!source.includes("<Sodium")) {
-      const specifier = importPath(layoutPath, componentPath);
-      source = `import { Sodium } from "${specifier}";\n${source}`;
-      if (!/<body\b[^>]*>/.test(source))
-        throw new Error("root layout has no body element");
-      source = source.replace(/(<body\b[^>]*>)/, "$1\n        <Sodium />");
-      await writeFile(layoutPath, source);
+  value: unknown,
+  field: string,
+): Promise<{ absolute: string; local: string; source: string }> {
+  const absolute = integrationPath(cwd, value, field);
+  try {
+    const [root, target, source] = await Promise.all([
+      realpath(cwd),
+      realpath(absolute),
+      readFile(absolute, "utf8"),
+    ]);
+    const local = relative(root, target);
+    if (local === ".." || local.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
+      throw integrationError(`${field} resolves outside the project`);
     }
-    return [componentPath, handlersPath, layoutPath];
+    return { absolute, local: relative(cwd, absolute), source };
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Sodium is not mounted")) {
+      throw error;
+    }
+    throw integrationError(`${String(value)} was not found`);
+  }
+}
+
+export async function verifySodiumIntegration(
+  cwd: string,
+): Promise<SodiumIntegration> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(join(cwd, INTEGRATION_FILE), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw integrationError(`${INTEGRATION_FILE} is missing`);
+    }
+    throw integrationError(`${INTEGRATION_FILE} is not valid JSON`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw integrationError(`${INTEGRATION_FILE} must contain a JSON object`);
+  }
+  const manifest = parsed as Record<string, unknown>;
+  if (manifest.schemaVersion !== 1) {
+    throw integrationError(`${INTEGRATION_FILE} must use schemaVersion 1`);
+  }
+  if (
+    manifest.strategy !== "installSodium" &&
+    manifest.strategy !== "react-provider"
+  ) {
+    throw integrationError(
+      `${INTEGRATION_FILE} strategy must be installSodium or react-provider`,
+    );
   }
 
-  const entryPath = await viteEntry(cwd);
-  let source = await readFile(entryPath, "utf8");
-  if (!source.includes("installSodium(")) {
-    source = `import config from "../sodium.json";\nimport project from "../.sodium/project.json";\nimport { installSodium, type SodiumProject } from "sodium-webmcp-sdk";\nimport { handlers } from "../sodium/handlers";\n\nvoid installSodium({ config, project: project as SodiumProject, handlers });\n${source}`;
-    await writeFile(entryPath, source);
+  const entry = await readIntegrationSource(cwd, manifest.entry, "entry");
+  const mount = await readIntegrationSource(
+    cwd,
+    manifest.mount ?? manifest.entry,
+    "mount",
+  );
+  const source = `${entry.source}\n${mount.source}`;
+  if (!/from\s*["']sodium-webmcp-sdk(?:\/react)?["']/.test(source)) {
+    throw integrationError("the SDK import was not found in the declared files");
   }
-  return [handlersPath, entryPath];
+  if (!source.includes("sodium.json")) {
+    throw integrationError("the sodium.json import was not found in the declared files");
+  }
+  if (!source.includes(".sodium/project.json")) {
+    throw integrationError(
+      "the .sodium/project.json import was not found in the declared files",
+    );
+  }
+  if (
+    manifest.strategy === "installSodium" &&
+    !/\binstallSodium\s*\(/.test(source)
+  ) {
+    throw integrationError("installSodium(...) was not found in the declared files");
+  }
+  if (
+    manifest.strategy === "react-provider" &&
+    (!/\bSodiumProvider\b/.test(entry.source) ||
+      !/<SodiumProvider\b|createElement\(\s*SodiumProvider\b/.test(entry.source))
+  ) {
+    throw integrationError("a rendered SodiumProvider was not found in the entry file");
+  }
+  if (entry.absolute !== mount.absolute) {
+    const entryName = entry.local
+      .split(/[\\/]/)
+      .at(-1)
+      ?.replace(/\.[^.]+$/, "")
+      .toLowerCase();
+    if (!entryName || !mount.source.toLowerCase().includes(entryName)) {
+      throw integrationError("the declared mount file does not reference the entry file");
+    }
+    if (
+      manifest.strategy === "react-provider" &&
+      !new RegExp(
+        `<\\s*${escapeRegExp(entryName)}\\b|createElement\\(\\s*${escapeRegExp(entryName)}\\b`,
+        "i",
+      ).test(mount.source)
+    ) {
+      throw integrationError("the declared mount file does not render the entry component");
+    }
+  }
+
+  return {
+    schemaVersion: 1,
+    entry: entry.local,
+    mount: mount.local,
+    strategy: manifest.strategy,
+    files: [...new Set([entry.local, mount.local])],
+  };
 }
