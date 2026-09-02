@@ -33,7 +33,7 @@ The `sodium-webmcp` skill inspects real routes, UI, forms, and existing APIs. It
 
 ### CLI
 
-`npx @resultdev/sodium init` installs the local authoring foundation:
+`npx sodiumtools init` installs the local authoring foundation:
 
 1. detect Next.js or Vite React;
 2. install the browser SDK when it is missing;

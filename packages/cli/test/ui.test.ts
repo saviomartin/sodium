@@ -15,7 +15,7 @@ describe("Ink terminal UI", () => {
             ["Tools", 5],
           ],
           note: "Dashboard opened in your browser.",
-          next: "npx @resultdev/sodium@latest doctor",
+          next: "npx sodiumtools doctor",
         },
       }),
     );
@@ -23,15 +23,13 @@ describe("Ink terminal UI", () => {
     expect(view.lastFrame()).toContain("◆ SODIUM / deploy");
     expect(view.lastFrame()).toContain("Deployment is live");
     expect(view.lastFrame()).toContain("Dashboard opened in your browser.");
-    expect(view.lastFrame()).toContain(
-      "Next: npx @resultdev/sodium@latest doctor",
-    );
+    expect(view.lastFrame()).toContain("Next: npx sodiumtools doctor");
   });
 
-  it("renders the scoped npx command in help", () => {
+  it("renders the public npx command in help", () => {
     const view = render(createElement(HelpView));
 
-    expect(view.lastFrame()).toContain("npx @resultdev/sodium@latest");
+    expect(view.lastFrame()).toContain("npx sodiumtools");
     expect(view.lastFrame()).toContain("open its dashboard");
   });
 });

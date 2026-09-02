@@ -9,7 +9,7 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | Consumer app       | Fresh `create-next-app` fixture lints and production-builds before and after installation                                                 | Pass                       |
 | Package boundary   | Packed spec, SDK, and CLI tarballs install in the fixture without workspace imports                                                       | Pass                       |
 | Login              | Device code is approved by the signed-in dashboard account; token file mode is `0600`; a second login reuses the session                  | Pass                       |
-| Init               | `npx @resultdev/sodium@latest init` installs the SDK and project-local skill without requiring auth or creating a cloud project           | Pass: packed 0.2.0         |
+| Init               | `npx sodiumtools init` installs the SDK and project-local skill without requiring auth or creating a cloud project                        | Pass: packed 0.2.1         |
 | Deployments        | Changed config increments the version; unchanged config returns the same deployment                                                       | Pass: versions 1, 2, and 3 |
 | Diagnostics        | `validate` accepts five tools; `doctor` detects drift and returns healthy after deployment                                                | Pass                       |
 | WebMCP discovery   | `agent-browser webmcp list` sees route-eligible tools and updates after application state changes                                         | Pass                       |
@@ -20,10 +20,10 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | Analytics          | Starts, outcomes, registration, initialization, duration, and denial events persist with deployment version; arguments and outputs do not | Pass                       |
 | Ingestion security | Wrong origin and wrong publishable key both return the opaque `202` boundary and create no event                                          | Pass                       |
 | Dashboard          | Account can see exact tools, calls, success rates, last event, and all deployment versions                                                | Pass                       |
-| CLI output         | Ink TUI shows compact progress, aligned results, actionable errors, and a deterministic plain/CI fallback                                 | Pass: packed 0.2.0         |
-| Agent handoff      | Init detects Codex, Claude Code, and Gemini; Other copies and prints a universal prompt                                                   | Pass: packed 0.2.0         |
-| Browser handoff    | Deploy opens the project dashboard by default and honors `--no-open`                                                                      | Pass: `prj_nlbreje0wm9i`   |
-| Public execution   | `npx @resultdev/sodium@latest` runs without a global installation; the old package points users to the new command                        | Pass: CLI 0.2.0            |
+| CLI output         | Ink TUI shows compact progress, aligned results, actionable errors, and a deterministic plain/CI fallback                                 | Pass: packed 0.2.1         |
+| Agent handoff      | Init detects Codex, Claude Code, and Gemini; Other copies and prints a universal prompt                                                   | Pass: packed 0.2.1         |
+| Browser handoff    | Deploy opens the project dashboard by default and honors `--no-open`                                                                      | Pass: `prj_zlx5svso7zdg`   |
+| Public execution   | `npx sodiumtools` runs without a global installation; both older package names point users to the new command                             | Pass: CLI 0.2.1            |
 
 ## Defects found by this fixture
 
@@ -39,15 +39,15 @@ The real consumer test found and fixed seven integration defects that package-lo
 
 ## Release command
 
-The CLI is published in the Result organization, so the zero-install command is:
+The CLI is published as `sodiumtools`, so the zero-install command is:
 
 ```bash
-npx @resultdev/sodium@latest init
-npx @resultdev/sodium@latest login
-npx @resultdev/sodium@latest deploy
+npx sodiumtools init
+npx sodiumtools login
+npx sodiumtools deploy
 ```
 
-After installation, the local binary remains the short `sodium` command.
+After installation, both `sodiumtools` and the short `sodium` binary are available locally.
 
 ## Repeat before publishing
 

@@ -117,17 +117,17 @@ export default async function Home({
               <ol className="space-y-4 text-sm">
                 <CommandStep
                   number="01"
-                  command="npx @resultdev/sodium init"
+                  command="npx sodiumtools init"
                   text="Install and create sodium.json"
                 />
                 <CommandStep
                   number="02"
-                  command="npx @resultdev/sodium login"
+                  command="npx sodiumtools login"
                   text="Connect your account"
                 />
                 <CommandStep
                   number="03"
-                  command="npx @resultdev/sodium deploy"
+                  command="npx sodiumtools deploy"
                   text="Publish the contract"
                 />
               </ol>

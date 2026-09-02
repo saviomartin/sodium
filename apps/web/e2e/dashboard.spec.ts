@@ -12,7 +12,7 @@ test("signed-out home explains the file-first workflow", async ({ page }) => {
     }),
   ).toBeVisible();
   await expect(
-    page.getByText("npx @resultdev/sodium init", { exact: true }).first(),
+    page.getByText("npx sodiumtools init", { exact: true }).first(),
   ).toBeVisible();
   await expect(
     page.getByText(/never requests repository access/),

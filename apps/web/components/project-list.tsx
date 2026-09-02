@@ -27,9 +27,8 @@ export function ProjectList({
           No projects yet
         </p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
-          Run{" "}
-          <code className="text-neutral-300">npx @resultdev/sodium init</code>{" "}
-          in an app with a valid sodium.json. Sodium creates the project during
+          Run <code className="text-neutral-300">npx sodiumtools init</code> in
+          an app with a valid sodium.json. Sodium creates the project during
           your first deploy.
         </p>
       </div>
