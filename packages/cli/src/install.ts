@@ -1,5 +1,12 @@
-import { access, readFile, writeFile, mkdir } from "node:fs/promises";
+import {
+  access,
+  copyFile,
+  readFile,
+  writeFile,
+  mkdir,
+} from "node:fs/promises";
 import { dirname, relative, join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type Framework = "next" | "vite-react";
 
@@ -34,6 +41,19 @@ export async function hasSodiumSdk(cwd: string): Promise<boolean> {
       pkg.devDependencies?.["sodium-webmcp-sdk"] ??
       pkg.optionalDependencies?.["sodium-webmcp-sdk"],
   );
+}
+
+export async function installSkill(cwd: string): Promise<string[]> {
+  const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const sourceRoot = join(packageRoot, "templates", "sodium-webmcp");
+  const targetRoot = join(cwd, ".agents", "skills", "sodium-webmcp");
+  const files = ["SKILL.md", join("references", "schema.md")];
+  for (const file of files) {
+    const target = join(targetRoot, file);
+    await mkdir(dirname(target), { recursive: true });
+    await copyFile(join(sourceRoot, file), target);
+  }
+  return files.map((file) => join(targetRoot, file));
 }
 
 export async function detectPackageManager(
