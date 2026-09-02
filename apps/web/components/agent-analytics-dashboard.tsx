@@ -1,152 +1,291 @@
+import type { CSSProperties, ComponentType, ReactNode } from "react";
 import Link from "next/link";
-import type { AnalyticsSummary, DailyAnalytics } from "@/lib/tool-analytics";
-import { cn, frameClass } from "./ui";
+import type { AnalyticsSummary } from "@/lib/tool-analytics";
+import { VIZ_MUTED, VIZ_SERIES, VIZ_STATUS } from "@/lib/viz";
+import { ActivityChart, Sparkline, ToolTimeline } from "./analytics-charts";
+import { EngineInsights } from "./engine-insights";
+import {
+  cardBodyClass,
+  cardHeadClass,
+  cardTitleClass,
+  cn,
+  frameClass,
+} from "./ui";
 import {
   BroadcastIcon,
   ChartLineUpIcon,
+  CircleNotchIcon,
+  CursorClickIcon,
   PulseIcon,
   SealCheckIcon,
   ShieldCheckIcon,
+  TargetIcon,
   TimerIcon,
-  WarningCircleIcon,
   WrenchIcon,
 } from "./icons";
 
+/** Phosphor icons take their size from the caller and their color from style. */
+type IconComponent = ComponentType<{
+  className?: string;
+  style?: CSSProperties;
+  weight?: "regular" | "bold" | "fill";
+  "aria-hidden"?: boolean;
+}>;
+
 const number = new Intl.NumberFormat("en-US");
 
-function percentage(value: number | null): string {
-  return value === null ? "—" : `${Math.round(value * 100)}%`;
-}
-
-function duration(value: number | null): string {
+function formatLatency(value: number | null): string {
   if (value === null) return "—";
-  return value < 1000
-    ? `${number.format(value)} ms`
-    : `${(value / 1000).toFixed(1)} s`;
-}
-
-function metricPath(values: number[], width: number, height: number): string {
-  const max = Math.max(...values, 1);
-  return values
-    .map((value, index) => {
-      const x = values.length === 1 ? 0 : (index / (values.length - 1)) * width;
-      const y = height - (value / max) * height;
-      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
-function Sparkline({ values, color }: { values: number[]; color: string }) {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 160 36"
-      preserveAspectRatio="none"
-      className="mt-4 h-9 w-full overflow-visible"
-    >
-      <path d="M0 35.5H160" stroke="rgba(255,255,255,.08)" />
-      <path
-        d={metricPath(values, 160, 34)}
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  detail,
-  values,
-  accent,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  values: number[];
-  accent: string;
-}) {
-  return (
-    <div className={frameClass}>
-      <div className="border-b border-white/[0.07] px-4 py-3 text-xs text-neutral-400">
-        {label}
-      </div>
-      <div className="px-4 py-4">
-        <p className="text-2xl font-medium tabular-nums tracking-tight text-neutral-100">
-          {value}
-        </p>
-        <p className="mt-1 text-xs text-neutral-500">{detail}</p>
-        <Sparkline values={values} color={accent} />
-      </div>
-    </div>
-  );
-}
-
-function ActivityChart({ days }: { days: DailyAnalytics[] }) {
-  const max = Math.max(
-    ...days.flatMap((day) => [day.calls, day.sdkSessions]),
-    1,
-  );
-
-  return (
-    <div>
-      <div className="flex h-48 items-end gap-1" aria-hidden>
-        {days.map((day) => (
-          <div
-            key={day.date}
-            className="group relative flex h-full min-w-0 flex-1 items-end gap-px"
-          >
-            <span
-              className="min-h-px flex-1 bg-blue-400/80"
-              style={{ height: `${Math.max((day.calls / max) * 100, 0.5)}%` }}
-            />
-            <span
-              className="min-h-px flex-1 bg-white/20"
-              style={{
-                height: `${Math.max((day.sdkSessions / max) * 100, 0.5)}%`,
-              }}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-3 text-[11px] text-neutral-600">
-        <time dateTime={days[0]?.date}>{days[0]?.date}</time>
-        <span className="flex items-center gap-4">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-1.5 bg-blue-400" /> Tool calls
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-1.5 bg-white/30" /> SDK sessions
-          </span>
-        </span>
-        <time dateTime={days.at(-1)?.date}>{days.at(-1)?.date}</time>
-      </div>
-    </div>
-  );
+  if (value < 1_000) return `${number.format(value)} ms`;
+  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`;
 }
 
 function RangePicker({ projectId, days }: { projectId: string; days: number }) {
   return (
-    <nav aria-label="Analytics date range" className="flex gap-1 font-mono">
+    <nav
+      aria-label="Analytics date range"
+      className="flex rounded-md border border-white/10 bg-white/[0.04] p-0.5"
+    >
       {[7, 30, 90].map((range) => (
         <Link
           key={range}
-          href={`/projects/${projectId}?range=${range}d`}
+          href={`/projects/${projectId}?range=${range}d#agent-analytics`}
           aria-current={range === days ? "page" : undefined}
           className={cn(
-            "rounded px-2.5 py-1.5 text-xs transition-colors",
+            "rounded px-2.5 py-1 font-mono text-xs font-medium transition-colors",
             range === days
-              ? "bg-neutral-100 text-neutral-950"
-              : "text-neutral-500 hover:bg-white/[0.06] hover:text-neutral-200",
+              ? "bg-white/10 text-neutral-100"
+              : "text-neutral-400 hover:text-neutral-100",
           )}
         >
           {range}d
         </Link>
       ))}
     </nav>
+  );
+}
+
+/** A charted subsection of the dashboard, in Card's shell with an `h3` title. */
+function Panel({
+  title,
+  description,
+  icon: Icon,
+  aside,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon?: IconComponent;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className={frameClass}>
+      <header
+        className={cn(
+          cardHeadClass,
+          "flex flex-wrap items-center justify-between gap-x-4 gap-y-2",
+        )}
+      >
+        <h3 className={cardTitleClass}>
+          {Icon && <Icon aria-hidden className="size-4 shrink-0 text-faint" />}
+          {title}
+        </h3>
+        {aside}
+      </header>
+      <div className={cardBodyClass}>
+        <p className="mb-4 text-sm text-neutral-400 text-pretty">
+          {description}
+        </p>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One headline number over its own daily series. Every tile in the row draws
+ * the same line, so the four read as one instrument panel and a difference in
+ * shape is a difference in the data.
+ */
+function Metric({
+  label,
+  accent,
+  icon: Icon,
+  value,
+  detail,
+  series,
+  max,
+}: {
+  label: string;
+  accent: string;
+  icon: IconComponent;
+  value: string;
+  detail: string;
+  series: number[];
+  /** Pin the chart's ceiling, for a series that is already a percentage. */
+  max?: number;
+}) {
+  return (
+    <div className={frameClass}>
+      <dt className={cn(cardHeadClass, cardTitleClass)}>
+        <Icon
+          aria-hidden
+          weight="fill"
+          className="size-4 shrink-0"
+          style={{ color: accent }}
+        />
+        {label}
+      </dt>
+      <dd className={cardBodyClass}>
+        <p className="text-2xl font-medium tabular-nums text-neutral-100">
+          {value}
+        </p>
+        <p className="mt-1 text-xs text-neutral-400 text-pretty">{detail}</p>
+        <Sparkline values={series} color={accent} label={label} max={max} />
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Wears Card's shell but keeps `dt`/`dd`, so the three insights stay one
+ * description list rather than three sections.
+ */
+function Insight({
+  label,
+  accent,
+  icon: Icon,
+  headline,
+  detail,
+  pending = false,
+}: {
+  label: string;
+  accent: string;
+  icon: IconComponent;
+  headline: string;
+  detail: string;
+  pending?: boolean;
+}) {
+  return (
+    <div className={frameClass}>
+      <dt className={cn(cardHeadClass, cardTitleClass)}>
+        <Icon
+          aria-hidden
+          weight="fill"
+          className="size-4 shrink-0"
+          style={{ color: accent }}
+        />
+        {label}
+      </dt>
+      <dd className={cardBodyClass}>
+        <p className="flex items-center gap-2 text-sm font-medium text-neutral-100 text-pretty">
+          {pending ? (
+            <CircleNotchIcon
+              aria-hidden
+              className="size-4 shrink-0 animate-spin text-faint motion-reduce:animate-none"
+            />
+          ) : null}
+          {headline}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-neutral-400 text-pretty">
+          {detail}
+        </p>
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Success as a daily rate. A day with no completed call has no rate of its
+ * own, so the series holds the last measured level instead of dropping to zero
+ * and inventing an outage.
+ */
+function successByDay(analytics: AnalyticsSummary): number[] {
+  let held = 0;
+  return analytics.days.map((day) => {
+    const completed = day.successes + day.failures;
+    if (completed > 0) held = (day.successes / completed) * 100;
+    return held;
+  });
+}
+
+function Insights({ analytics }: { analytics: AnalyticsSummary }) {
+  const topTool = analytics.tools.find((tool) => tool.calls > 0);
+  const unused = analytics.tools.filter((tool) => tool.calls === 0).length;
+  // Before the first call, "unused" is a fact about traffic, not about coverage.
+  const awaitingFirstCall = analytics.calls === 0;
+  const issues = analytics.failures + analytics.registrationFailures;
+
+  return (
+    <dl className="grid gap-4 sm:grid-cols-3">
+      <Insight
+        label="Top intent"
+        icon={TargetIcon}
+        accent={topTool ? VIZ_SERIES[0] : VIZ_MUTED}
+        pending={!topTool}
+        headline={topTool ? topTool.title : "Waiting for agent interactions"}
+        detail={
+          topTool
+            ? `${Math.round((topTool.calls / Math.max(1, analytics.calls)) * 100)}% of every tool call in this period.`
+            : "The first invocation will reveal what agents ask this app to do."
+        }
+      />
+      <Insight
+        label="Coverage gap"
+        icon={WrenchIcon}
+        accent={
+          awaitingFirstCall
+            ? VIZ_MUTED
+            : unused === 0
+              ? VIZ_STATUS.good
+              : VIZ_STATUS.warning
+        }
+        headline={
+          awaitingFirstCall
+            ? `${analytics.tools.length} deployed tool${analytics.tools.length === 1 ? "" : "s"} ready`
+            : unused === 0
+              ? "Every deployed tool was used"
+              : `${unused} deployed tool${unused === 1 ? "" : "s"} unused`
+        }
+        detail={
+          awaitingFirstCall
+            ? "Once calls arrive, this names the tools agents never reach for."
+            : unused === 0
+              ? "Your whole contract is receiving agent demand."
+              : "Review names and descriptions if expected tools stay undiscovered."
+        }
+      />
+      <Insight
+        label="Reliability"
+        icon={ShieldCheckIcon}
+        accent={issues === 0 ? VIZ_STATUS.good : VIZ_STATUS.critical}
+        headline={
+          issues === 0
+            ? "No recorded failures"
+            : `${number.format(issues)} issue${issues === 1 ? "" : "s"} recorded`
+        }
+        detail="Failed tool executions and failed tool registrations combined."
+      />
+    </dl>
+  );
+}
+
+function LegendKey({
+  color,
+  children,
+}: {
+  color: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className="h-0.5 w-3 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+      {children}
+    </span>
   );
 }
 
@@ -157,145 +296,139 @@ export function AgentAnalyticsDashboard({
   projectId: string;
   analytics: AnalyticsSummary;
 }) {
-  const hasEvents = Boolean(analytics.lastSeenAt);
-  const reliabilityIssues = analytics.failures + analytics.registrationFailures;
-  const topTool = analytics.tools.find((tool) => tool.calls > 0);
+  const hasActivity = analytics.sdkSessions + analytics.calls > 0;
+  const successRate =
+    analytics.successRate === null
+      ? null
+      : Math.round(analytics.successRate * 100);
+  const successColor =
+    successRate === null
+      ? VIZ_MUTED
+      : successRate >= 95
+        ? VIZ_STATUS.good
+        : successRate >= 80
+          ? VIZ_STATUS.warning
+          : VIZ_STATUS.critical;
+  const usedTools = analytics.tools.filter((tool) => tool.calls > 0).length;
 
   return (
-    <section aria-labelledby="agent-analytics-title" className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <section
+      id="agent-analytics"
+      aria-labelledby="agent-analytics-title"
+      className="scroll-mt-6 space-y-4"
+    >
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-blue-400">
-            Live telemetry
-          </p>
           <h2
             id="agent-analytics-title"
-            className="mt-2 flex items-center gap-2 text-xl font-medium text-neutral-100"
+            className="flex items-center gap-2 text-base font-medium text-balance"
           >
-            <ChartLineUpIcon aria-hidden className="size-5 text-faint" />
+            <ChartLineUpIcon
+              aria-hidden
+              className="size-4.5 shrink-0 text-faint"
+            />
             Agent analytics
           </h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-neutral-400">
-            Real SDK activity. Sodium records tool names, outcomes, and
-            timing—never prompts, inputs, outputs, or page content.
+          <p className="mt-1 max-w-2xl text-sm text-neutral-400 text-pretty">
+            What agents ask this app to do, whether the tools succeed, and how
+            long they take.
+          </p>
+          <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+            <BroadcastIcon aria-hidden className="size-4" />
+            {hasActivity ? "Collecting from the SDK" : "Ready to collect"}
+          </p>
+          <p className="mt-1 text-xs text-faint">
+            Tool names, outcomes and timing only. No prompts, inputs, outputs,
+            or page content.
           </p>
         </div>
         <RangePicker projectId={projectId} days={analytics.periodDays} />
       </header>
 
-      {!hasEvents && (
-        <div className="border-l-2 border-blue-400 py-1 pl-4">
+      {!hasActivity && (
+        <div className="border-l-2 border-blue-500 pl-3">
           <p className="flex items-center gap-2 text-sm font-medium text-neutral-100">
-            <PulseIcon aria-hidden className="size-4 text-blue-400" />
+            <PulseIcon aria-hidden className="size-4 shrink-0 text-blue-400" />
             Waiting for the first SDK session
           </p>
-          <p className="mt-1 text-sm text-neutral-500">
-            Open the deployed app in a WebMCP-capable browser. Events appear
-            here automatically when Sodium initializes and tools run.
+          <p className="mt-0.5 max-w-3xl text-sm leading-6 text-neutral-400 text-pretty">
+            Open your deployed app in a WebMCP-capable browser. Data appears
+            automatically once Sodium initializes and a tool runs.
           </p>
         </div>
       )}
 
-      <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Metric
           label="SDK sessions"
+          icon={BroadcastIcon}
+          accent={VIZ_MUTED}
           value={number.format(analytics.sdkSessions)}
-          detail="Successful SDK initializations"
-          values={analytics.days.map((day) => day.sdkSessions)}
-          accent="#a3a3a3"
+          detail={`${number.format(analytics.registrations)} tool registration${analytics.registrations === 1 ? "" : "s"}`}
+          series={analytics.days.map((day) => day.sdkSessions)}
         />
         <Metric
           label="Tool calls"
+          icon={WrenchIcon}
+          accent={VIZ_SERIES[0]}
           value={number.format(analytics.calls)}
-          detail={`${number.format(analytics.tools.filter((tool) => tool.calls > 0).length)} tools used`}
-          values={analytics.days.map((day) => day.p95Ms ?? 0)}
-          accent="#60a5fa"
+          detail={`${number.format(usedTools)} of ${number.format(analytics.tools.length)} tools used`}
+          series={analytics.days.map((day) => day.calls)}
         />
         <Metric
           label="Success rate"
-          value={percentage(analytics.successRate)}
+          icon={SealCheckIcon}
+          accent={successColor}
+          value={successRate === null ? "—" : `${successRate}%`}
           detail={`${number.format(analytics.failures)} failed calls`}
-          values={analytics.days.map((day) => {
-            const completed = day.successes + day.failures;
-            return completed ? (day.successes / completed) * 100 : 0;
-          })}
-          accent="#34d399"
+          series={successByDay(analytics)}
+          max={100}
         />
         <Metric
           label="P95 latency"
-          value={duration(analytics.p95Ms)}
+          icon={TimerIcon}
+          accent={VIZ_SERIES[6]}
+          value={formatLatency(analytics.p95Ms)}
           detail="Completed tool executions"
-          values={analytics.days.map((day) => day.calls)}
-          accent="#c4b5fd"
+          series={analytics.days.map((day) => day.p95Ms ?? 0)}
         />
       </dl>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(17rem,0.7fr)]">
-        <section className={frameClass}>
-          <header className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-            <PulseIcon aria-hidden className="size-4 text-faint" />
-            <h3 className="text-sm font-medium text-neutral-100">Activity</h3>
-          </header>
-          <div className="p-4">
-            <ActivityChart days={analytics.days} />
+      <Panel
+        title="Agent activity"
+        icon={PulseIcon}
+        description="SDK sessions and completed tool calls, by UTC day."
+        aside={
+          <div className="flex items-center gap-4 text-xs text-neutral-400">
+            <LegendKey color={VIZ_SERIES[0]}>Tool calls</LegendKey>
+            <LegendKey color={VIZ_MUTED}>SDK sessions</LegendKey>
           </div>
-        </section>
+        }
+      >
+        <ActivityChart days={analytics.days} hasActivity={hasActivity} />
+      </Panel>
 
-        <section className={frameClass}>
-          <header className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-            <BroadcastIcon aria-hidden className="size-4 text-faint" />
-            <h3 className="text-sm font-medium text-neutral-100">Signals</h3>
-          </header>
-          <dl className="divide-y divide-white/[0.07] px-4">
-            <Signal
-              icon={topTool ? WrenchIcon : PulseIcon}
-              label="Top intent"
-              value={topTool?.name.replaceAll("_", " ") ?? "Waiting for calls"}
-            />
-            <Signal
-              icon={reliabilityIssues ? WarningCircleIcon : ShieldCheckIcon}
-              label="Reliability"
-              value={
-                reliabilityIssues
-                  ? `${number.format(reliabilityIssues)} recorded issue${reliabilityIssues === 1 ? "" : "s"}`
-                  : "No recorded failures"
-              }
-              tone={reliabilityIssues ? "text-amber-300" : "text-emerald-300"}
-            />
-            <Signal
-              icon={SealCheckIcon}
-              label="Registrations"
-              value={`${number.format(analytics.registrations)} successful`}
-            />
-            <Signal
-              icon={TimerIcon}
-              label="Denied by users"
-              value={number.format(analytics.denied)}
-            />
-          </dl>
-        </section>
-      </div>
+      <Panel
+        title="What agents ask your app to do"
+        icon={CursorClickIcon}
+        description="Every tool in the deployed contract, and the days agents actually invoked it."
+        aside={
+          analytics.denied > 0 ? (
+            <span className="text-xs text-amber-300 tabular-nums">
+              {number.format(analytics.denied)} denied at the prompt
+            </span>
+          ) : null
+        }
+      >
+        <ToolTimeline tools={analytics.tools} days={analytics.days} />
+      </Panel>
+
+      <EngineInsights
+        engines={analytics.engines}
+        periodDays={analytics.periodDays}
+      />
+
+      <Insights analytics={analytics} />
     </section>
-  );
-}
-
-function Signal({
-  icon: Icon,
-  label,
-  value,
-  tone = "text-neutral-200",
-}: {
-  icon: typeof WrenchIcon;
-  label: string;
-  value: string;
-  tone?: string;
-}) {
-  return (
-    <div className="py-4">
-      <dt className="flex items-center gap-2 text-xs text-neutral-500">
-        <Icon aria-hidden className="size-3.5" /> {label}
-      </dt>
-      <dd className={cn("mt-1 truncate text-sm", tone)}>{value}</dd>
-    </div>
   );
 }

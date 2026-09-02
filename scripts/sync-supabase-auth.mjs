@@ -47,6 +47,12 @@ if (!process.env.SUPABASE_ACCESS_TOKEN) {
 
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "sodium-auth-env-"));
 const pulledPath = join(temporaryDirectory, `${target}.env`);
+const oauthCredentialKeys = [
+  "SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID",
+  "SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET",
+  "SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID",
+  "SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET",
+];
 
 try {
   const args = ["env", "pull", pulledPath, `--environment=${target}`, "--yes"];
@@ -68,33 +74,35 @@ try {
   const usable = (value) => Boolean(value && value !== "[SENSITIVE]");
   if (
     target === "production" &&
-    (!usable(credentials.SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID) ||
-      !usable(credentials.SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)) &&
+    oauthCredentialKeys.some((key) => !usable(credentials[key])) &&
     existsSync(join(root, ".env"))
   ) {
     const legacy = parse(readFileSync(join(root, ".env"), "utf8"));
-    if (
-      usable(legacy.SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID) &&
-      usable(legacy.SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)
-    ) {
-      credentials = legacy;
+    credentials = Object.fromEntries(
+      oauthCredentialKeys.map((key) => [
+        key,
+        usable(credentials[key]) ? credentials[key] : legacy[key],
+      ]),
+    );
+    if (oauthCredentialKeys.every((key) => usable(credentials[key]))) {
       writeFileSync(
         credentialPath,
-        [
-          `SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID=${JSON.stringify(legacy.SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID)}`,
-          `SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET=${JSON.stringify(legacy.SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET)}`,
-          "",
-        ].join("\n"),
+        `${oauthCredentialKeys
+          .map((key) => `${key}=${JSON.stringify(credentials[key])}`)
+          .join("\n")}\n`,
         { mode: 0o600 },
       );
       chmodSync(credentialPath, 0o600);
     }
   }
 
-  const clientId = credentials.SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID;
-  const secret = credentials.SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET;
-  if (!usable(clientId) || !usable(secret)) {
-    throw new Error(`Vercel ${target} is missing GitHub Auth credentials`);
+  const missingCredentials = oauthCredentialKeys.filter(
+    (key) => !usable(credentials[key]),
+  );
+  if (missingCredentials.length > 0) {
+    throw new Error(
+      `Vercel ${target} is missing OAuth credentials: ${missingCredentials.join(", ")}`,
+    );
   }
 
   const config = environments[target];
@@ -110,8 +118,15 @@ try {
         site_url: config.siteUrl,
         uri_allow_list: config.redirects.join(","),
         external_github_enabled: true,
-        external_github_client_id: clientId,
-        external_github_secret: secret,
+        external_github_client_id:
+          credentials.SUPABASE_AUTH_EXTERNAL_GITHUB_CLIENT_ID,
+        external_github_secret:
+          credentials.SUPABASE_AUTH_EXTERNAL_GITHUB_SECRET,
+        external_google_enabled: true,
+        external_google_client_id:
+          credentials.SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID,
+        external_google_secret:
+          credentials.SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET,
       }),
     },
   );
@@ -136,7 +151,8 @@ try {
   if (
     body.site_url !== config.siteUrl ||
     body.uri_allow_list !== config.redirects.join(",") ||
-    body.external_github_enabled !== true
+    body.external_github_enabled !== true ||
+    body.external_google_enabled !== true
   ) {
     throw new Error(`Supabase Auth verification did not match ${target}`);
   }

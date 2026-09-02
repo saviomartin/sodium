@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createTelemetry } from "../src/telemetry";
+import { answerEngineAttribution, createTelemetry } from "../src/telemetry";
 
 const context = {
   endpoint: "https://sodium.example",
@@ -31,6 +31,14 @@ describe("createTelemetry", () => {
     expect(sendBeacon.mock.calls[0]?.[0]).toBe(
       "https://sodium.example/api/events",
     );
+    return blob.text().then((body) => {
+      expect(JSON.parse(body)).toMatchObject({
+        event: "tool_succeeded",
+        sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      });
+      expect(body).not.toContain("input");
+      expect(body).not.toContain("output");
+    });
   });
 
   it("falls back to fetch when Beacon cannot queue the event", async () => {
@@ -46,5 +54,36 @@ describe("createTelemetry", () => {
 
     createTelemetry(context, window).event("sdk_ready");
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  });
+
+  it("attributes exact answer-engine hosts and their subdomains", () => {
+    Object.defineProperty(document, "referrer", {
+      configurable: true,
+      value: "https://chatgpt.com/c/answer",
+    });
+    expect(answerEngineAttribution(window, document)).toEqual({
+      answerEngine: "ChatGPT",
+      attributionMethod: "referrer",
+    });
+  });
+
+  it("rejects lookalike hosts", () => {
+    Object.defineProperty(document, "referrer", {
+      configurable: true,
+      value: "https://evilchatgpt.com/c/answer",
+    });
+    expect(answerEngineAttribution(window, document)).toBeNull();
+  });
+
+  it("uses allowlisted campaign attribution when referrer is unavailable", () => {
+    Object.defineProperty(document, "referrer", {
+      configurable: true,
+      value: "",
+    });
+    window.history.replaceState({}, "", "/?utm_source=claude");
+    expect(answerEngineAttribution(window, document)).toEqual({
+      answerEngine: "Claude",
+      attributionMethod: "campaign",
+    });
   });
 });

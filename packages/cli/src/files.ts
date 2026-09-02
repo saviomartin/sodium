@@ -64,6 +64,16 @@ export async function writeProject(
   });
 }
 
+export async function ensureProjectPlaceholder(cwd: string): Promise<void> {
+  const path = join(cwd, PROJECT_FILE);
+  try {
+    await access(path);
+  } catch {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, "null\n", { mode: 0o644 });
+  }
+}
+
 export async function suggestedProjectName(cwd: string): Promise<string> {
   try {
     const pkg = (await readJson(join(cwd, "package.json"))) as {
@@ -73,7 +83,7 @@ export async function suggestedProjectName(cwd: string): Promise<string> {
       return pkg.name.trim().split("/").at(-1) ?? basename(cwd);
     }
   } catch {
-    // Framework detection will report a missing or invalid package later.
+    // A browser app does not need package metadata when --skip-install is used.
   }
   return basename(cwd);
 }

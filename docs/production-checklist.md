@@ -25,7 +25,7 @@
 ## Release proof
 
 - [ ] Typecheck, lint, unit tests, production build, and browser E2E pass from a clean checkout.
-- [ ] Fresh Next.js and Vite React fixture installs work with the published npm packages.
+- [ ] Fresh Next App, Next Pages, Vite React, Nuxt, SvelteKit, Astro, Angular, and unknown browser fixtures pass `validate`, build, and `doctor --url` with published npm packages.
 - [ ] A real WebMCP tool call produces one started event and one outcome with no arguments/outputs.
 - [ ] Wrong-origin and wrong-key event requests produce no stored rows.
 - [ ] Dashboard totals match direct database queries for the same 30-day window.

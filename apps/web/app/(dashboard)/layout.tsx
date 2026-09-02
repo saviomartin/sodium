@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { SiteFooter } from "@/components/marketing";
 import { getAccountContext } from "@/lib/queries";
 
 /**
@@ -21,7 +22,7 @@ export default async function DashboardLayout({
   if (!account.userId) redirect("/");
 
   return (
-    <div className="min-h-dvh">
+    <div className="flex min-h-dvh flex-col">
       <AppHeader
         account={{
           email: account.email,
@@ -29,9 +30,10 @@ export default async function DashboardLayout({
           avatarUrl: account.avatarUrl,
         }}
       />
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
         {children}
       </main>
+      <SiteFooter />
     </div>
   );
 }

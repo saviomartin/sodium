@@ -2,17 +2,31 @@
 
 import { useActionState, useRef, useState } from "react";
 import { deleteProjectAction, type DeleteProjectState } from "@/lib/actions";
-import { secondaryButtonClass } from "./ui";
-import { TrashIcon } from "./icons";
+import {
+  Field,
+  cn,
+  frameClass,
+  inputClass,
+  secondaryButtonClass,
+} from "./ui";
+import { CircleNotchIcon, TrashIcon, WarningCircleIcon } from "./icons";
 
 const initialState: DeleteProjectState = { error: null };
 
+/**
+ * Deleting a project is irreversible and takes the telemetry with it, so the
+ * confirmation is the project's own name rather than a generic word: it cannot
+ * be typed from muscle memory, and typing it means you read which project you
+ * are on.
+ */
 export function DeleteProjectDialog({
   projectId,
   projectName,
+  className = secondaryButtonClass,
 }: {
   projectId: string;
   projectName: string;
+  className?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [confirmation, setConfirmation] = useState("");
@@ -26,26 +40,28 @@ export function DeleteProjectDialog({
     <>
       <button
         type="button"
-        className={secondaryButtonClass}
+        className={className}
         onClick={() => dialog.current?.showModal()}
       >
-        <TrashIcon aria-hidden className="size-4 text-red-400" />
+        <TrashIcon aria-hidden className="size-4 shrink-0" />
         Delete project
       </button>
       <dialog
         ref={dialog}
         aria-labelledby="delete-project-title"
         aria-describedby="delete-project-description"
-        className="m-auto w-[min(28rem,calc(100%-2rem))] rounded-lg border border-white/10 bg-neutral-950 p-0 text-neutral-100 shadow-2xl backdrop:bg-black/80"
+        className="modal m-auto w-[min(28rem,calc(100%-2rem))] bg-transparent p-0 text-neutral-200"
         onClick={(event) => {
+          // The backdrop is the dialog's own box outside its content, so a
+          // click landing on the element itself is a click outside the panel.
           if (event.currentTarget === event.target) event.currentTarget.close();
         }}
       >
-        <form action={action} className="p-5">
+        <form action={action} className={cn(frameClass, "p-5")}>
           <input type="hidden" name="projectId" value={projectId} />
-          <div className="flex size-9 items-center justify-center rounded-md bg-red-500/10 text-red-400">
+          <span className="flex size-9 items-center justify-center rounded-md bg-red-500/10 text-red-400">
             <TrashIcon aria-hidden className="size-4" />
-          </div>
+          </span>
           <h2
             id="delete-project-title"
             className="mt-4 text-lg font-medium text-balance"
@@ -56,24 +72,40 @@ export function DeleteProjectDialog({
             id="delete-project-description"
             className="mt-2 text-sm leading-6 text-neutral-400 text-pretty"
           >
-            This permanently deletes every deployment and analytics event for
-            this project. Your account and application repository are untouched;
-            a future deploy will create a fresh project.
+            This permanently deletes every deployment and every analytics event
+            for this project. Your account and your application repository are
+            untouched; a future deploy creates a fresh project.
           </p>
-          <label className="mt-5 block text-xs text-neutral-400">
-            Type <strong className="text-neutral-200">{projectName}</strong> to
-            confirm
-            <input
-              autoFocus
-              name="confirmation"
-              autoComplete="off"
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-              className="mt-2 block w-full rounded-md border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-neutral-100 outline-none transition-colors focus:border-red-400"
-            />
-          </label>
+          <div className="mt-5">
+            <Field
+              label={
+                <>
+                  Type{" "}
+                  <strong className="text-neutral-200">{projectName}</strong> to
+                  confirm
+                </>
+              }
+            >
+              <input
+                autoFocus
+                name="confirmation"
+                autoComplete="off"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                className={cn(inputClass, "py-2")}
+              />
+            </Field>
+          </div>
           {state.error ? (
-            <p role="alert" className="mt-2 text-sm text-red-300">
+            <p
+              role="alert"
+              className="mt-3 flex items-start gap-1.5 text-sm text-red-400 text-pretty"
+            >
+              <WarningCircleIcon
+                aria-hidden
+                weight="fill"
+                className="mt-0.5 size-4 shrink-0"
+              />
               {state.error}
             </p>
           ) : null}
@@ -88,8 +120,16 @@ export function DeleteProjectDialog({
             <button
               type="submit"
               disabled={!confirmed || pending}
-              className="inline-flex min-h-10 items-center justify-center rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-busy={pending}
+              className="group inline-flex items-center justify-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 disabled:opacity-40"
             >
+              {pending && (
+                <CircleNotchIcon
+                  aria-hidden
+                  weight="bold"
+                  className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                />
+              )}
               {pending ? "Deleting…" : "Delete project"}
             </button>
           </div>

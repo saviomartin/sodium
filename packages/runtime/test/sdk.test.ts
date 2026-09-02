@@ -21,9 +21,22 @@ const config = {
   ],
 };
 
+const contextProject = {
+  schemaVersion: 1,
+  projectId: "prj_abcdefghijkl",
+  publishableKey: `sod_pk_${"a".repeat(32)}`,
+  endpoint: "https://sodium.example",
+} as const;
+
 describe("installSodium", () => {
   beforeEach(() => {
     document.body.innerHTML = "<h1>Fixture</h1>";
+    document.modelContext = undefined;
+    Object.defineProperty(document, "referrer", {
+      configurable: true,
+      value: "",
+    });
+    window.history.replaceState({}, "", "/");
   });
 
   it("registers sodium.json tools without fetching a manifest", async () => {
@@ -48,6 +61,35 @@ describe("installSodium", () => {
     });
     expect(handle.available).toBe(false);
     expect(handle.registered()).toEqual([]);
+  });
+
+  it("records an answer-engine referral without WebMCP support", async () => {
+    Object.defineProperty(document, "referrer", {
+      configurable: true,
+      value: "https://claude.ai/chat/example",
+    });
+    const sendBeacon = vi.fn(
+      (url: string, data: Blob) => url.length > 0 && data.size > 0,
+    );
+    Object.defineProperty(window.navigator, "sendBeacon", {
+      configurable: true,
+      value: sendBeacon,
+    });
+
+    const handle = await installSodium({
+      config: { ...config, telemetry: { enabled: true } },
+      project: contextProject,
+      document,
+    });
+
+    expect(handle.available).toBe(false);
+    expect(sendBeacon).toHaveBeenCalledOnce();
+    const body = await (sendBeacon.mock.calls[0]?.[1] as Blob).text();
+    expect(JSON.parse(body)).toMatchObject({
+      event: "answer_engine_referral",
+      answerEngine: "Claude",
+      attributionMethod: "referrer",
+    });
   });
 
   it("refreshes conditional tools when application state changes attributes", async () => {

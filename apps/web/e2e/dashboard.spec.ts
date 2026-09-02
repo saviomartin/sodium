@@ -6,16 +6,36 @@ test.describe.configure({ mode: "serial" });
 
 test("signed-out home explains the file-first workflow", async ({ page }) => {
   await page.goto("/");
+  // The headline's animated copy is aria-hidden, so its accessible name is the
+  // static sentence beside it that names every agent once.
   await expect(
-    page.getByRole("heading", {
-      name: /Turn real product flows into tools agents can use/,
-    }),
+    page.getByRole("heading", { name: /Make your website usable by/ }),
   ).toBeVisible();
   await expect(
     page.getByText("npx sodiumtools init", { exact: true }).first(),
   ).toBeVisible();
   await expect(
+    page.getByText("npx sodiumtools deploy", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
     page.getByText(/never requests repository access/),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "FAQ" })).toBeVisible();
+  // The two features that are designed but not yet wired still have to be
+  // findable, because the marketing page makes a promise about them.
+  await expect(
+    page.getByRole("heading", { name: "Immutable deployment history" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Answer engine referrals" }),
+  ).toBeVisible();
+  // There is no sign-in panel on the page any more; the header is the door.
+  await page.locator("summary").filter({ hasText: "Sign in" }).click();
+  await expect(
+    page.getByRole("button", { name: "Continue with Google" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Continue with GitHub" }),
   ).toBeVisible();
 });
 
@@ -27,6 +47,8 @@ test("project dashboard reports tool outcomes and deployment history", async ({
   const stamp = `${Date.now().toString(36)}abcd`;
   const projectId = `prj_${stamp}`;
   const deploymentId = `dep_${stamp}aa`;
+  const publishableKey = `sod_pk_${"c".repeat(32)}`;
+  const sessionId = crypto.randomUUID();
   const config = {
     schemaVersion: 1,
     app: { name: "Fixture shop", origins: ["https://example.com"] },
@@ -49,7 +71,9 @@ test("project dashboard reports tool outcomes and deployment history", async ({
     id: projectId,
     owner_id: users.owner.id,
     name: "Fixture shop",
-    publishable_key_hash: "a".repeat(64),
+    publishable_key_hash: createHash("sha256")
+      .update(publishableKey)
+      .digest("hex"),
   });
   if (projectError) throw projectError;
   const { error: deploymentError } = await admin.from("deployments").insert({
@@ -66,6 +90,36 @@ test("project dashboard reports tool outcomes and deployment history", async ({
     .update({ current_deployment_id: deploymentId })
     .eq("id", projectId);
   if (currentDeploymentError) throw currentDeploymentError;
+
+  const referralPayload = JSON.stringify({
+    projectId,
+    key: publishableKey,
+    deploymentId,
+    configVersion: 1,
+    sdkVersion: "0.1.0",
+    event: "answer_engine_referral",
+    sessionId,
+    answerEngine: "ChatGPT",
+    attributionMethod: "referrer",
+    ts: Date.now(),
+  });
+  const referralResponse = await page.request.post("/api/events", {
+    headers: {
+      "content-type": "text/plain;charset=UTF-8",
+      origin: "https://example.com",
+    },
+    data: referralPayload,
+  });
+  expect(referralResponse.status()).toBe(202);
+  const duplicateReferral = await page.request.post("/api/events", {
+    headers: {
+      "content-type": "text/plain;charset=UTF-8",
+      origin: "https://example.com",
+    },
+    data: referralPayload,
+  });
+  expect(duplicateReferral.status()).toBe(202);
+
   const invocationId = crypto.randomUUID();
   const base = {
     project_id: projectId,
@@ -75,6 +129,7 @@ test("project dashboard reports tool outcomes and deployment history", async ({
     tool_id: "tl_checkout",
     tool_name: "start_checkout",
     invocation_id: invocationId,
+    session_id: sessionId,
     occurred_at: new Date().toISOString(),
   };
   const { error: eventError } = await admin.from("usage_events").insert([
@@ -90,19 +145,47 @@ test("project dashboard reports tool outcomes and deployment history", async ({
     { ...base, event: "tool_succeeded", duration_ms: 84 },
   ]);
   if (eventError) throw eventError;
+  const { data: persistedReferral, error: referralError } = await admin
+    .from("usage_events")
+    .select("answer_engine, attribution_method, session_id")
+    .eq("project_id", projectId)
+    .eq("event", "answer_engine_referral")
+    .single();
+  if (referralError) throw referralError;
+  expect(persistedReferral).toEqual({
+    answer_engine: "ChatGPT",
+    attribution_method: "referrer",
+    session_id: sessionId,
+  });
 
   await signIn(page, users.owner.email);
-  await expect(
-    page.getByRole("heading", { name: "WebMCP projects" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
   await page.getByRole("link", { name: /Fixture shop/ }).click();
   await expect(
     page.getByRole("heading", { name: "Fixture shop" }),
   ).toBeVisible();
   await expect(page.getByText("100%").first()).toBeVisible();
   await expect(page.getByText("84 ms").first()).toBeVisible();
-  await expect(page.getByText("1 successful")).toBeVisible();
-  await expect(page.getByText("Start checkout").last()).toBeVisible();
+  await expect(page.getByText("1 tool registration")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Answer engine referrals" }),
+  ).toBeVisible();
+  const referralRow = page.getByRole("row", { name: /ChatGPT/ });
+  await expect(referralRow).toContainText("chatgpt.com");
+  await expect(referralRow).toContainText("Referrer");
+  await expect(referralRow).toContainText("100%");
+
+  // The tool row opens the contract the deployment actually published.
+  await page.getByRole("button", { name: /Start checkout/ }).click();
+  const details = page.getByRole("dialog", { name: /Start checkout/ });
+  await expect(details).toBeVisible();
+  // `financial` forces the confirmation floor, and `run.navigate` is the
+  // mechanism the fixture declares.
+  await expect(details.getByText("Prompt required")).toBeVisible();
+  await expect(details.getByText("navigate", { exact: true })).toBeVisible();
+  await details.getByRole("button", { name: "Close" }).click();
+  await expect(details).toBeHidden();
+
   await page.getByRole("link", { name: "7d" }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?range=7d`));
   await expect(
@@ -114,7 +197,10 @@ test("project dashboard reports tool outcomes and deployment history", async ({
   await expect(dialog).toBeVisible();
   await dialog.getByRole("textbox").fill("Fixture shop");
   await dialog.getByRole("button", { name: "Delete project" }).click();
-  await expect(page).toHaveURL(/\/dashboard\?deleted=1$/);
+  // Home, carrying the confirmation the notice renders. Going via /dashboard
+  // used to drop the query string and say nothing at all.
+  await expect(page).toHaveURL(/\/\?deleted=project$/);
+  await expect(page.getByRole("status")).toContainText(/deleted/i);
 
   const [projectCount, deploymentCount, eventCount] = await Promise.all([
     admin

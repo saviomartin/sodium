@@ -4,8 +4,19 @@ import { track, type BeforeSendEvent } from "@vercel/analytics";
 
 type AnalyticsProperty = string | number | boolean | null;
 
+/**
+ * Every product event this app may send. Adding a name here is the review
+ * gate: the list is short on purpose, and an event that would need a project,
+ * tool, or user identifier to be useful does not belong on it.
+ */
+export type ProductAnalyticsEventName =
+  | "GitHub Sign In Started"
+  | "Google Sign In Started"
+  | "CLI Command Copied"
+  | "Tool Details Opened";
+
 export interface ProductAnalyticsEvent {
-  name: "GitHub Sign In Started";
+  name: ProductAnalyticsEventName;
   properties?: Record<string, AnalyticsProperty>;
 }
 

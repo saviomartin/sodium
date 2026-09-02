@@ -1,7 +1,11 @@
 import type { SodiumConfig, SodiumProject } from "sodium-webmcp-spec";
 import { compileLocalConfig } from "./config";
 import { executeTool, type SodiumHandlers } from "./handlers";
-import { createTelemetry, noopTelemetry } from "./telemetry";
+import {
+  answerEngineAttribution,
+  createTelemetry,
+  noopTelemetry,
+} from "./telemetry";
 import {
   createToolRegistrar,
   detectModelContext,
@@ -44,12 +48,6 @@ export async function installSodium(
     return empty;
   }
 
-  const modelContext = detectModelContext(doc);
-  if (!modelContext) {
-    if (options.debug) win.console.info("[sodium] WebMCP is unavailable");
-    return empty;
-  }
-
   const telemetry =
     compiled.telemetry.enabled && options.project
       ? createTelemetry(
@@ -63,6 +61,17 @@ export async function installSodium(
           win,
         )
       : noopTelemetry;
+
+  const attribution = answerEngineAttribution(win, doc);
+  if (attribution) {
+    telemetry.event("answer_engine_referral", attribution);
+  }
+
+  const modelContext = detectModelContext(doc);
+  if (!modelContext) {
+    if (options.debug) win.console.info("[sodium] WebMCP is unavailable");
+    return empty;
+  }
 
   const registrar = createToolRegistrar(
     modelContext,

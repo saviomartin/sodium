@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dashboardUrl, frameworkName, plainResult } from "../src/output";
+import { dashboardUrl, plainResult } from "../src/output";
 
 describe("CLI success output", () => {
   it("formats useful details and a next action", () => {
@@ -9,15 +9,15 @@ describe("CLI success output", () => {
         title: "Sodium initialized",
         details: [
           ["Project", "my-app"],
-          ["Framework", "Next.js"],
+          ["Application", "Next.js"],
         ],
         next: "create sodium.json",
       }),
     ).toBe(
       [
         "✓ Sodium init · Sodium initialized",
-        "  Project    my-app",
-        "  Framework  Next.js",
+        "  Project      my-app",
+        "  Application  Next.js",
         "",
         "Next: create sodium.json",
       ].join("\n"),
@@ -31,11 +31,6 @@ describe("CLI success output", () => {
     expect(dashboardUrl("http://localhost:3000/")).toBe(
       "http://localhost:3000/dashboard",
     );
-  });
-
-  it("uses human-readable framework names", () => {
-    expect(frameworkName("next")).toBe("Next.js");
-    expect(frameworkName("vite-react")).toBe("React with Vite");
   });
 
   it("prints tool rows in deterministic plain output", () => {
