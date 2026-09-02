@@ -5,25 +5,24 @@ Sodium turns application behavior into observable WebMCP tools. The application 
 ## Developer flow
 
 ```bash
-# Install the command once
-npm install --global sodium-webmcp
-
 # 1. Install the SDK and project-local skill
-sodium init
+npx sodium-webmcp@latest init
 
 # 2. Ask an agent with the installed skill to create sodium.json
 use $sodium-webmcp
 
 # 3. Authorize and create the first project deployment
-sodium login
-sodium deploy
-sodium doctor
+npx sodium-webmcp@latest login
+npx sodium-webmcp@latest deploy
+npx sodium-webmcp@latest doctor
 
 # Later releases
-sodium deploy
+npx sodium-webmcp@latest deploy
 ```
 
 `init` detects Next.js or Vite React, installs `sodium-webmcp-sdk`, and installs the project-local authoring skill. `login` verifies an existing session or opens a one-time device authorization page. The first `deploy` validates `sodium.json`, creates the Sodium project, adds the smallest framework integration, and writes `.sodium/project.json`.
+
+Every successful command prints the relevant project details, dashboard URL when one exists, and the next action. A global installation is not required.
 
 ## Repository layout
 
