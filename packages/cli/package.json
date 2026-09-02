@@ -1,6 +1,6 @@
 {
   "name": "sodiumtools",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Turn sodium.json into observable WebMCP tools",
   "type": "module",
   "bin": {

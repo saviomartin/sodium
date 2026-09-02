@@ -32,6 +32,7 @@ import {
   choose,
   input,
   isInteractiveTerminal,
+  printInitHeader,
   printInfo,
   printResult,
   startProgress,
@@ -59,6 +60,7 @@ export interface CommandContext {
   cwd: string;
   interactive: boolean;
   result(result: CommandResult): void;
+  initHeader(): void;
   info(message: string): void;
   progress(label: string): ProgressHandle;
   choose<T extends string>(question: string, choices: Choice<T>[]): Promise<T>;
@@ -85,6 +87,7 @@ export function defaultContext(cwd = process.cwd()): CommandContext {
     cwd,
     interactive,
     result: printResult,
+    initHeader: printInitHeader,
     info: printInfo,
     progress: startProgress,
     choose,
@@ -288,7 +291,7 @@ export async function deployCommand(
     const opened = shouldOpen ? await context.open(url) : false;
     context.result({
       command: "deploy",
-      title: "Deployment is live",
+      title: "Deployment successful",
       details: [
         ["Project", `${projectName} · ${project.projectId}`],
         ["Version", `v${deployment.version}`],
@@ -368,13 +371,13 @@ async function installedAgentChoices(
     {
       value: "other" as const,
       label: "Another coding agent",
-      description: "Copy a complete prompt for Cursor, Windsurf, or any agent.",
+      description: "Copy a prompt for another coding agent.",
       color: "#d946ef",
     },
     {
       value: "none" as const,
       label: "Not now",
-      description: "Finish init and create sodium.json later.",
+      description: "Create sodium.json later.",
       color: "#737373",
     },
   ];
@@ -404,6 +407,7 @@ export async function initCommand(
   context: CommandContext,
   options: { skipInstall?: boolean; agent?: AgentChoice; name?: string } = {},
 ): Promise<void> {
+  context.initHeader();
   const [savedInit, suggestedName] = await Promise.all([
     readInit(context.cwd),
     suggestedProjectName(context.cwd),
@@ -559,7 +563,7 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
         risk: tool.risk,
         routes: tool.on.join(", "),
       })),
-      note: "Ready for WebMCP agents.",
+      note: "Ready for WebMCP agents. Open the ChatGPT desktop app, visit your site, and ask it to complete an action. You’ll see it discover and use the tools above.",
     });
   } catch (error) {
     progress.stop();

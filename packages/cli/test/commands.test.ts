@@ -25,6 +25,7 @@ function contextFor(
     cwd,
     interactive: false,
     result: vi.fn(),
+    initHeader: vi.fn(),
     info: vi.fn(),
     progress: vi.fn(() => ({ update: vi.fn(), stop: vi.fn() })),
     choose: vi.fn(async () => "none") as CommandContext["choose"],
@@ -39,6 +40,22 @@ function contextFor(
 }
 
 describe("agent-assisted init", () => {
+  it("prints the large Sodium header before doing any init work", async () => {
+    const cwd = await nextFixture();
+    const calls: string[] = [];
+    const context = contextFor(cwd, {
+      initHeader: vi.fn(() => calls.push("header")),
+      progress: vi.fn(() => {
+        calls.push("progress");
+        return { update: vi.fn(), stop: vi.fn() };
+      }),
+    });
+
+    await initCommand(context, { skipInstall: true, agent: "none" });
+
+    expect(calls[0]).toBe("header");
+  });
+
   it("copies and prints the universal prompt for another agent", async () => {
     const cwd = await nextFixture();
     const context = contextFor(cwd);

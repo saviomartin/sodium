@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { createInterface } from "node:readline/promises";
-import { Box, Text, render, useApp, useInput, type Instance } from "ink";
+import {
+  Box,
+  Text,
+  render,
+  useApp,
+  useInput,
+  useStdout,
+  type Instance,
+} from "ink";
 import {
   CLI_VERSION,
   HELP_COMMANDS,
@@ -14,10 +22,13 @@ const ACCENT_MUTED = "#0891b2";
 const ACCENT_SHADOW = "#164e63";
 const ACCENT_MUTED_SHADOW = "#083344";
 const MUTED = "#737373";
+const SUCCESS = "#22c55e";
+const WARNING = "#facc15";
 const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"];
+const INCREMENTAL_RENDER = { incrementalRendering: true } as const;
 const LOGO = {
-  left: ["              ", "█▀▀▀ █▀▀█ █▀▀▄", "^^^█ █__█ █__█", "▀▀▀▀ ▀▀▀▀ ▀▀▀ "],
-  right: ["              ", "▀█▀ █  █ █▄ ▄█", "_█_ █__█ █ ▀ █", "▀▀▀ ▀▀▀▀ ▀   ▀"],
+  left: ["█▀▀▀ █▀▀█ █▀▀▄", "^^^█ █__█ █__█", "▀▀▀▀ ▀▀▀▀ ▀▀▀ "],
+  right: ["▀█▀ █  █ █▄ ▄█", "_█_ █__█ █ ▀ █", "▀▀▀ ▀▀▀▀ ▀   ▀"],
 };
 
 export interface Choice<T extends string> {
@@ -36,6 +47,11 @@ export function isInteractiveTerminal(): boolean {
   return Boolean(
     process.stdin.isTTY && process.stdout.isTTY && !process.env.CI,
   );
+}
+
+function useViewWidth(): number {
+  const { stdout } = useStdout();
+  return Math.max(1, Math.min(78, stdout.columns ?? 78));
 }
 
 function hasVisualTerminal(): boolean {
@@ -70,7 +86,12 @@ function LogoLine({
         }
         if (character === "^") {
           return (
-            <Text key={index} color={color} backgroundColor={shadow} bold={bold}>
+            <Text
+              key={index}
+              color={color}
+              backgroundColor={shadow}
+              bold={bold}
+            >
               ▀
             </Text>
           );
@@ -85,16 +106,17 @@ function LogoLine({
   );
 }
 
-function Logo() {
+export function InitHeaderView() {
   return (
     <Box flexDirection="column">
       {LOGO.left.map((line, index) => (
-        <Box key={index} gap={1}>
+        <Box key={index}>
           <LogoLine
             line={line}
             color={ACCENT_MUTED}
             shadow={ACCENT_MUTED_SHADOW}
           />
+          <Text> </Text>
           <LogoLine
             line={LOGO.right[index] ?? ""}
             color={ACCENT}
@@ -109,19 +131,19 @@ function Logo() {
 
 function Brand({ command }: { command?: string }) {
   return (
-    <Box gap={1}>
+    <Box>
       <Text color={ACCENT} bold>
         ◆ SODIUM
       </Text>
-      {command ? <Text color={MUTED}>{command}</Text> : null}
+      {command ? <Text color={MUTED}> {command}</Text> : null}
     </Box>
   );
 }
 
 function toneColor(tone: CommandResult["tone"]): string {
-  if (tone === "warning") return "yellow";
-  if (tone === "info") return "blue";
-  return "green";
+  if (tone === "warning") return WARNING;
+  if (tone === "info") return ACCENT;
+  return SUCCESS;
 }
 
 function ToolTable({ tools }: { tools: NonNullable<CommandResult["tools"]> }) {
@@ -134,20 +156,20 @@ function ToolTable({ tools }: { tools: NonNullable<CommandResult["tools"]> }) {
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box>
-        <Box width={nameWidth + 2}>
+        <Box width={nameWidth + 2} flexShrink={0}>
           <Text color={MUTED}>TOOL</Text>
         </Box>
-        <Box width={riskWidth + 2}>
+        <Box width={riskWidth + 2} flexShrink={0}>
           <Text color={MUTED}>RISK</Text>
         </Box>
         <Text color={MUTED}>ROUTES</Text>
       </Box>
       {visible.map((tool) => (
         <Box key={tool.name}>
-          <Box width={nameWidth + 2}>
+          <Box width={nameWidth + 2} flexShrink={0}>
             <Text>{tool.name.slice(0, nameWidth)}</Text>
           </Box>
-          <Box width={riskWidth + 2}>
+          <Box width={riskWidth + 2} flexShrink={0}>
             <Text color={tool.risk === "read_only" ? "green" : "yellow"}>
               {tool.risk}
             </Text>
@@ -164,27 +186,23 @@ function ToolTable({ tools }: { tools: NonNullable<CommandResult["tools"]> }) {
 
 export function ResultView({ result }: { result: CommandResult }) {
   const details = result.details ?? [];
-  const width = Math.max(0, ...details.map(([label]) => label.length));
+  const labelWidth = Math.max(0, ...details.map(([label]) => label.length));
+  const viewWidth = useViewWidth();
   const color = toneColor(result.tone);
 
   return (
-    <Box flexDirection="column" marginY={1} width={78}>
-      {result.command === "init" ? (
-        <Logo />
-      ) : (
-        <Brand command={result.command} />
-      )}
-      <Box marginTop={1} gap={1}>
+    <Box flexDirection="column" marginY={1} width={viewWidth}>
+      {result.command === "init" ? null : <Brand command={result.command} />}
+      <Box marginTop={result.command === "init" ? 0 : 1}>
         <Text color={color} bold>
-          {result.tone === "warning" ? "!" : "✓"}
+          {result.tone === "warning" ? "!" : "✓"} {result.title}
         </Text>
-        <Text bold>{result.title}</Text>
       </Box>
       {details.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           {details.map(([label, value]) => (
             <Box key={label}>
-              <Box width={width + 2}>
+              <Box width={labelWidth + 2} flexShrink={0}>
                 <Text color={MUTED}>{label}</Text>
               </Box>
               <Text>{String(value)}</Text>
@@ -209,8 +227,8 @@ export function ResultView({ result }: { result: CommandResult }) {
         </Box>
       ) : null}
       {result.next ? (
-        <Box marginTop={1} gap={1}>
-          <Text color={ACCENT}>→</Text>
+        <Box marginTop={1}>
+          <Text color={ACCENT}>→ </Text>
           <Text>Next: {result.next}</Text>
         </Box>
       ) : null}
@@ -219,9 +237,12 @@ export function ResultView({ result }: { result: CommandResult }) {
 }
 
 export function HelpView() {
-  const width = Math.max(...HELP_COMMANDS.map(({ name }) => name.length));
+  const commandWidth = Math.max(
+    ...HELP_COMMANDS.map(({ name }) => name.length),
+  );
+  const viewWidth = useViewWidth();
   return (
-    <Box flexDirection="column" marginY={1} width={78}>
+    <Box flexDirection="column" marginY={1} width={viewWidth}>
       <Brand />
       <Text color={MUTED}>Real product flows, usable by agents.</Text>
       <Box marginTop={1}>
@@ -230,7 +251,7 @@ export function HelpView() {
       <Box flexDirection="column" marginTop={1}>
         {HELP_COMMANDS.map(({ name, description }) => (
           <Box key={name}>
-            <Box width={width + 3}>
+            <Box width={commandWidth + 3} flexShrink={0}>
               <Text color={ACCENT}>{name}</Text>
             </Box>
             <Text>{description}</Text>
@@ -251,17 +272,18 @@ export function ErrorView({
   command?: string;
   message: string;
 }) {
+  const viewWidth = useViewWidth();
   return (
-    <Box flexDirection="column" marginY={1} width={78}>
+    <Box flexDirection="column" marginY={1} width={viewWidth}>
       <Brand command={command} />
-      <Box marginTop={1} gap={1}>
+      <Box marginTop={1}>
         <Text color="red" bold>
-          ×
+          ×{" "}
         </Text>
         <Text wrap="wrap">{message}</Text>
       </Box>
-      <Box marginTop={1} gap={1}>
-        <Text color="yellow">→</Text>
+      <Box marginTop={1}>
+        <Text color={WARNING}>→ </Text>
         <Text>Fix this, then run the command again.</Text>
       </Box>
     </Box>
@@ -278,8 +300,8 @@ function LoadingView({ label }: { label: string }) {
     return () => clearInterval(timer);
   }, []);
   return (
-    <Box gap={1}>
-      <Text color={ACCENT}>{SPINNER_FRAMES[frame]}</Text>
+    <Box>
+      <Text color={ACCENT}>{SPINNER_FRAMES[frame]} </Text>
       <Text>{label}</Text>
     </Box>
   );
@@ -297,6 +319,11 @@ export function ChoiceView<T extends string>({
   initialIndex?: number;
 }) {
   const [index, setIndex] = useState(initialIndex);
+  const labelWidth = Math.max(
+    0,
+    ...choices.map((choice) => choice.label.length),
+  );
+  const viewWidth = useViewWidth();
   const { exit } = useApp();
   useInput((input, key) => {
     if (key.upArrow || input === "k")
@@ -312,9 +339,8 @@ export function ChoiceView<T extends string>({
   });
 
   return (
-    <Box flexDirection="column" marginY={1} width={78}>
-      <Brand command="init" />
-      <Box marginTop={1}>
+    <Box flexDirection="column" marginY={1} width={viewWidth}>
+      <Box>
         <Text bold>{question}</Text>
       </Box>
       <Box flexDirection="column">
@@ -322,12 +348,12 @@ export function ChoiceView<T extends string>({
           const active = position === index;
           return (
             <Box key={choice.value}>
-              <Box width={2}>
+              <Box width={2} flexShrink={0}>
                 <Text color={active ? (choice.color ?? ACCENT) : MUTED}>
                   {active ? "›" : " "}
                 </Text>
               </Box>
-              <Box width={22}>
+              <Box width={labelWidth} marginRight={2} flexShrink={0}>
                 <Text
                   color={active ? (choice.color ?? ACCENT) : undefined}
                   bold={active}
@@ -355,6 +381,7 @@ function InputView({
   onSubmit(value: string): void;
 }) {
   const [value, setValue] = useState("");
+  const viewWidth = useViewWidth();
   const { exit } = useApp();
   useInput((inputValue, key) => {
     if (key.return) {
@@ -370,12 +397,11 @@ function InputView({
       setValue((current) => `${current}${inputValue}`);
   });
   return (
-    <Box flexDirection="column" marginY={1} width={78}>
-      <Brand command="init" />
-      <Box marginTop={1} gap={1}>
-        <Text bold>{question}</Text>
+    <Box flexDirection="column" marginY={1} width={viewWidth}>
+      <Box>
+        <Text bold>{question} </Text>
         <Text color={value ? undefined : MUTED}>{value || placeholder}</Text>
-        <Text color={ACCENT}>▌</Text>
+        <Text color={ACCENT}> ▌</Text>
       </Box>
       <Text color={MUTED}>
         enter accepts {value ? "this name" : "the suggested name"}
@@ -389,7 +415,17 @@ export function printResult(result: CommandResult): void {
     console.log(plainResult(result));
     return;
   }
-  render(<ResultView result={result} />).unmount();
+  render(<ResultView result={result} />, INCREMENTAL_RENDER).unmount();
+}
+
+export function printInitHeader(): void {
+  if (!hasVisualTerminal()) return;
+  render(
+    <Box flexDirection="column" marginTop={1}>
+      <InitHeaderView />
+    </Box>,
+    INCREMENTAL_RENDER,
+  ).unmount();
 }
 
 export function printHelp(): void {
@@ -408,7 +444,7 @@ export function printHelp(): void {
     );
     return;
   }
-  render(<HelpView />).unmount();
+  render(<HelpView />, INCREMENTAL_RENDER).unmount();
 }
 
 export function printError(command: string | undefined, message: string): void {
@@ -418,6 +454,7 @@ export function printError(command: string | undefined, message: string): void {
   }
   render(<ErrorView command={command} message={message} />, {
     stdout: process.stderr,
+    ...INCREMENTAL_RENDER,
   }).unmount();
 }
 
@@ -428,9 +465,10 @@ export function printInfo(message: string): void {
   }
   render(
     <Box>
-      <Text color={ACCENT}>→</Text>
-      <Text> {message}</Text>
+      <Text color={ACCENT}>→ </Text>
+      <Text>{message}</Text>
     </Box>,
+    INCREMENTAL_RENDER,
   ).unmount();
 }
 
@@ -439,7 +477,10 @@ export function startProgress(label: string): ProgressHandle {
     console.log(`… ${label}`);
     return { update: () => {}, stop: () => {} };
   }
-  const instance: Instance = render(<LoadingView label={label} />);
+  const instance: Instance = render(
+    <LoadingView label={label} />,
+    INCREMENTAL_RENDER,
+  );
   return {
     update(next) {
       instance.rerender(<LoadingView label={next} />);
@@ -483,6 +524,7 @@ export async function choose<T extends string>(
         choices={choices}
         onSelect={(value) => resolve(value)}
       />,
+      INCREMENTAL_RENDER,
     ),
   );
 }
@@ -514,6 +556,7 @@ export async function input(
         placeholder={placeholder}
         onSubmit={resolve}
       />,
+      INCREMENTAL_RENDER,
     ),
   );
 }
