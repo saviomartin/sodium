@@ -14,6 +14,7 @@ import {
   detectPackageManager,
   hasSodiumSdk,
   installIntegration,
+  installSkill,
 } from "./install";
 
 export interface CommandContext {
@@ -95,42 +96,20 @@ export async function validateCommand(context: CommandContext): Promise<void> {
 }
 
 export async function deployCommand(context: CommandContext): Promise<void> {
-  const [config, project, api] = await Promise.all([
+  const [config, framework, api] = await Promise.all([
     readSodiumConfig(context.cwd),
-    readProject(context.cwd),
+    detectFramework(context.cwd),
     authenticatedApi(context),
   ]);
-  const deployment = await api.deploy(
-    project.projectId,
-    config,
-    configHash(config),
-  );
-  await writeProject(context.cwd, { ...project, deployment });
-  context.log(`Deployed version ${deployment.version} (${deployment.id})`);
-}
-
-export async function initCommand(
-  context: CommandContext,
-  options: { skipInstall?: boolean } = {},
-): Promise<void> {
-  const config = await readSodiumConfig(context.cwd);
-  const framework = await detectFramework(context.cwd);
-  const api = await authenticatedApi(context);
+  if (!(await hasSodiumSdk(context.cwd))) {
+    throw new Error("Sodium is not initialized; run sodium init first");
+  }
   let project;
   try {
     project = await readProject(context.cwd);
   } catch {
     project = await api.createProject(config.app.name);
     await writeProject(context.cwd, project);
-  }
-
-  if (!options.skipInstall && !(await hasSodiumSdk(context.cwd))) {
-    const manager = await detectPackageManager(context.cwd);
-    const args =
-      manager === "npm"
-        ? ["install", "sodium-webmcp-sdk"]
-        : ["add", "sodium-webmcp-sdk"];
-    await context.run(manager, args);
   }
   const files = await installIntegration(context.cwd, framework);
   const deployment = await api.deploy(
@@ -139,10 +118,27 @@ export async function initCommand(
     configHash(config),
   );
   await writeProject(context.cwd, { ...project, deployment });
-  context.log(
-    `Sodium ready: ${config.tools.length} tools, deployment ${deployment.id}`,
-  );
+  context.log(`Deployed version ${deployment.version} (${deployment.id})`);
   context.log(`Integrated ${framework} in ${files.length} files`);
+}
+
+export async function initCommand(
+  context: CommandContext,
+  options: { skipInstall?: boolean } = {},
+): Promise<void> {
+  const framework = await detectFramework(context.cwd);
+  if (!options.skipInstall && !(await hasSodiumSdk(context.cwd))) {
+    const manager = await detectPackageManager(context.cwd);
+    const args =
+      manager === "npm"
+        ? ["install", "sodium-webmcp-sdk"]
+        : ["add", "sodium-webmcp-sdk"];
+    await context.run(manager, args);
+  }
+  const files = await installSkill(context.cwd);
+  context.log(`Sodium initialized for ${framework}`);
+  context.log(`Installed the Sodium skill in ${files.length} files`);
+  context.log("Next: use $sodium-webmcp, then run sodium login and sodium deploy");
 }
 
 export async function doctorCommand(context: CommandContext): Promise<void> {

@@ -20,7 +20,7 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | Analytics | Starts, outcomes, registration, initialization, duration, and denial events persist with deployment version; arguments and outputs do not | Pass |
 | Ingestion security | Wrong origin and wrong publishable key both return the opaque `202` boundary and create no event | Pass |
 | Dashboard | Account can see exact tools, calls, success rates, last event, and all deployment versions | Pass |
-| Public install | `npx sodium-webmcp` resolves from npm | Pass: spec, SDK, and CLI `0.1.0` published on 2026-09-02 |
+| Public install | `npm install --global sodium-webmcp` exposes the `sodium` command | Pass: spec and SDK `0.1.0`; CLI `0.1.1` |
 
 ## Defects found by this fixture
 

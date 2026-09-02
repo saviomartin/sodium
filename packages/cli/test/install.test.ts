@@ -6,9 +6,25 @@ import {
   detectFramework,
   hasSodiumSdk,
   installIntegration,
+  installSkill,
 } from "../src/install";
 
 describe("framework integration", () => {
+  it("installs the project-local Sodium skill", async () => {
+    const root = await mkdtemp(join(tmpdir(), "sodium-skill-"));
+    const files = await installSkill(root);
+    expect(files).toHaveLength(2);
+    await expect(
+      readFile(join(root, ".agents/skills/sodium-webmcp/SKILL.md"), "utf8"),
+    ).resolves.toContain("name: sodium-webmcp");
+    await expect(
+      readFile(
+        join(root, ".agents/skills/sodium-webmcp/references/schema.md"),
+        "utf8",
+      ),
+    ).resolves.toContain("# sodium.json v1");
+  });
+
   it("detects an existing SDK dependency before running the package manager", async () => {
     const root = await mkdtemp(join(tmpdir(), "sodium-dependency-"));
     await writeFile(
