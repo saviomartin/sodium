@@ -70,11 +70,7 @@ export function CopyButton({
         className={cn(secondaryButtonClass, "shrink-0 px-2.5", className)}
       >
         {mark}
-        {/* Fixed width so the button does not resize between the two words and
-            twitch the command box it sits in. */}
-        <span className="w-[3.25rem] text-left">
-          {copied ? "Copied" : "Copy"}
-        </span>
+        <span className="w-fit">{copied ? "Copied" : "Copy"}</span>
       </button>
     );
   }

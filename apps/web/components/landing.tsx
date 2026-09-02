@@ -4,7 +4,6 @@ import { CommandTimeline } from "./command-timeline";
 import { HomeNotice, type HomeParams } from "./home-notice";
 import { MarketingSections, SiteFooter } from "./marketing";
 import { cn, frameClass } from "./ui";
-import { ShieldCheckIcon } from "./icons";
 
 /**
  * The product page, shown to anyone without a session.
@@ -31,9 +30,8 @@ export function Landing({ params }: { params: HomeParams }) {
           >
             <AgentHeadline size="hero" />
             <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-neutral-300 text-pretty sm:text-lg">
-              Declare what your product can do in one file. Sodium turns it into
-              WebMCP tools agents can discover and call, and shows you what they
-              did with them.
+              Sodium turns your app&rsquo;s existing capabilities into WebMCP
+              tools that AI agents can discover and use directly.
             </p>
           </header>
 
@@ -48,16 +46,6 @@ export function Landing({ params }: { params: HomeParams }) {
           >
             <CommandTimeline />
           </div>
-
-          <p className="mx-auto mt-6 flex max-w-3xl items-start gap-2 text-xs leading-5 text-faint text-pretty">
-            <ShieldCheckIcon
-              aria-hidden
-              weight="fill"
-              className="mt-0.5 size-3.5 shrink-0 text-neutral-400"
-            />
-            Google and GitHub are used only for identity. Sodium never requests
-            repository access and never reads your code.
-          </p>
         </section>
 
         <MarketingSections />

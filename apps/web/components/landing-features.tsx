@@ -496,10 +496,10 @@ interface Feature {
 const FEATURES: Feature[] = [
   {
     id: "contract",
-    title: "Your tools are a file, not a dashboard",
+    title: "Single sodium.json file",
     icon: BracketsCurlyIcon,
     description:
-      "One reviewable file declares every tool. It diffs in a pull request, branches with your feature, and reverts with a git revert. Nothing about your agent surface lives in someone else's database.",
+      "One reviewable file declares every tool. Diff it, branch it, revert it.",
     preview: <ContractPreview />,
   },
   {
@@ -507,7 +507,7 @@ const FEATURES: Feature[] = [
     title: "Immutable deployment history",
     icon: ClockCounterClockwiseIcon,
     description:
-      "Every deploy is an immutable, signed version. Telemetry records which version served each call, so every change and regression has an exact history.",
+      "Every deploy is signed and versioned. Telemetry records which version served each call.",
     preview: <VersionsPreview />,
   },
   {
@@ -515,7 +515,7 @@ const FEATURES: Feature[] = [
     title: "Risk decides the prompt",
     icon: ShieldCheckIcon,
     description:
-      "Declare what a tool can do and Sodium derives the confirmation the browser must ask for. A destructive or financial tool cannot ship without one, because the deploy is rejected below the floor.",
+      "Declare what a tool can do. Sodium derives the confirmation the browser must ask for.",
     preview: <RiskPreview />,
   },
   {
@@ -523,22 +523,23 @@ const FEATURES: Feature[] = [
     title: "Two commands, start to finish",
     icon: TerminalWindowIcon,
     description:
-      "Init detects your framework and wires the SDK. Deploy publishes. No setup wizard, no script tag to paste, no API key to copy out of a settings page. Doctor tells you what is wrong when something is.",
+      "Init wires the SDK. Deploy publishes. No wizard, no script tag, no API keys.",
     preview: <CommandsPreview />,
   },
   {
     id: "analytics",
-    title: "See what agents actually do",
+    title: "Agent analytics",
     icon: ChartLineUpIcon,
     description:
-      "Sessions, calls, success rate and latency, per tool and per day. Enough to find the tool nobody discovers or the one that keeps failing. Tool names, outcomes and timing only, never prompts or page content.",
+      "Sessions, calls, success rate and latency, per tool and per day.",
     preview: <AnalyticsPreview />,
   },
   {
     id: "engines",
     title: "Answer engine referrals",
     icon: BroadcastIcon,
-    description: `See which of ${ANSWER_ENGINE_COUNT} AI products send people to your site, then connect those anonymous sessions to downstream tool usage.`,
+    description:
+      "See which AI products send people to your site, and what their agents do next.",
     preview: <EnginesPreview />,
   },
 ];
