@@ -23,7 +23,7 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | CLI output         | Ink TUI shows compact progress, aligned results, actionable errors, and a deterministic plain/CI fallback                                 | Pass: packed 0.2.0         |
 | Agent handoff      | Init detects Codex, Claude Code, and Gemini; Other copies and prints a universal prompt                                                   | Pass: packed 0.2.0         |
 | Browser handoff    | Deploy opens the project dashboard by default and honors `--no-open`                                                                      | Pass: `prj_nlbreje0wm9i`   |
-| Public execution   | `npx @resultdev/sodium@latest` runs without a global installation                                                                         | Pending 0.2.0 publication  |
+| Public execution   | `npx @resultdev/sodium@latest` runs without a global installation; the old package points users to the new command                        | Pass: CLI 0.2.0            |
 
 ## Defects found by this fixture
 
