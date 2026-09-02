@@ -49,14 +49,15 @@ export function Landing({
               </div>
               <div className="space-y-2 px-4 py-4 text-sm text-neutral-300">
                 <p>
-                  <span className="text-blue-400">$</span> use $sodium-webmcp
-                </p>
-                <p>
-                  <span className="text-blue-400">$</span> npx sodium-webmcp
+                  <span className="text-blue-400">$</span> npx @resultdev/sodium
                   init
                 </p>
                 <p>
-                  <span className="text-blue-400">$</span> npx sodium-webmcp
+                  <span className="text-blue-400">$</span> npx @resultdev/sodium
+                  login
+                </p>
+                <p>
+                  <span className="text-blue-400">$</span> npx @resultdev/sodium
                   deploy
                 </p>
                 <p className="pt-1 text-emerald-300">
@@ -151,22 +152,22 @@ export function Landing({
             <ol className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Step
                 icon={WrenchIcon}
-                command="use $sodium-webmcp"
-                text="Create and review sodium.json."
+                command="npx @resultdev/sodium init"
+                text="Install Sodium and create sodium.json."
               />
               <Step
                 icon={CodeIcon}
-                command="npx sodium-webmcp init"
-                text="Install the framework adapter."
+                command="npx @resultdev/sodium login"
+                text="Connect this machine to your account."
               />
               <Step
                 icon={RocketLaunchIcon}
-                command="npx sodium-webmcp deploy"
+                command="npx @resultdev/sodium deploy"
                 text="Publish a versioned contract."
               />
               <Step
                 icon={PulseIcon}
-                command="npx sodium-webmcp doctor"
+                command="npx @resultdev/sodium doctor"
                 text="Verify config, auth, and SDK wiring."
               />
             </ol>

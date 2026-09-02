@@ -5,24 +5,21 @@ Sodium turns application behavior into observable WebMCP tools. The application 
 ## Developer flow
 
 ```bash
-# 1. Install the SDK and project-local skill
-npx sodium-webmcp@latest init
+# 1. Install Sodium and choose an agent to create sodium.json
+npx @resultdev/sodium@latest init
 
-# 2. Ask an agent with the installed skill to create sodium.json
-use $sodium-webmcp
-
-# 3. Authorize and create the first project deployment
-npx sodium-webmcp@latest login
-npx sodium-webmcp@latest deploy
-npx sodium-webmcp@latest doctor
+# 2. Authorize and create the first project deployment
+npx @resultdev/sodium@latest login
+npx @resultdev/sodium@latest deploy
+npx @resultdev/sodium@latest doctor
 
 # Later releases
-npx sodium-webmcp@latest deploy
+npx @resultdev/sodium@latest deploy
 ```
 
-`init` detects Next.js or Vite React, installs `sodium-webmcp-sdk`, and installs the project-local authoring skill. `login` verifies an existing session or opens a one-time device authorization page. The first `deploy` validates `sodium.json`, creates the Sodium project, adds the smallest framework integration, and writes `.sodium/project.json`.
+`init` detects Next.js or Vite React, installs `sodium-webmcp-sdk` and the project-local authoring skill, then offers to launch Codex, Claude Code, or Gemini to create `sodium.json`. The first `deploy` validates the contract, creates the Sodium project, adds the smallest framework integration, writes `.sodium/project.json`, and opens the project dashboard.
 
-Every successful command prints the relevant project details, dashboard URL when one exists, and the next action. A global installation is not required.
+Every successful command prints the relevant project details, dashboard URL when one exists, and one next action. Add `--plain` for deterministic text output or `--no-open` to deploy without opening a browser. A global installation is not required.
 
 ## Repository layout
 

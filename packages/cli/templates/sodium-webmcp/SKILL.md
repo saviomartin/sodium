@@ -13,7 +13,7 @@ Produce a small, accurate `sodium.json` that exposes useful existing behavior. T
 2. Choose goal-level actions a user would ask for. Do not expose every button, private server function, or implementation primitive.
 3. Read [references/schema.md](references/schema.md), then write `sodium.json` at the application root. Reuse existing tool IDs; generate a new `tl_` ID only for a genuinely new tool.
 4. Prefer native forms and navigation. Use bounded interactions only when there is no stable form or API. Add a `data-sodium-id` to application markup only when no stable semantic target exists.
-5. Run `npx sodium-webmcp validate`. Fix every error. Report unsupported capabilities instead of inventing handlers or claiming unverified behavior.
+5. Run `npx @resultdev/sodium@latest validate`. Fix every error. Report unsupported capabilities instead of inventing handlers or claiming unverified behavior.
 
 ## Boundaries
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdir, chmod } from "node:fs/promises";
+import { access, readFile, writeFile, mkdir, chmod } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -11,6 +11,15 @@ import {
 
 export const CONFIG_FILE = "sodium.json";
 export const PROJECT_FILE = join(".sodium", "project.json");
+
+export async function hasSodiumConfig(cwd: string): Promise<boolean> {
+  try {
+    await access(join(cwd, CONFIG_FILE));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function readJson(path: string): Promise<unknown> {
   try {

@@ -4,6 +4,9 @@
   "globalEnv": [
     "NODE_ENV",
     "CI",
+    "NO_COLOR",
+    "TERM",
+    "SODIUM_PLAIN",
     "NEXT_DIST_DIR",
     "SITE_URL",
     "SUPABASE_SECRET_KEY",

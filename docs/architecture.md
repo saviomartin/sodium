@@ -33,15 +33,15 @@ The `sodium-webmcp` skill inspects real routes, UI, forms, and existing APIs. It
 
 ### CLI
 
-`npx sodium-webmcp init` performs one recoverable transaction from the developer's perspective:
+`npx @resultdev/sodium init` installs the local authoring foundation:
 
-1. validate `sodium.json`;
-2. authorize the local device in the browser;
-3. create or rotate the project publishable key;
-4. install and patch the detected framework;
-5. create an immutable deployment and write `.sodium/project.json`.
+1. detect Next.js or Vite React;
+2. install the browser SDK when it is missing;
+3. install the project-local Sodium authoring skill;
+4. offer to launch a detected coding agent to create and validate `sodium.json`;
+5. leave cloud authorization and publication as explicit `login` and `deploy` commands.
 
-`deploy` is content-addressed: sending an unchanged config returns the existing deployment. Project creation and key rotation are atomic database functions. CLI bearer tokens are stored mode `0600`, hashed at rest, revocable, and never exposed to the browser SDK.
+`deploy` is content-addressed: sending an unchanged config returns the existing deployment, then opens the project dashboard unless `--no-open` is supplied. Project creation and key rotation are atomic database functions. CLI bearer tokens are stored mode `0600`, hashed at rest, revocable, and never exposed to the browser SDK.
 
 ### SDK
 
