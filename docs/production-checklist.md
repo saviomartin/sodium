@@ -1,61 +1,31 @@
-# Production-readiness checklist
+# Production checklist
 
-## Secrets & keys
+## Before the destructive migration
 
-- [ ] Generate a production Ed25519 manifest keypair (`node packages/runtime/scripts/gen-dev-keys.mjs` as a template — store the private key in your secret manager, never in the repo). Set `MANIFEST_SIGNING_KEY_ID` + `MANIFEST_SIGNING_PRIVATE_KEY`; build the loader with `SODIUM_MANIFEST_JWKS` containing the matching public JWK(s). The app refuses to boot in production with the committed dev key.
-- [ ] Plan key rotation: the loader pins a JWK **set** — ship new+old, re-sign, then retire the old key with the next loader version.
-- [ ] GitHub OAuth tokens exist only in Supabase Vault; the webhook secret remains server-only and neither appears in logs.
-- [ ] `SUPABASE_SECRET_KEY` is server-only (web server + worker). Rotate any key that ever reached a client bundle.
-- [ ] Stripe Production uses a restricted `rk_live_…` key, the live $49/month repository Price, the repository-only Portal configuration, and a Secret `STRIPE_WEBHOOK_SECRET`. Development/Preview must use test objects only.
+- [ ] Export the legacy Supabase tables and Vault secret IDs.
+- [ ] Inventory every active Stripe subscription and cancel or migrate it before removing billing rows.
+- [ ] Confirm there are no required repository analyses, manifests, artifacts, or webhook deliveries to retain.
+- [ ] Apply and test the migration against an isolated restored snapshot first.
 
-## Stripe billing
+## Identity and secrets
 
-- [ ] Webhook `/api/webhooks/stripe` uses API `2026-08-26.dahlia` and only the documented Checkout, Subscription, and Invoice lifecycle events. Verify a signed live delivery after deployment.
-- [ ] Checkout grants no access on its return URL. Verify webhook fulfillment, duplicate-event idempotency, delayed payment, cancellation-at-period-end, `past_due` retry access, and `unpaid` revocation.
-- [ ] Verify two repositories under one user have separate Stripe Customers and subscriptions; canceling one must not affect the other.
-- [ ] Stripe Tax remains disabled until Foundative has an active tax registration for every configured jurisdiction.
-- [ ] `/api/internal/billing/reconcile` runs every six hours with `CRON_SECRET` and reports zero failed rows.
+- [ ] GitHub OAuth is branded Sodium, has exact Supabase callback URLs, and requests no `repo` scope.
+- [ ] `SUPABASE_SECRET_KEY` is server-only; publishable values are the only `NEXT_PUBLIC_*` credentials.
+- [ ] Remove legacy Stripe, worker, AI, webhook, manifest-signing, and loader variables from every Vercel target.
+- [ ] `corepack pnpm env:verify` passes for Development, Preview, and Production.
 
-## Supabase
+## Data and API
 
-- [ ] `NEXT_PUBLIC_SODIUM_ENVIRONMENT=production` and `SODIUM_ENVIRONMENT=production`; startup must reject either non-production Supabase project ref.
-- [ ] Vercel Development and Preview use `sodium-development`; Production uses `sodium`. Never scope one Supabase secret across all three environments.
-- [ ] Production Auth allows only `https://sodium.result.dev/auth/{callback,confirm}`. Localhost and Preview patterns belong only to development Auth.
-- [ ] Dedicated production project; separate project (or branch) for previews. `supabase link` + `pnpm db:push` per environment; never edit schema through the dashboard.
-- [ ] Run `supabase db advisors` (CLI ≥ 2.81) after every migration and resolve findings.
-- [ ] `pnpm db:test` (RLS suite) green against the production schema before first launch.
-- [ ] Auth: GitHub OAuth is the only sign-in. Development and Production use the same Sodium OAuth App but isolated Supabase projects. Run both `pnpm supabase:auth:*` commands, then `pnpm env:verify`.
-- [ ] Storage: confirm the `artifacts` bucket stays private; set retention for crawl artifacts.
-- [ ] Queues: monitor `pgmq.q_sodium_jobs` depth and the archive table (poison messages land there) — alert on growth.
-- [ ] Backups/PITR enabled; test a restore.
+- [ ] RLS is enabled and forced through owner-select policies on every exposed table.
+- [ ] Public/anon/authenticated grants are absent from service-only tables and RPCs.
+- [ ] CLI tokens and publishable keys are hashed at rest; device codes expire and are one-time.
+- [ ] Project creation, key rotation, and deployments remain atomic and idempotent under concurrency.
+- [ ] Retention and rate limits are configured for telemetry before public launch.
 
-## Web / worker deployment
+## Release proof
 
-- [ ] `apps/web` behind HTTPS (WebMCP and the loader require secure contexts). Set `SITE_URL` to the public origin.
-- [ ] Serve `/agent/v1.js` via a CDN with immutable caching; keep old majors available forever (customers pin versions).
-- [ ] Run at least 2 worker instances; stages are idempotent and pgmq redelivers on crash. Bound `WORKER_CONCURRENCY` by CPU.
-- [ ] Rate-limit `/api/events` and `/api/m/*` at the edge; both are public by design and serve/accept only non-sensitive data.
-- [ ] Structured worker logs shipped somewhere queryable; alert on `job exceeded max attempts`.
-
-## GitHub
-
-- [ ] The single OAuth App is registered as **Sodium** per docs/github-oauth.md, with both exact Supabase callback URIs and wildcard matching disabled; verify one consent requests `repo user:email` and lands directly on the repository picker.
-- [ ] Webhook endpoint reachable; deliveries page checked after launch; redelivery runbook written (GitHub does not auto-retry).
-- [ ] Verify repository webhook secret rotation and redelivery procedure.
-
-## AI
-
-- [ ] AI Gateway enabled with Vercel OIDC (preferred) or `AI_GATEWAY_API_KEY`; verify `AI_MODEL=openai/gpt-5.6-terra` and `AI_FALLBACK_MODEL=anthropic/claude-sonnet-5`. Budget alerts on the gateway.
-- [ ] Re-confirm prompt-injection posture after any prompt change: repository/page content must stay inside `<untrusted-data>` blocks and outputs must pass `validateContract`.
-
-## Product safety invariants (verify in staging before each release)
-
-- [ ] A tampered or wrong-origin manifest registers zero tools (fixture e2e covers this — keep it green).
-- [ ] Destructive/financial candidates cannot be approved below `confirmation: required` and never bind to automatic form submission.
-- [ ] Publishing requires an owner/admin; members can review UI but every privileged action fails server-side.
-- [ ] Continuous sync creates drafts only; confirm production manifests never change without a human publish.
-- [ ] Rollback restores the previous tool set end-to-end (loader picks it up within the manifest cache TTL of 60s).
-
-## Honest-claims copy
-
-- [ ] All user-facing copy describes availability as "compatible WebMCP browser agents while the application is open" — no universal-agent claims.
+- [ ] Typecheck, lint, unit tests, production build, and browser E2E pass from a clean checkout.
+- [ ] Fresh Next.js and Vite React fixture installs work with the published npm packages.
+- [ ] A real WebMCP tool call produces one started event and one outcome with no arguments/outputs.
+- [ ] Wrong-origin and wrong-key event requests produce no stored rows.
+- [ ] Dashboard totals match direct database queries for the same 30-day window.

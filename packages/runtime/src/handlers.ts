@@ -6,8 +6,8 @@ const MAX_RESPONSE_BYTES = 256 * 1024;
 
 /**
  * Executes declarative handler bindings. Everything here operates on
- * validated manifest data + validated tool input; there is no path from
- * manifest content to code execution.
+ * validated local config + validated tool input; there is no path from JSON
+ * content to code execution.
  */
 
 export interface ExecuteResult {
@@ -15,11 +15,24 @@ export interface ExecuteResult {
   [key: string]: unknown;
 }
 
+export interface SodiumHandlerContext {
+  signal?: AbortSignal;
+  document: Document;
+}
+
+export type SodiumHandler = (
+  input: Record<string, unknown>,
+  context: SodiumHandlerContext,
+) => unknown | Promise<unknown>;
+
+export type SodiumHandlers = Record<string, SodiumHandler>;
+
 export async function executeTool(
   tool: PublishedTool,
   rawInput: Record<string, unknown>,
   doc: Document,
   signal?: AbortSignal,
+  handlers: SodiumHandlers = {},
 ): Promise<ExecuteResult> {
   const inputIssues = validateInput(tool.inputSchema, rawInput ?? {});
   if (inputIssues.length > 0) {
@@ -151,10 +164,9 @@ export async function executeTool(
               : undefined;
         const accessibleClick =
           step.kind === "click" && "role" in step ? step : null;
-        const result =
-          accessibleClick
-            ? resolveUniqueButtonByName(doc, accessibleClick.name)
-            : resolveUniqueElement(doc, selector!);
+        const result = accessibleClick
+          ? resolveUniqueButtonByName(doc, accessibleClick.name)
+          : resolveUniqueElement(doc, selector!);
         if (!result.ok) return result;
         if (step.kind === "read") {
           data[step.output] = readElement(result.element, step.attribute);
@@ -209,11 +221,15 @@ export async function executeTool(
           else form.submit();
         }
       }
-      if (
-        tool.handler.postcondition &&
-        !postconditionMet(doc, tool.handler.postcondition)
-      )
-        return { ok: false, error: "postcondition_failed" };
+      if (tool.handler.postcondition) {
+        const met = await waitForPostcondition(
+          doc,
+          tool.handler.postcondition,
+          3_000,
+          signal,
+        );
+        if (!met) return { ok: false, error: "postcondition_failed" };
+      }
       return { ok: true, data };
     }
 
@@ -307,20 +323,48 @@ export async function executeTool(
         };
       }
     }
+
+    case "call": {
+      const handler = handlers[tool.handler.export];
+      if (!handler) {
+        return {
+          ok: false,
+          error: "handler_not_registered",
+          handler: tool.handler.export,
+        };
+      }
+      try {
+        const result = await handler(input, { signal, document: doc });
+        if (
+          typeof result === "object" &&
+          result !== null &&
+          "ok" in result &&
+          typeof (result as { ok?: unknown }).ok === "boolean"
+        ) {
+          return result as ExecuteResult;
+        }
+        return result === undefined ? { ok: true } : { ok: true, data: result };
+      } catch (handlerError) {
+        return {
+          ok: false,
+          error: signal?.aborted ? "aborted" : "handler_exception",
+          message:
+            handlerError instanceof Error
+              ? handlerError.message.slice(0, 240)
+              : "custom handler failed",
+        };
+      }
+    }
   }
 }
 
 function resolveUniqueButtonByName(
   doc: Document,
   name: string,
-):
-  | { ok: true; element: Element }
-  | { ok: false; error: string; name: string } {
+): { ok: true; element: Element } | { ok: false; error: string; name: string } {
   const expected = normalizeAccessibleName(name);
   const elements = [
-    ...doc.querySelectorAll(
-      "button, input[type=button], input[type=submit]",
-    ),
+    ...doc.querySelectorAll("button, input[type=button], input[type=submit]"),
   ].filter((element) => accessibleButtonName(element) === expected);
   if (elements.length === 0)
     return { ok: false, error: "element_not_found", name };
@@ -429,6 +473,25 @@ function postconditionMet(
     condition.pathPattern,
     doc.defaultView?.location.pathname ?? "/",
   );
+}
+
+async function waitForPostcondition(
+  doc: Document,
+  condition: InteractionPostcondition,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (condition.kind === "selector_present")
+    return waitForSelector(doc, condition.selector, "present", timeoutMs, signal);
+  if (condition.kind === "selector_absent")
+    return waitForSelector(doc, condition.selector, "absent", timeoutMs, signal);
+  if (postconditionMet(doc, condition)) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (!signal?.aborted && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    if (postconditionMet(doc, condition)) return true;
+  }
+  return false;
 }
 
 async function requestConfirmation(

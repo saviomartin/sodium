@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { ensurePersonalWorkspace } from "@/lib/account";
 
 /**
  * Token-hash verification (the standard @supabase/ssr confirm route): used
@@ -14,9 +13,7 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as EmailOtpType | null;
   const rawNext = searchParams.get("next") ?? "/";
   const next =
-    rawNext.startsWith("/") && !rawNext.startsWith("//")
-      ? rawNext
-      : "/";
+    rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   if (tokenHash && type) {
     const supabase = await createClient();
@@ -24,20 +21,7 @@ export async function GET(request: NextRequest) {
       type,
       token_hash: tokenHash,
     });
-    if (!error) {
-      try {
-        await ensurePersonalWorkspace(supabase);
-        return NextResponse.redirect(`${origin}${next}`);
-      } catch (setupError) {
-        const message =
-          setupError instanceof Error
-            ? setupError.message
-            : "could not prepare your account";
-        return NextResponse.redirect(
-          `${origin}/?error=${encodeURIComponent(message)}`,
-        );
-      }
-    }
+    if (!error) return NextResponse.redirect(`${origin}${next}`);
     return NextResponse.redirect(
       `${origin}/?error=${encodeURIComponent(error.message)}`,
     );

@@ -2,37 +2,41 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTelemetry } from "../src/telemetry";
 
+const context = {
+  endpoint: "https://sodium.example",
+  projectId: "prj_abcdefghijkl",
+  publishableKey: `sod_pk_${"a".repeat(32)}`,
+};
+
 describe("createTelemetry", () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it("uses a CORS-safelisted content type for cross-origin Beacon", () => {
-    const sendBeacon = vi.fn((...args: Parameters<Navigator["sendBeacon"]>) => {
-      void args;
-      return true;
-    });
+  it("uses a CORS-safelisted content type and sends no tool arguments", () => {
+    const sendBeacon = vi.fn(
+      (url: string, data: Blob) => url.length > 0 && data.size > 0,
+    );
     Object.defineProperty(window.navigator, "sendBeacon", {
       configurable: true,
       value: sendBeacon,
     });
 
-    createTelemetry(
-      "https://sodium.example/api/events",
-      "site_abcdefgh",
-      "1.0.0",
-      window,
-    ).event("loader_ready", { tools: 4 });
+    createTelemetry(context, window).event("tool_succeeded", {
+      toolId: "tl_abcdefgh",
+      toolName: "open_product",
+      durationMs: 12,
+    });
 
     const blob = sendBeacon.mock.calls[0]?.[1] as Blob;
     expect(blob.type).toBe("text/plain;charset=utf-8");
+    expect(sendBeacon.mock.calls[0]?.[0]).toBe(
+      "https://sodium.example/api/events",
+    );
   });
 
-  it("falls back to fetch when the browser cannot queue the Beacon", async () => {
+  it("falls back to fetch when Beacon cannot queue the event", async () => {
     Object.defineProperty(window.navigator, "sendBeacon", {
       configurable: true,
-      value: vi.fn((...args: Parameters<Navigator["sendBeacon"]>) => {
-        void args;
-        return false;
-      }),
+      value: vi.fn(() => false),
     });
     const fetcher = vi.fn(async () => new Response(null, { status: 202 }));
     Object.defineProperty(window, "fetch", {
@@ -40,12 +44,7 @@ describe("createTelemetry", () => {
       value: fetcher,
     });
 
-    createTelemetry(
-      "https://sodium.example/api/events",
-      "site_abcdefgh",
-      "1.0.0",
-      window,
-    ).event("loader_ready");
+    createTelemetry(context, window).event("sdk_ready");
     await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
   });
 });

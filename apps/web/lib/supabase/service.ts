@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@sodium/contracts/database";
+import type { Database } from "sodium-webmcp-spec/database";
 import { env } from "../env";
 import { publicEnv } from "../public-env";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fillUrlTemplate, matchesPathPattern } from "../src/matcher";
 import { validateInput } from "../src/validate-input";
-import { validateValue, type JsonSchemaSubset } from "@sodium/contracts";
+import { validateValue, type JsonSchemaSubset } from "sodium-webmcp-spec";
 
 describe("matchesPathPattern", () => {
   it("matches literals, wildcards and catch-alls", () => {
@@ -35,7 +35,7 @@ describe("fillUrlTemplate", () => {
   });
 });
 
-describe("validateInput cross-check with @sodium/contracts validateValue", () => {
+describe("validateInput cross-check with spec validateValue", () => {
   const schema: JsonSchemaSubset = {
     type: "object",
     properties: {

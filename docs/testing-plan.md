@@ -1,70 +1,37 @@
-# Sodium testing plan
+# Testing plan
 
-Development and production use separate, real Supabase projects and separate
-GitHub OAuth credentials. Acceptance QA uses a real GitHub identity and a real
-repository; it never inserts demo rows or seeded accounts. The standalone
-target repository is `foundative/webmcp-fixture-shop`.
+## Automated gates
 
-Browser React adapter coverage and the external-template matrix are documented
-in [`react-support.md`](./react-support.md). Framework QA must run both the
-existing Next.js fixture and current React templates before release.
+1. Spec tests: config parsing, friendly-to-compiled translation, duplicate IDs/names, bindings, and risk confirmation floors.
+2. SDK tests: WebMCP registration, route matching, every execution primitive, no remote manifest fetch, telemetry fallback, and argument redaction.
+3. CLI tests: framework detection, idempotent codemods, validation, device auth, idempotent deployment, and generated file permissions.
+4. Web tests: analytics deduplication and rollups, API input limits, ownership, origin rejection, and one-time code consumption.
+5. Browser E2E: signed-out positioning, real cookie auth, project dashboard, device activation, and account deletion cascades.
 
-## 1. Automated baseline
+Run:
 
 ```bash
-corepack pnpm install --frozen-lockfile
-corepack pnpm lint
 corepack pnpm check-types
+corepack pnpm lint
 corepack pnpm test
-corepack pnpm db:test
 corepack pnpm build
+corepack pnpm --dir apps/web test:e2e
 ```
 
-The Playwright suite is regression coverage, not acceptance proof. Real-user
-acceptance uses the flow below against the empty development project.
+## Manual release smoke test
 
-## 2. Start the app
+1. Run `npx sodium-webmcp init` in fresh Next.js and Vite React fixtures.
+2. Run `npx sodium-webmcp login`, verify the browser activation code matches the terminal, and verify it can be consumed once.
+3. Use a WebMCP-capable browser to call one read-only and one confirmed tool.
+4. Verify no arguments or outputs appear in the event row or network body.
+5. Deploy an unchanged config and verify the deployment version does not increment.
 
-```bash
-corepack pnpm env:pull
-corepack pnpm dev
-```
+Record the evidence and release blockers in [`real-world-qa.md`](real-world-qa.md).
 
-## 3. User flow
+## Failure cases
 
-1. Open `http://localhost:3000` and continue with GitHub.
-2. Confirm the first authenticated page immediately lists repositories.
-3. Connect `foundative/webmcp-fixture-shop` without another GitHub redirect.
-4. Confirm the repository page has one **Run analysis** button and no SHA
-   input.
-5. Click **Run analysis** and confirm the repository-scoped Stripe checkout is
-   shown before any analysis run exists.
-6. Complete sandbox payment. The webhook must grant access and enqueue the
-   latest `main` commit without an **Enable tools** step.
-7. Keep the page open until all stages finish. Do not reload.
-8. Sleep/background the tab during a second run, then return. The UI must
-   reconcile to the database within 2.5 seconds.
-9. Review, approve, publish, roll back, and verify the one-script installation.
-
-## 4. Edge cases
-
-- Double-submit or two tabs: both land on the same active run.
-- A queued/running record older than 30 minutes is marked `stale_run`; a new
-  run starts.
-- Realtime disconnect: the page says database sync remains active and still
-  reaches the terminal state.
-- Revoked GitHub OAuth access: repository selection and analysis fail with a
-  reconnect message.
-- Repository access revoked between page load and Connect: the server rejects
-  the stale/tampered selection.
-- Missing preview: crawl is skipped; static analysis still completes.
-- Unreachable preview: crawl fails with a structured retryable error.
-
-## 5. Settings
-
-1. Open **Settings** and sign out; protected routes must return to `/login`.
-2. With a disposable account, delete the account.
-3. Verify its auth user, memberships, owned personal workspace, repositories,
-   runs, manifests, events, and `artifacts/<workspace-id>/...` objects are
-   absent.
-4. Verify the connected GitHub repository itself still exists and is unchanged.
+- Invalid, expired, reused, or mismatched device codes issue no API token.
+- Unknown bearer tokens and cross-owner project IDs return the same unauthorized/not-found boundary.
+- Missing or wrong `Origin`, publishable key, deployment, tool ID, or schema produces no event row.
+- Missing WebMCP support registers nothing and leaves the host application usable.
+- A missing custom handler fails that invocation with a bounded code; it does not run arbitrary code.

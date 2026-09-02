@@ -1,15 +1,4 @@
 import { defineConfig, devices } from "@playwright/test";
-import { readFileSync } from "node:fs";
-
-const e2eSigningKey = JSON.parse(
-  readFileSync(
-    new URL(
-      "../../packages/runtime/keys/dev-manifest-key.json",
-      import.meta.url,
-    ),
-    "utf8",
-  ),
-) as { privateKeyPem: string };
 
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
 const automationBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
@@ -21,6 +10,7 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? "line" : "list",
   globalSetup: "./e2e/global-setup",
+  globalTeardown: "./e2e/global-teardown",
   use: {
     baseURL: externalBaseUrl ?? "http://localhost:3100",
     extraHTTPHeaders: automationBypass
@@ -38,8 +28,6 @@ export default defineConfig({
           NEXT_DIST_DIR: ".next-e2e",
           NEXT_PUBLIC_SODIUM_ENVIRONMENT: "development",
           SITE_URL: "http://localhost:3100",
-          MANIFEST_SIGNING_KEY_ID: "e2e-test",
-          MANIFEST_SIGNING_PRIVATE_KEY: e2eSigningKey.privateKeyPem,
         },
         port: 3100,
         reuseExistingServer: false,

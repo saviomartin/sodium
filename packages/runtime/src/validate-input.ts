@@ -1,8 +1,8 @@
 import type { JsonSchemaLike } from "./types";
 
 /**
- * Deterministic input validation against the manifest's JSON-Schema subset,
- * run before any handler executes. Mirrors @sodium/contracts validateValue;
+ * Deterministic input validation against the config's JSON-Schema subset,
+ * run before any handler executes. Mirrors the spec's validateValue;
  * the two are cross-checked in tests.
  */
 export function validateInput(

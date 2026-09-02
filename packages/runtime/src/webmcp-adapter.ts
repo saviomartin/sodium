@@ -47,7 +47,7 @@ export function toWebMcpDescriptor(
 /**
  * WebMCP has no destructive/confirmation annotations yet, so consequential
  * tools carry an explicit notice in the description — the one field every
- * agent reads. Required confirmation is enforced by the hosted loader before
+ * agent reads. Required confirmation is enforced by the local SDK before
  * it invokes the application's existing browser behavior.
  */
 function describeForAgent(tool: PublishedTool): string {

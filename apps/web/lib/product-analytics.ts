@@ -5,25 +5,13 @@ import { track, type BeforeSendEvent } from "@vercel/analytics";
 type AnalyticsProperty = string | number | boolean | null;
 
 export interface ProductAnalyticsEvent {
-  name:
-    | "Allowed Origins Updated"
-    | "Analysis Requested"
-    | "Billing Management Requested"
-    | "Checkout Initiated"
-    | "GitHub Connection Started"
-    | "GitHub Sign In Started"
-    | "Loader Install Copied"
-    | "Manifest Published"
-    | "Manifest Rolled Back"
-    | "Pricing Viewed"
-    | "Repository Connection Requested"
-    | "Tool Availability Updated";
+  name: "GitHub Sign In Started";
   properties?: Record<string, AnalyticsProperty>;
 }
 
 /**
  * Product events are deliberately anonymous. Callers may only send small,
- * aggregate dimensions—never user, repository, installation, site, or tool
+ * aggregate dimensions—never user, project, installation, site, or tool
  * identifiers.
  */
 export function trackProductEvent(event: ProductAnalyticsEvent): void {
@@ -40,10 +28,9 @@ const SAFE_QUERY_PARAMETERS = new Set([
 
 function redactDynamicPath(pathname: string): string {
   const segments = pathname.split("/");
-  if (segments[1] !== "repos" || !segments[2]) return pathname;
+  if (segments[1] !== "projects" || !segments[2]) return pathname;
 
   segments[2] = "[id]";
-  if (segments[3] === "runs" && segments[4]) segments[4] = "[runId]";
   return segments.join("/");
 }
 

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "dotenv";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-for (const path of [join(root, ".env"), join(root, "apps/worker/.env")]) {
+for (const path of [join(root, ".env")]) {
   if (!existsSync(path)) continue;
   for (const [key, value] of Object.entries(parse(readFileSync(path)))) {
     if (!(key in process.env)) process.env[key] = value;

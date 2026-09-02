@@ -1,0 +1,32 @@
+{
+  "name": "sodium-webmcp",
+  "version": "0.1.0",
+  "description": "Turn sodium.json into observable WebMCP tools",
+  "type": "module",
+  "bin": {
+    "sodium": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "eslint --max-warnings 0 src test",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "26.3.0",
+    "sodium-webmcp-spec": "workspace:*",
+    "esbuild": "^0.28.2",
+    "eslint": "10.9.1",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

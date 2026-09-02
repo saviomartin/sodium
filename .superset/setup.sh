@@ -13,7 +13,7 @@ vercel_cli() {
   if command -v vercel >/dev/null 2>&1; then
     vercel "$@"
   else
-    pnpm dlx vercel@59.10.0 "$@"
+    pnpm dlx vercel@59.11.2 "$@"
   fi
 }
 
@@ -29,7 +29,7 @@ if [ ! -f ".vercel/project.json" ]; then
 fi
 
 # Vercel CLI does not reliably reuse the repository-root link from a nested app.
-for app in apps/web apps/worker; do
+for app in apps/web; do
   if [ ! -f "$app/.vercel/project.json" ]; then
     mkdir -p "$app/.vercel"
     cp .vercel/project.json "$app/.vercel/"
@@ -39,7 +39,7 @@ done
 echo "▸ Pulling and validating isolated Development env vars"
 if ! pnpm env:pull; then
   echo "  Vercel env pull failed — copying validated files from the main checkout" >&2
-  for file in .env apps/web/.env.local apps/worker/.env; do
+  for file in .env apps/web/.env.local; do
     if [ ! -f "$SUPERSET_ROOT_PATH/$file" ]; then
       echo "  Missing fallback: $SUPERSET_ROOT_PATH/$file" >&2
       exit 1

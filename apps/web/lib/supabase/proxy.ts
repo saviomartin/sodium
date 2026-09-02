@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { publicEnv } from "../public-env";
+import { isPublicPath } from "../public-routes";
 
 /** Session refresh + route protection, per current Supabase Next.js guidance. */
 export async function updateSession(request: NextRequest) {
@@ -31,23 +32,7 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
-  const isPublic =
-    pathname.startsWith("/auth/") ||
-    pathname === "/" ||
-    // Crawler-facing files. Without these a signed-out crawler is redirected
-    // to "/" and never reads robots.txt or the sitemap at all.
-    pathname === "/robots.txt" ||
-    pathname === "/sitemap.xml" ||
-    pathname === "/manifest.webmanifest" ||
-    pathname === "/login" ||
-    pathname.startsWith("/api/m/") ||
-    pathname.startsWith("/api/events") ||
-    pathname === "/api/internal/worker" ||
-    pathname === "/api/internal/billing/reconcile" ||
-    pathname.startsWith("/api/webhooks/") ||
-    pathname.startsWith("/agent");
-
-  if (!data?.claims && !isPublic) {
+  if (!data?.claims && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.searchParams.set("next", pathname);
