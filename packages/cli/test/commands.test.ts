@@ -2,18 +2,17 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import {
-  AGENT_PROMPT,
-  initCommand,
-  type CommandContext,
-} from "../src/commands";
+import { agentPrompt, initCommand, type CommandContext } from "../src/commands";
 
 async function nextFixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "sodium-init-"));
   await mkdir(join(root, "app"));
   await writeFile(
     join(root, "package.json"),
-    JSON.stringify({ dependencies: { next: "16" } }),
+    JSON.stringify({
+      name: "sodium-init-fixture",
+      dependencies: { next: "16" },
+    }),
   );
   return root;
 }
@@ -29,9 +28,11 @@ function contextFor(
     info: vi.fn(),
     progress: vi.fn(() => ({ update: vi.fn(), stop: vi.fn() })),
     choose: vi.fn(async () => "none") as CommandContext["choose"],
+    input: vi.fn(async (_question, placeholder) => placeholder),
     copy: vi.fn(async () => true),
     open: vi.fn(async () => true),
     hasCommand: vi.fn(async () => false),
+    launchTerminal: vi.fn(async () => true),
     run: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -44,61 +45,88 @@ describe("agent-assisted init", () => {
 
     await initCommand(context, { skipInstall: true, agent: "other" });
 
-    expect(context.copy).toHaveBeenCalledWith(AGENT_PROMPT);
+    const prompt = agentPrompt("sodium-init-fixture");
+    expect(context.copy).toHaveBeenCalledWith(prompt);
     expect(context.result).toHaveBeenCalledWith(
       expect.objectContaining({
         command: "init",
-        prompt: AGENT_PROMPT,
+        prompt,
         promptCopied: true,
         next: "Paste the prompt into your coding agent.",
       }),
     );
   });
 
-  it("runs an installed agent and validates the file it creates", async () => {
+  it("opens an installed agent with full permissions in a new terminal", async () => {
     const cwd = await nextFixture();
-    const run = vi.fn(async () => {
-      await writeFile(
-        join(cwd, "sodium.json"),
-        JSON.stringify({
-          schemaVersion: 1,
-          app: { name: "Fixture", origins: ["https://example.com"] },
-          tools: [
-            {
-              id: "tl_fixture1",
-              name: "open_fixture",
-              description: "Open the fixture page for the current application.",
-              on: ["/**"],
-              input: {},
-              run: { navigate: "/fixture" },
-              risk: "read_only",
-            },
-          ],
-        }),
-      );
-    });
+    const launchTerminal = vi.fn(async () => true);
     const context = contextFor(cwd, {
       hasCommand: vi.fn(async (command) => command === "codex"),
-      run,
+      launchTerminal,
     });
 
-    await initCommand(context, { skipInstall: true, agent: "codex" });
+    await initCommand(context, {
+      skipInstall: true,
+      agent: "codex",
+      name: "Fixture console",
+    });
 
-    expect(run).toHaveBeenCalledWith(
-      "codex",
-      [
-        "exec",
-        "--sandbox",
-        "workspace-write",
-        "--approve-for-me",
-        AGENT_PROMPT,
-      ],
-      { interactive: true },
+    expect(launchTerminal).toHaveBeenCalledWith("codex", [
+      "--dangerously-bypass-approvals-and-sandbox",
+      agentPrompt("Fixture console"),
+    ]);
+    expect(context.result).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Sodium is initialized",
+        details: expect.arrayContaining([
+          ["Project", "Fixture console"],
+          ["Agent", "Codex · new terminal"],
+        ]),
+      }),
+    );
+  });
+
+  it.each([
+    ["claude", ["--dangerously-skip-permissions"]],
+    ["gemini", ["--yolo", "--prompt-interactive"]],
+  ] as const)(
+    "uses unrestricted %s mode in the new terminal",
+    async (agent, flags) => {
+      const cwd = await nextFixture();
+      const launchTerminal = vi.fn(async () => true);
+      const context = contextFor(cwd, {
+        hasCommand: vi.fn(
+          async (command) =>
+            command === (agent === "claude" ? "claude" : "gemini"),
+        ),
+        launchTerminal,
+      });
+
+      await initCommand(context, { skipInstall: true, agent });
+
+      expect(launchTerminal).toHaveBeenCalledWith(
+        agent === "claude" ? "claude" : "gemini",
+        [...flags, agentPrompt("sodium-init-fixture")],
+      );
+    },
+  );
+
+  it("asks for a project name and uses the package name as its suggestion", async () => {
+    const cwd = await nextFixture();
+    const context = contextFor(cwd, {
+      interactive: true,
+      input: vi.fn(async () => "Customer portal"),
+    });
+
+    await initCommand(context, { skipInstall: true, agent: "none" });
+
+    expect(context.input).toHaveBeenCalledWith(
+      "What do you want to name this project?",
+      "sodium-init-fixture",
     );
     expect(context.result).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Application is ready",
-        details: expect.arrayContaining([["Contract", "1 valid tools"]]),
+        details: expect.arrayContaining([["Project", "Customer portal"]]),
       }),
     );
   });

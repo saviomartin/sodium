@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { access, readFile, writeFile, mkdir, chmod } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import {
   SodiumProjectSchema,
@@ -11,6 +11,11 @@ import {
 
 export const CONFIG_FILE = "sodium.json";
 export const PROJECT_FILE = join(".sodium", "project.json");
+export const INIT_FILE = join(".sodium", "init.json");
+
+export interface SodiumInit {
+  projectName: string;
+}
 
 export async function hasSodiumConfig(cwd: string): Promise<boolean> {
   try {
@@ -55,6 +60,48 @@ export async function writeProject(
   const path = join(cwd, PROJECT_FILE);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(project, null, 2)}\n`, {
+    mode: 0o644,
+  });
+}
+
+export async function suggestedProjectName(cwd: string): Promise<string> {
+  try {
+    const pkg = (await readJson(join(cwd, "package.json"))) as {
+      name?: unknown;
+    };
+    if (typeof pkg.name === "string" && pkg.name.trim()) {
+      return pkg.name.trim().split("/").at(-1) ?? basename(cwd);
+    }
+  } catch {
+    // Framework detection will report a missing or invalid package later.
+  }
+  return basename(cwd);
+}
+
+export async function readInit(cwd: string): Promise<SodiumInit | null> {
+  try {
+    const value = (await readJson(join(cwd, INIT_FILE))) as Partial<SodiumInit>;
+    if (
+      typeof value.projectName === "string" &&
+      value.projectName.trim().length > 0 &&
+      value.projectName.trim().length <= 120
+    ) {
+      return { projectName: value.projectName.trim() };
+    }
+  } catch {
+    // First use has no initialization metadata.
+  }
+  return null;
+}
+
+export async function writeInit(cwd: string, value: SodiumInit): Promise<void> {
+  const projectName = value.projectName.trim();
+  if (!projectName || projectName.length > 120) {
+    throw new Error("Project name must be between 1 and 120 characters.");
+  }
+  const path = join(cwd, INIT_FILE);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify({ projectName }, null, 2)}\n`, {
     mode: 0o644,
   });
 }
