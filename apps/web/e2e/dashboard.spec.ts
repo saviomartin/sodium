@@ -7,9 +7,13 @@ test.describe.configure({ mode: "serial" });
 test("signed-out home explains the file-first workflow", async ({ page }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /Ship tools from one file/ }),
+    page.getByRole("heading", {
+      name: /Turn real product flows into tools agents can use/,
+    }),
   ).toBeVisible();
-  await expect(page.getByText("npx sodium-webmcp init")).toBeVisible();
+  await expect(
+    page.getByText("npx sodium-webmcp init", { exact: true }).first(),
+  ).toBeVisible();
   await expect(
     page.getByText(/never requests repository access/),
   ).toBeVisible();
@@ -74,6 +78,14 @@ test("project dashboard reports tool outcomes and deployment history", async ({
     occurred_at: new Date().toISOString(),
   };
   const { error: eventError } = await admin.from("usage_events").insert([
+    {
+      ...base,
+      event: "sdk_ready",
+      tool_id: null,
+      tool_name: null,
+      invocation_id: null,
+    },
+    { ...base, event: "tool_registered", invocation_id: null },
     { ...base, event: "tool_started" },
     { ...base, event: "tool_succeeded", duration_ms: 84 },
   ]);
@@ -81,7 +93,7 @@ test("project dashboard reports tool outcomes and deployment history", async ({
 
   await signIn(page, users.owner.email);
   await expect(
-    page.getByRole("heading", { name: "Your WebMCP projects" }),
+    page.getByRole("heading", { name: "WebMCP projects" }),
   ).toBeVisible();
   await page.getByRole("link", { name: /Fixture shop/ }).click();
   await expect(
@@ -89,7 +101,13 @@ test("project dashboard reports tool outcomes and deployment history", async ({
   ).toBeVisible();
   await expect(page.getByText("100%").first()).toBeVisible();
   await expect(page.getByText("84 ms").first()).toBeVisible();
-  await expect(page.getByText("Start checkout")).toBeVisible();
+  await expect(page.getByText("1 successful")).toBeVisible();
+  await expect(page.getByText("Start checkout").last()).toBeVisible();
+  await page.getByRole("link", { name: "7d" }).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?range=7d`));
+  await expect(
+    page.getByRole("heading", { name: "Agent analytics" }),
+  ).toBeVisible();
 });
 
 test("device authorization binds one valid CLI request to the signed-in user", async ({

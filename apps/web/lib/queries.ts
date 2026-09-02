@@ -52,7 +52,7 @@ export async function listProjects() {
   }));
 }
 
-export async function getProjectDashboard(projectId: string) {
+export async function getProjectDashboard(projectId: string, days = 30) {
   const supabase = await createClient();
   const { data: project, error: projectError } = await supabase
     .from("projects")
@@ -62,7 +62,7 @@ export async function getProjectDashboard(projectId: string) {
   if (projectError) throw new Error(projectError.message);
   if (!project) notFound();
 
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const [deploymentResult, eventResult] = await Promise.all([
     supabase
       .from("deployments")
