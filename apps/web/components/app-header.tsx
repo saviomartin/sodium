@@ -14,13 +14,15 @@ export interface HeaderAccount {
 export function AppHeader({
   account,
   next = "/",
+  marketing = false,
 }: {
   account?: HeaderAccount | null;
   next?: string;
+  marketing?: boolean;
 }) {
   return (
-    <header className="border-b border-white/[0.06] bg-ink-950/85 font-mono backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+    <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/85 font-mono backdrop-blur">
+      <div className="mx-auto grid h-14 w-full max-w-6xl grid-cols-[1fr_auto] items-center gap-4 px-4 sm:px-6 md:grid-cols-[1fr_auto_1fr]">
         <Link
           href="/"
           className="inline-flex items-baseline gap-2 py-2 text-lg font-medium text-neutral-100"
@@ -30,64 +32,88 @@ export function AppHeader({
             WebMCP
           </span>
         </Link>
-        {account ? (
-          <details className="group relative">
-            <summary
-              aria-label="Open account menu"
-              className="flex cursor-pointer list-none items-center rounded-full outline-none ring-blue-500 ring-offset-2 ring-offset-ink-950 focus-visible:ring-2 [&::-webkit-details-marker]:hidden"
+        {marketing && (
+          <nav className="hidden items-center gap-6 text-xs text-neutral-500 md:flex">
+            <Link
+              href="/#features"
+              className="transition-colors hover:text-neutral-100"
             >
-              {account.avatarUrl ? (
-                <Image
-                  src={account.avatarUrl}
-                  alt=""
-                  width={32}
-                  height={32}
-                  className="size-8 rounded-full bg-white/[0.06] object-cover"
-                />
-              ) : (
-                <span className="flex size-8 items-center justify-center rounded-full bg-white/10 text-xs">
-                  {(account.displayName ||
-                    account.email ||
-                    "S")[0]?.toUpperCase()}
-                </span>
-              )}
-            </summary>
-            <div className="frame absolute right-0 z-20 mt-2 w-64 overflow-hidden shadow-xl shadow-black/40">
-              <div className="border-b border-white/[0.07] px-4 py-3">
-                <p className="truncate text-sm font-medium text-neutral-100">
-                  {account.displayName || "Account"}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-neutral-500">
-                  {account.email}
-                </p>
-              </div>
-              <div className="p-1.5 text-sm">
-                <Link
-                  href="/settings"
-                  className="flex items-center gap-2 rounded-md px-2.5 py-2 text-neutral-300 hover:bg-white/[0.06]"
-                >
-                  <GearIcon aria-hidden className="size-4" /> Settings
-                </Link>
-                <form action={signOutAction}>
-                  <button
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-neutral-300 hover:bg-white/[0.06]"
-                    type="submit"
-                  >
-                    <SignOutIcon aria-hidden className="size-4" /> Sign out
-                  </button>
-                </form>
-              </div>
-            </div>
-          </details>
-        ) : (
-          <GithubSignInForm
-            action={signInWithGithubAction}
-            next={next}
-            className={secondaryButtonClass}
-            label="Sign in"
-            mark="github"
-          />
+              Features
+            </Link>
+            <Link
+              href="/#workflow"
+              className="transition-colors hover:text-neutral-100"
+            >
+              Workflow
+            </Link>
+            <Link
+              href="/#analytics"
+              className="transition-colors hover:text-neutral-100"
+            >
+              Analytics
+            </Link>
+          </nav>
         )}
+        <div className="flex items-center justify-end md:col-start-3">
+          {account ? (
+            <details className="group relative">
+              <summary
+                aria-label="Open account menu"
+                className="flex cursor-pointer list-none items-center rounded-full outline-none ring-blue-500 ring-offset-2 ring-offset-ink-950 focus-visible:ring-2 [&::-webkit-details-marker]:hidden"
+              >
+                {account.avatarUrl ? (
+                  <Image
+                    src={account.avatarUrl}
+                    alt=""
+                    width={32}
+                    height={32}
+                    className="size-8 rounded-full bg-white/[0.06] object-cover"
+                  />
+                ) : (
+                  <span className="flex size-8 items-center justify-center rounded-full bg-white/10 text-xs">
+                    {(account.displayName ||
+                      account.email ||
+                      "S")[0]?.toUpperCase()}
+                  </span>
+                )}
+              </summary>
+              <div className="frame absolute right-0 z-20 mt-2 w-64 overflow-hidden shadow-xl shadow-black/40">
+                <div className="border-b border-white/[0.07] px-4 py-3">
+                  <p className="truncate text-sm font-medium text-neutral-100">
+                    {account.displayName || "Account"}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-neutral-500">
+                    {account.email}
+                  </p>
+                </div>
+                <div className="p-1.5 text-sm">
+                  <Link
+                    href="/settings"
+                    className="flex items-center gap-2 rounded-md px-2.5 py-2 text-neutral-300 hover:bg-white/[0.06]"
+                  >
+                    <GearIcon aria-hidden className="size-4" /> Settings
+                  </Link>
+                  <form action={signOutAction}>
+                    <button
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-neutral-300 hover:bg-white/[0.06]"
+                      type="submit"
+                    >
+                      <SignOutIcon aria-hidden className="size-4" /> Sign out
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </details>
+          ) : (
+            <GithubSignInForm
+              action={signInWithGithubAction}
+              next={next}
+              className={secondaryButtonClass}
+              label="Sign in"
+              mark="github"
+            />
+          )}
+        </div>
       </div>
     </header>
   );
