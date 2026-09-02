@@ -9,6 +9,7 @@ await build({
   entryPoints: [join(root, "src", "bin.ts")],
   outfile,
   bundle: true,
+  external: ["clipboardy", "ink", "react", "react/jsx-runtime"],
   platform: "node",
   format: "esm",
   target: "node20",

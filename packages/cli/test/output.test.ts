@@ -1,25 +1,21 @@
 import { describe, expect, it } from "vitest";
-import {
-  dashboardUrl,
-  frameworkName,
-  successMessage,
-} from "../src/output";
+import { dashboardUrl, frameworkName, plainResult } from "../src/output";
 
 describe("CLI success output", () => {
   it("formats useful details and a next action", () => {
     expect(
-      successMessage(
-        "Sodium initialized",
-        [
+      plainResult({
+        command: "init",
+        title: "Sodium initialized",
+        details: [
           ["Project", "my-app"],
           ["Framework", "Next.js"],
         ],
-        "create sodium.json",
-      ),
+        next: "create sodium.json",
+      }),
     ).toBe(
       [
-        "✓ Sodium initialized",
-        "",
+        "✓ Sodium init · Sodium initialized",
         "  Project    my-app",
         "  Framework  Next.js",
         "",

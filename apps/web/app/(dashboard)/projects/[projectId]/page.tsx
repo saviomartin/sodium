@@ -216,8 +216,8 @@ function EmptyDeploy() {
     <div className="py-5 text-center">
       <p className="text-sm text-neutral-300">No deployment yet</p>
       <p className="mt-2 text-sm text-neutral-500">
-        Run <code className="text-neutral-300">npx sodium-webmcp deploy</code>{" "}
-        in your app.
+        Run <code className="text-neutral-300">npx sodiumtools deploy</code> in
+        your app.
       </p>
     </div>
   );
