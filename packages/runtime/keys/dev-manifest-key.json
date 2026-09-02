@@ -1,5 +1,0 @@
-{
-  "WARNING": "INSECURE development signing key. Never use in production.",
-  "keyId": "dev-insecure-1",
-  "privateKeyPem": "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEILuftDsdAMJoHXaJopPeLcaL0R/zleKwStLCFrNy8fUx\n-----END PRIVATE KEY-----\n"
-}

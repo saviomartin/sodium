@@ -1,5 +1,4 @@
 import "server-only";
-import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { publicEnv } from "./public-env";
 
@@ -13,24 +12,6 @@ const EnvSchema = z.object({
   SITE_URL: z.string().url().optional(),
   VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
   VERCEL_URL: z.string().optional(),
-
-  /** Ed25519 manifest signing key: either inline PEM + id, or a JSON key file. */
-  MANIFEST_SIGNING_KEY_ID: z.string().optional(),
-  MANIFEST_SIGNING_PRIVATE_KEY: z.string().optional(),
-  MANIFEST_SIGNING_KEY_FILE: z.string().optional(),
-
-  GITHUB_WEBHOOK_SECRET: z.string().optional(),
-  CRON_SECRET: z.string().optional(),
-
-  // Optional at build time and required only by the billing entry points.
-  STRIPE_SECRET_KEY: z
-    .string()
-    .regex(/^(sk|rk)_(test|live)_/)
-    .optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
-  STRIPE_REPOSITORY_PRICE_ID: z.string().startsWith("price_").optional(),
-  STRIPE_PORTAL_CONFIGURATION_ID: z.string().startsWith("bpc_").optional(),
-  STRIPE_MODE: z.enum(["test", "live"]).optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -58,7 +39,7 @@ function exactOrigin(raw: string): string {
   return url.origin;
 }
 
-/** Canonical origin for callbacks and generated loader URLs. */
+/** Canonical origin for callbacks and CLI links. */
 export function siteUrl(): string {
   if (publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "preview") {
     if (env.SITE_URL) {
@@ -80,42 +61,4 @@ export function siteUrl(): string {
     throw new Error("production SITE_URL must use https");
   }
   return url;
-}
-
-export interface SigningKey {
-  keyId: string;
-  privateKeyPem: string;
-}
-
-let cachedKey: SigningKey | null = null;
-
-export function manifestSigningKey(): SigningKey {
-  if (cachedKey) return cachedKey;
-  if (env.MANIFEST_SIGNING_KEY_ID && env.MANIFEST_SIGNING_PRIVATE_KEY) {
-    cachedKey = {
-      keyId: env.MANIFEST_SIGNING_KEY_ID,
-      privateKeyPem: env.MANIFEST_SIGNING_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    };
-  } else if (env.MANIFEST_SIGNING_KEY_FILE) {
-    const file = JSON.parse(
-      readFileSync(env.MANIFEST_SIGNING_KEY_FILE, "utf8"),
-    ) as {
-      keyId: string;
-      privateKeyPem: string;
-    };
-    cachedKey = { keyId: file.keyId, privateKeyPem: file.privateKeyPem };
-  } else {
-    throw new Error(
-      "manifest signing key not configured (MANIFEST_SIGNING_* env)",
-    );
-  }
-  if (
-    publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "production" &&
-    cachedKey.keyId.startsWith("dev-insecure")
-  ) {
-    throw new Error(
-      "refusing to run in production with the committed dev signing key",
-    );
-  }
-  return cachedKey;
 }

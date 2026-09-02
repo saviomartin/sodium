@@ -6,6 +6,6 @@
 --
 -- Test suites provision their own throwaway data:
 --   - the database security tests create tenants inside rolled-back
---     transactions (apps/worker/test/db-rls.test.ts)
+--     transactions (integration and browser tests)
 --   - the dashboard browser tests create ephemeral users via the auth admin
 --     API and delete them afterwards (apps/web/e2e/global-setup.ts)

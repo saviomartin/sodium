@@ -1,14 +1,13 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { STATE_PATH, adminClient, type E2eState } from "./helpers";
 
 /**
  * Suite setup:
  *  - creates three EPHEMERAL auth users via the admin API (no passwords, no
  *    seeded accounts); the suite signs in with admin-issued magic-link tokens
- * Teardown deletes everything the suite created: the users, and any
- * personal workspaces made by Auth (cascading to repos, runs, manifests).
+ * Teardown deletes the users; project data cascades from auth.users.
  */
-export default async function globalSetup(): Promise<() => Promise<void>> {
+export default async function globalSetup(): Promise<void> {
   const admin = adminClient();
   const stamp = Date.now().toString(36);
   const users = {} as E2eState["users"];
@@ -27,21 +26,4 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     JSON.stringify({ stamp, users } satisfies E2eState, null, 2),
   );
 
-  return async () => {
-    const userIds = Object.values(users).map((user) => user.id);
-    const { data: orgs } = await admin
-      .from("organizations")
-      .select("id")
-      .in("created_by", userIds);
-    const orgIds = (orgs ?? []).map((org) => org.id);
-    if (orgIds.length > 0) {
-      await admin
-        .from("sites")
-        .update({ current_manifest_id: null })
-        .in("org_id", orgIds);
-      await admin.from("organizations").delete().in("id", orgIds);
-    }
-    for (const id of userIds) await admin.auth.admin.deleteUser(id);
-    rmSync(STATE_PATH, { force: true });
-  };
 }

@@ -17,8 +17,7 @@
     "db:push": "node scripts/db-push.mjs",
     "supabase:auth:development": "node scripts/sync-supabase-auth.mjs development",
     "supabase:auth:production": "node scripts/sync-supabase-auth.mjs production",
-    "db:test": "pnpm --filter @sodium/worker test:db",
-    "db:types": "supabase gen types typescript --project-id laqlbydlawieccohknsj --schema public > packages/contracts/src/database.types.ts"
+    "db:types": "supabase gen types typescript --project-id laqlbydlawieccohknsj --schema public > packages/spec/src/database.types.ts"
   },
   "devDependencies": {
     "dotenv": "16.0.3",

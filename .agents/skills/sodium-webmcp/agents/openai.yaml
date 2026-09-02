@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sodium WebMCP"
+  short_description: "Convert app capabilities into sodium.json tools"
+  default_prompt: "Use $sodium-webmcp to inspect this app and generate a validated sodium.json with grounded WebMCP tools."

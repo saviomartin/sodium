@@ -1,118 +1,95 @@
-import { Suspense } from "react";
-import type { Metadata } from "next";
 import { AppHeader } from "@/components/app-header";
-import {
-  HomeRepositories,
-  RepositoryPanelSkeleton,
-} from "@/components/home-repositories";
-import { MarketingSections, SiteFooter } from "@/components/marketing";
-import { AGENT_SENTENCE, RollingAgent } from "@/components/rolling-agent";
+import { ProjectList } from "@/components/project-list";
 import { SignInPanel } from "@/components/sign-in-panel";
-import { StructuredData } from "@/components/structured-data";
-import { frameClass } from "@/components/ui";
-import { getAccountContext } from "@/lib/queries";
-import { OPEN_GRAPH } from "@/lib/seo";
+import { getAccountContext, listProjects } from "@/lib/queries";
 
-/**
- * The title and description come from the root layout, which already carries
- * the product's own. What only this page can say is that it is the canonical
- * URL for that copy, and og:url has to agree with the canonical or a crawler
- * has two answers for where the page lives.
- */
-export const metadata: Metadata = {
-  alternates: { canonical: "/" },
-  openGraph: { ...OPEN_GRAPH, url: "/" },
-};
-
-/**
- * The home page is one page in two states.
- *
- * Hero, features, pricing, FAQ and footer render the same whether or not
- * anyone is signed in. Only the panel below the hero changes: a GitHub sign-in
- * when signed out, the repository list when signed in. Keep new content outside
- * that panel unless it genuinely depends on the session.
- */
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{
-    add?: string;
-    deleted?: string;
-    error?: string;
-    next?: string;
-  }>;
+  searchParams: Promise<{ deleted?: string; error?: string; next?: string }>;
 }) {
   const [account, params] = await Promise.all([
     getAccountContext(),
     searchParams,
   ]);
-  const signedIn = Boolean(account.userId);
-  const next = params.next ?? "/";
+  if (account.userId) {
+    const projects = await listProjects();
+    return (
+      <div className="min-h-dvh">
+        <AppHeader account={account} />
+        <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="font-mono text-xs uppercase tracking-[0.18em] text-neutral-600">
+                Control plane
+              </p>
+              <h1 className="mt-2 text-3xl font-medium tracking-tight text-neutral-100">
+                Your WebMCP projects
+              </h1>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-400">
+                Definitions stay in your repository. Sodium stores deployments
+                and tool outcomes.
+              </p>
+            </div>
+            <code className="frame block overflow-x-auto px-3 py-2 font-mono text-xs text-neutral-300">
+              npx sodium-webmcp init
+            </code>
+          </div>
+          <div className="mt-8">
+            <ProjectList projects={projects} />
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <AppHeader
-        account={
-          signedIn
-            ? {
-                email: account.email,
-                displayName: account.displayName,
-                avatarUrl: account.avatarUrl,
-              }
-            : null
-        }
-        next={next}
-      />
-
-      <main className="flex-1">
-        <StructuredData />
-
-        <section className="mx-auto w-full max-w-5xl px-4 pt-12 pb-16 sm:px-6 sm:pt-20 sm:pb-24">
-          <header className="mx-auto max-w-3xl text-center">
-            {/* The rolling agent is decorative repetition of one idea, so the
-                sentence assistive tech and crawlers read names every agent
-                once, statically, and the animated copy is hidden from them.
-
-                The name takes a line of its own — see `rolling-agent` for why
-                that is what keeps the swap still — so the wrap here no longer
-                depends on which name is showing, and nothing below the
-                headline moves as it rolls. */}
-            <h1 className="text-4xl leading-[1.25] font-normal text-neutral-100 text-balance sm:text-5xl">
-              <span className="sr-only">{AGENT_SENTENCE}</span>
-              <span aria-hidden>
-                Make your website usable by
-                <RollingAgent />
-              </span>
-            </h1>
-            <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-neutral-300 text-pretty sm:text-lg">
-              Sodium turns your website’s existing capabilities into WebMCP
-              tools that AI agents can discover and use directly.
-            </p>
-          </header>
-
-          {/* The page's one moving part. Everything else is identical signed
-              in or out, so calls to action elsewhere point back at this id. */}
-          <div
-            id="start"
-            className={`mt-10 min-h-72 scroll-mt-16 overflow-hidden sm:mt-12 ${frameClass}`}
-          >
-            {signedIn ? (
-              <Suspense fallback={<RepositoryPanelSkeleton />}>
-                <HomeRepositories
-                  params={params}
-                  avatarUrl={account.avatarUrl}
-                />
-              </Suspense>
-            ) : (
-              <SignInPanel params={params} />
-            )}
+    <div className="min-h-dvh">
+      <AppHeader next={params.next} />
+      <main className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-14 sm:px-6 sm:py-24 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+        <section>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-blue-400">
+            PostHog for WebMCP
+          </p>
+          <h1 className="mt-5 max-w-3xl text-5xl font-medium leading-[1.02] tracking-[-0.045em] text-neutral-100 sm:text-6xl">
+            Ship tools from one file. See what agents actually use.
+          </h1>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-neutral-400 sm:text-lg">
+            The Sodium skill converts real application flows into{" "}
+            <code className="font-mono text-neutral-200">sodium.json</code>. One
+            command installs the local SDK, deploys the contract, and starts
+            measuring every tool outcome.
+          </p>
+          <div className="frame mt-8 overflow-hidden font-mono text-sm">
+            <div className="border-b border-white/[0.07] px-4 py-2 text-xs text-neutral-600">
+              terminal
+            </div>
+            <div className="space-y-2 px-4 py-4 text-neutral-300">
+              <p>
+                <span className="text-blue-400">$</span> use $sodium-webmcp
+              </p>
+              <p>
+                <span className="text-blue-400">$</span> npx sodium-webmcp init
+              </p>
+            </div>
           </div>
+          <ol className="mt-8 grid gap-3 text-sm text-neutral-400 sm:grid-cols-3">
+            <li>
+              <span className="mr-2 font-mono text-neutral-600">01</span>Skill
+              writes the contract
+            </li>
+            <li>
+              <span className="mr-2 font-mono text-neutral-600">02</span>CLI
+              installs the SDK
+            </li>
+            <li>
+              <span className="mr-2 font-mono text-neutral-600">03</span>
+              Dashboard tracks outcomes
+            </li>
+          </ol>
         </section>
-
-        <MarketingSections next={next} signedIn={signedIn} />
+        <SignInPanel params={params} />
       </main>
-
-      <SiteFooter />
     </div>
   );
 }

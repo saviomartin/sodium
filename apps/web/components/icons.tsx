@@ -75,8 +75,8 @@ export { XCircleIcon } from "@phosphor-icons/react/dist/ssr/XCircle";
  * GitHub's own Invertocat mark, at its published 98×96 geometry.
  *
  * Phosphor's `GithubLogo` is a look-alike drawn to that set's grid; wherever
- * this app names GitHub as a product — sign-in, repository rows, run headers —
- * it shows the real mark instead. It fills with `currentColor`, so the call
+ * this app names GitHub as the identity provider, it shows the real mark
+ * instead. It fills with `currentColor`, so the call
  * site's text color decides whether it reads white on dark or dim inline.
  *
  * The mark is GitHub, Inc.'s trademark and appears here only to identify the

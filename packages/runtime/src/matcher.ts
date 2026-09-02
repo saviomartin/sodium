@@ -1,7 +1,7 @@
 /**
  * Path pattern matching for route conditions.
  * Literal segments, `*` (exactly one segment), `**` (zero or more trailing
- * segments). No regex compilation from manifest data.
+ * segments). No regex compilation from config data.
  */
 export function matchesPathPattern(pattern: string, pathname: string): boolean {
   const patternSegments = split(pattern);

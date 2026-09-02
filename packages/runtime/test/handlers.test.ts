@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTool } from "../src/handlers";
-import { makeTool } from "./manifest-fixture";
+import { makeTool } from "./tool-fixture";
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -205,6 +205,25 @@ describe("loader-native handlers", () => {
     expect(clicked).not.toHaveBeenCalled();
   });
 
+  it("waits for framework-rendered interaction postconditions", async () => {
+    document.body.innerHTML = `<button id="clear">Clear</button><div id="pending"></div>`;
+    document.querySelector("#clear")!.addEventListener("click", () => {
+      setTimeout(() => document.querySelector("#pending")?.remove(), 0);
+    });
+    const tool = makeTool({
+      riskLevel: "reversible",
+      handler: {
+        kind: "interaction",
+        steps: [{ kind: "click", selector: "#clear" }],
+        postcondition: { kind: "selector_absent", selector: "#pending" },
+      },
+    });
+
+    await expect(executeTool(tool, {}, document)).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it("fails closed when an interaction selector is ambiguous", async () => {
     document.body.innerHTML = `<button class="cancel">One</button><button class="cancel">Two</button>`;
     const tool = makeTool({
@@ -302,5 +321,31 @@ describe("navigate handler", () => {
     const result = await executeTool(tool, { id: "p1" }, fakeDoc);
     expect(result.ok).toBe(true);
     expect(assign).toHaveBeenCalledWith("/products/p1");
+  });
+});
+
+describe("custom call handler", () => {
+  it("invokes an explicitly provided local handler", async () => {
+    const tool = makeTool({
+      inputSchema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+        additionalProperties: false,
+      },
+      handler: { kind: "call", export: "openProduct" },
+    });
+    const result = await executeTool(tool, { id: "p1" }, document, undefined, {
+      openProduct: async ({ id }) => ({ opened: id }),
+    });
+    expect(result).toEqual({ ok: true, data: { opened: "p1" } });
+  });
+
+  it("fails clearly when the export is absent", async () => {
+    const tool = makeTool({ handler: { kind: "call", export: "missing" } });
+    await expect(executeTool(tool, {}, document)).resolves.toMatchObject({
+      ok: false,
+      error: "handler_not_registered",
+    });
   });
 });

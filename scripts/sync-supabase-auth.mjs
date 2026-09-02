@@ -50,13 +50,9 @@ const pulledPath = join(temporaryDirectory, `${target}.env`);
 
 try {
   const args = ["env", "pull", pulledPath, `--environment=${target}`, "--yes"];
-  let pull = spawnSync(
-    "vercel",
-    args,
-    { cwd: root, stdio: "inherit" },
-  );
+  let pull = spawnSync("vercel", args, { cwd: root, stdio: "inherit" });
   if (pull.error?.code === "ENOENT") {
-    pull = spawnSync("pnpm", ["dlx", "vercel@59.10.0", ...args], {
+    pull = spawnSync("pnpm", ["dlx", "vercel@59.11.2", ...args], {
       cwd: root,
       stdio: "inherit",
     });

@@ -19,7 +19,7 @@ export const SITE_TITLE = "Sodium - Make your website usable by AI agents";
 
 /** Under 160 characters, so search results show it whole. */
 export const SITE_DESCRIPTION =
-  "Sodium turns what your website already does into WebMCP tools AI agents can use. Connect a GitHub repository, approve the tools it finds, add one line of code.";
+  "Define WebMCP tools in sodium.json, install them locally with one command, and understand how AI agents use them.";
 
 /** The company behind Sodium, named the way the header and footer name it. */
 export const PUBLISHER = "Result";

@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   assertSupabaseEnvironment,
   SODIUM_ENVIRONMENTS,
-} from "@sodium/contracts";
+} from "sodium-webmcp-spec";
 
 const PublicEnvSchema = z.object({
   NEXT_PUBLIC_SODIUM_ENVIRONMENT: z.enum(SODIUM_ENVIRONMENTS),

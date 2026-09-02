@@ -10,12 +10,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  transpilePackages: [
-    "@sodium/analyzer",
-    "@sodium/contracts",
-    "@sodium/runtime",
-    "@sodium/worker",
-  ],
+  transpilePackages: ["sodium-webmcp-spec"],
 };
 
 export default nextConfig;

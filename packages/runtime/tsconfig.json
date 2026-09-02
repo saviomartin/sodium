@@ -3,7 +3,7 @@
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"],
+    "types": ["node", "react"],
     "module": "ESNext",
     "moduleResolution": "Bundler"
   },
