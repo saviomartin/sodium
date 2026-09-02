@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { setTimeout as wait } from "node:timers/promises";
+import { basename, relative } from "node:path";
 import { SodiumApi, SodiumApiError } from "./api";
 import {
   configHash,
@@ -16,6 +17,12 @@ import {
   installIntegration,
   installSkill,
 } from "./install";
+import {
+  dashboardUrl,
+  frameworkName,
+  SODIUM_COMMAND,
+  successMessage,
+} from "./output";
 
 export interface CommandContext {
   cwd: string;
@@ -87,12 +94,31 @@ async function authenticatedApi(context: CommandContext): Promise<SodiumApi> {
 export async function loginCommand(context: CommandContext): Promise<void> {
   const api = await authenticatedApi(context);
   const account = await api.me();
-  context.log(`Logged in as ${account.email}`);
+  context.log(
+    successMessage(
+      "Logged in to Sodium",
+      [
+        ["Account", account.email],
+        ["Dashboard", dashboardUrl(api.endpoint)],
+      ],
+      `${SODIUM_COMMAND} deploy`,
+    ),
+  );
 }
 
 export async function validateCommand(context: CommandContext): Promise<void> {
   const config = await readSodiumConfig(context.cwd);
-  context.log(`Valid sodium.json: ${config.tools.length} tools`);
+  context.log(
+    successMessage(
+      "sodium.json is valid",
+      [
+        ["App", config.app.name],
+        ["Tools", config.tools.length],
+        ["Origins", config.app.origins.join(", ")],
+      ],
+      `${SODIUM_COMMAND} login`,
+    ),
+  );
 }
 
 export async function deployCommand(context: CommandContext): Promise<void> {
@@ -118,8 +144,15 @@ export async function deployCommand(context: CommandContext): Promise<void> {
     configHash(config),
   );
   await writeProject(context.cwd, { ...project, deployment });
-  context.log(`Deployed version ${deployment.version} (${deployment.id})`);
-  context.log(`Integrated ${framework} in ${files.length} files`);
+  context.log(
+    successMessage("Deployment ready", [
+      ["Project", `${config.app.name} (${project.projectId})`],
+      ["Version", deployment.version],
+      ["Tools", config.tools.length],
+      ["Integration", `${frameworkName(framework)} · ${files.length} files`],
+      ["Dashboard", dashboardUrl(project.endpoint, project.projectId)],
+    ]),
+  );
 }
 
 export async function initCommand(
@@ -127,7 +160,8 @@ export async function initCommand(
   options: { skipInstall?: boolean } = {},
 ): Promise<void> {
   const framework = await detectFramework(context.cwd);
-  if (!options.skipInstall && !(await hasSodiumSdk(context.cwd))) {
+  const sdkAlreadyInstalled = await hasSodiumSdk(context.cwd);
+  if (!options.skipInstall && !sdkAlreadyInstalled) {
     const manager = await detectPackageManager(context.cwd);
     const args =
       manager === "npm"
@@ -136,9 +170,30 @@ export async function initCommand(
     await context.run(manager, args);
   }
   const files = await installSkill(context.cwd);
-  context.log(`Sodium initialized for ${framework}`);
-  context.log(`Installed the Sodium skill in ${files.length} files`);
-  context.log("Next: use $sodium-webmcp, then run sodium login and sodium deploy");
+  const skillDirectory = relative(
+    context.cwd,
+    files[0]?.replace(/\/SKILL\.md$/, "") ?? context.cwd,
+  );
+  context.log(
+    successMessage(
+      "Sodium initialized",
+      [
+        ["Project", basename(context.cwd)],
+        ["Location", context.cwd],
+        ["Framework", frameworkName(framework)],
+        [
+          "SDK",
+          sdkAlreadyInstalled
+            ? "Already installed"
+            : options.skipInstall
+              ? "Skipped (--skip-install)"
+              : "Installed",
+        ],
+        ["Skill", skillDirectory],
+      ],
+      "ask your coding agent: Use $sodium-webmcp to inspect this app and create sodium.json.",
+    ),
+  );
 }
 
 export async function doctorCommand(context: CommandContext): Promise<void> {
@@ -156,6 +211,15 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
   }
   const framework = await detectFramework(context.cwd);
   context.log(
-    `Healthy: ${config.tools.length} tools, ${framework}, version ${project.deployment.version}`,
+    successMessage("Project is healthy", [
+      ["App", config.app.name],
+      ["Project", project.projectId],
+      ["Framework", frameworkName(framework)],
+      [
+        "Deployment",
+        `Version ${project.deployment.version} · ${config.tools.length} tools`,
+      ],
+      ["Dashboard", dashboardUrl(project.endpoint, project.projectId)],
+    ]),
   );
 }

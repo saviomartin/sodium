@@ -20,11 +20,11 @@ corepack pnpm --dir apps/web test:e2e
 
 ## Manual release smoke test
 
-1. Install the published CLI globally and run `sodium init` in fresh Next.js and Vite React fixtures.
+1. Run `npx sodium-webmcp@latest init` without a global installation in fresh Next.js and Vite React fixtures.
 2. Use the installed `$sodium-webmcp` skill to create and validate `sodium.json` from each real application.
-3. Run `sodium login`, then `sodium deploy`, and verify the project and first deployment are created once.
+3. Run the `login` and `deploy` commands through `npx sodium-webmcp@latest`, then verify the project and first deployment are created once.
 4. Use a WebMCP-capable browser to call one read-only and one confirmed tool, with no arguments or outputs stored in telemetry.
-5. Run `sodium doctor`, then deploy an unchanged config and verify the deployment version does not increment.
+5. Run `npx sodium-webmcp@latest doctor`, then deploy an unchanged config and verify the deployment version does not increment.
 
 Record the evidence and release blockers in [`real-world-qa.md`](real-world-qa.md).
 

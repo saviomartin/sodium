@@ -9,7 +9,7 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | Consumer app | Fresh `create-next-app` fixture lints and production-builds before and after installation | Pass |
 | Package boundary | Packed spec, SDK, and CLI tarballs install in the fixture without workspace imports | Pass |
 | Login | Device code is approved by the signed-in dashboard account; token file mode is `0600`; a second login reuses the session | Pass |
-| Init | `sodium init` creates one project, installs one provider, preserves handlers, and is idempotent | Pass |
+| Init | `npx sodium-webmcp@latest init` installs the SDK and project-local skill without requiring auth or creating a cloud project | Pass |
 | Deployments | Changed config increments the version; unchanged config returns the same deployment | Pass: versions 1, 2, and 3 |
 | Diagnostics | `validate` accepts five tools; `doctor` detects drift and returns healthy after deployment | Pass |
 | WebMCP discovery | `agent-browser webmcp list` sees route-eligible tools and updates after application state changes | Pass |
@@ -20,7 +20,8 @@ This is the release acceptance test for Sodium. It uses a disposable application
 | Analytics | Starts, outcomes, registration, initialization, duration, and denial events persist with deployment version; arguments and outputs do not | Pass |
 | Ingestion security | Wrong origin and wrong publishable key both return the opaque `202` boundary and create no event | Pass |
 | Dashboard | Account can see exact tools, calls, success rates, last event, and all deployment versions | Pass |
-| Public install | `npm install --global sodium-webmcp` exposes the `sodium` command | Pass: spec and SDK `0.1.0`; CLI `0.1.1` |
+| CLI output | Each success shows crisp project details, a dashboard URL when available, and the next action | Pass |
+| Public execution | `npx sodium-webmcp@latest` runs without a global installation | Pass: spec and SDK `0.1.0`; CLI `0.1.2` |
 
 ## Defects found by this fixture
 
@@ -39,9 +40,9 @@ The real consumer test found and fixed seven integration defects that package-lo
 The npm name `sodium` is already owned by an unrelated libsodium port. The zero-install command must therefore be:
 
 ```bash
-npx sodium-webmcp login
-npx sodium-webmcp init
-npx sodium-webmcp deploy
+npx sodium-webmcp@latest init
+npx sodium-webmcp@latest login
+npx sodium-webmcp@latest deploy
 ```
 
 After installation, the local binary remains the short `sodium` command.
