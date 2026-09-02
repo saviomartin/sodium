@@ -1,9 +1,15 @@
 import type { Framework } from "./install";
 
-export const CLI_VERSION = "0.2.1";
+export const CLI_VERSION = "0.2.2";
 export const SODIUM_COMMAND = "npx sodiumtools";
 
 export type ResultTone = "success" | "warning" | "info";
+
+export interface ToolRow {
+  name: string;
+  risk: string;
+  routes: string;
+}
 
 export interface CommandResult {
   command: string;
@@ -13,6 +19,7 @@ export interface CommandResult {
   note?: string;
   prompt?: string;
   promptCopied?: boolean;
+  tools?: ToolRow[];
   next?: string;
 }
 
@@ -23,7 +30,7 @@ export interface HelpCommand {
 
 export const HELP_COMMANDS: HelpCommand[] = [
   {
-    name: "init [--agent <name>]",
+    name: "init [--name <name>]",
     description: "Install Sodium and create sodium.json",
   },
   { name: "login", description: "Connect this machine to your account" },
@@ -62,6 +69,24 @@ export function plainResult(result: CommandResult): string {
       "",
       result.promptCopied ? "Prompt copied to clipboard:" : "Prompt:",
       result.prompt,
+    );
+  }
+  if (result.tools?.length) {
+    const nameWidth = Math.max(
+      4,
+      ...result.tools.map((tool) => tool.name.length),
+    );
+    const riskWidth = Math.max(
+      4,
+      ...result.tools.map((tool) => tool.risk.length),
+    );
+    lines.push(
+      "",
+      `  ${"TOOL".padEnd(nameWidth)}  ${"RISK".padEnd(riskWidth)}  ROUTES`,
+      ...result.tools.map(
+        (tool) =>
+          `  ${tool.name.padEnd(nameWidth)}  ${tool.risk.padEnd(riskWidth)}  ${tool.routes}`,
+      ),
     );
   }
   if (result.next) lines.push("", `Next: ${result.next}`);

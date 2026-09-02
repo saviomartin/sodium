@@ -1,14 +1,17 @@
 import { spawn } from "node:child_process";
 import { setTimeout as wait } from "node:timers/promises";
-import { basename, dirname, relative } from "node:path";
+import { dirname, relative } from "node:path";
 import clipboard from "clipboardy";
 import { SodiumApi, SodiumApiError } from "./api";
 import {
   configHash,
   hasSodiumConfig,
+  readInit,
   readProject,
   readSodiumConfig,
   readUserConfig,
+  suggestedProjectName,
+  writeInit,
   writeProject,
   writeUserConfig,
 } from "./files";
@@ -27,6 +30,7 @@ import {
 } from "./output";
 import {
   choose,
+  input,
   isInteractiveTerminal,
   printInfo,
   printResult,
@@ -34,15 +38,18 @@ import {
   type Choice,
   type ProgressHandle,
 } from "./ui";
+import { openAgentTerminal } from "./terminal";
 
 export type AgentChoice = "codex" | "claude" | "gemini" | "other" | "none";
 
-export const AGENT_PROMPT = [
-  "Inspect this application and create sodium.json.",
-  "First read .agents/skills/sodium-webmcp/SKILL.md and follow it completely.",
-  "Ground every tool in real existing UI or API behavior; do not invent capabilities or deploy the project.",
-  `Run ${SODIUM_COMMAND} validate, fix every validation error, then summarize the tools you created.`,
-].join(" ");
+export function agentPrompt(projectName: string): string {
+  return [
+    `Inspect this application and create sodium.json for the Sodium project named ${JSON.stringify(projectName)}.`,
+    "First read .agents/skills/sodium-webmcp/SKILL.md and follow it completely.",
+    "Ground every tool in real existing UI or API behavior; do not invent capabilities or deploy the project.",
+    `Run ${SODIUM_COMMAND} validate and fix every validation error. Summarize the tools. Your final response must end with this exact standalone sentence: All tools are validated. Next: run ${SODIUM_COMMAND} deploy.`,
+  ].join(" ");
+}
 
 interface RunOptions {
   interactive?: boolean;
@@ -55,9 +62,11 @@ export interface CommandContext {
   info(message: string): void;
   progress(label: string): ProgressHandle;
   choose<T extends string>(question: string, choices: Choice<T>[]): Promise<T>;
+  input(question: string, placeholder: string): Promise<string>;
   copy(text: string): Promise<boolean>;
   open(url: string): Promise<boolean>;
   hasCommand(command: string): Promise<boolean>;
+  launchTerminal(command: string, args: string[]): Promise<boolean>;
   run(command: string, args: string[], options?: RunOptions): Promise<void>;
 }
 
@@ -79,6 +88,7 @@ export function defaultContext(cwd = process.cwd()): CommandContext {
     info: printInfo,
     progress: startProgress,
     choose,
+    input,
     async copy(text) {
       try {
         await clipboard.write(text);
@@ -112,6 +122,9 @@ export function defaultContext(cwd = process.cwd()): CommandContext {
         child.once("error", () => resolve(false));
         child.once("exit", (code) => resolve(code === 0));
       });
+    },
+    launchTerminal(command, args) {
+      return openAgentTerminal(cwd, command, args);
     },
     run(command, args, options = {}) {
       return new Promise((resolve, reject) => {
@@ -207,7 +220,12 @@ export async function validateCommand(context: CommandContext): Promise<void> {
       ["Tools", config.tools.length],
       ["Origins", config.app.origins.join(", ")],
     ],
-    next: `${SODIUM_COMMAND} login`,
+    tools: config.tools.map((tool) => ({
+      name: tool.name,
+      risk: tool.risk,
+      routes: tool.on.join(", "),
+    })),
+    next: `${SODIUM_COMMAND} deploy`,
   });
 }
 
@@ -215,10 +233,11 @@ export async function deployCommand(
   context: CommandContext,
   options: { open?: boolean } = {},
 ): Promise<void> {
-  const [config, framework, sdkInstalled] = await Promise.all([
+  const [config, framework, sdkInstalled, initialized] = await Promise.all([
     readSodiumConfig(context.cwd),
     detectFramework(context.cwd),
     hasSodiumSdk(context.cwd),
+    readInit(context.cwd),
   ]);
   if (!sdkInstalled) {
     throw new Error(
@@ -227,6 +246,7 @@ export async function deployCommand(
   }
   const api = await authenticatedApi(context);
   const progress = context.progress("Publishing your WebMCP tools");
+  const projectName = initialized?.projectName ?? config.app.name;
   try {
     let project;
     try {
@@ -234,17 +254,32 @@ export async function deployCommand(
       progress.update("Updating the existing Sodium project");
     } catch {
       progress.update("Creating your Sodium project");
-      project = await api.createProject(config.app.name);
+      project = await api.createProject(projectName);
       await writeProject(context.cwd, project);
     }
     progress.update("Installing the local WebMCP integration");
     const files = await installIntegration(context.cwd, framework);
     progress.update("Publishing an immutable deployment");
-    const deployment = await api.deploy(
-      project.projectId,
-      config,
-      configHash(config),
-    );
+    let deployment;
+    try {
+      deployment = await api.deploy(
+        project.projectId,
+        config,
+        configHash(config),
+      );
+    } catch (error) {
+      if (!(error instanceof SodiumApiError) || error.status !== 404)
+        throw error;
+      progress.update("Recreating the deleted Sodium project");
+      project = await api.createProject(projectName);
+      await writeProject(context.cwd, project);
+      progress.update("Publishing an immutable deployment");
+      deployment = await api.deploy(
+        project.projectId,
+        config,
+        configHash(config),
+      );
+    }
     await writeProject(context.cwd, { ...project, deployment });
     progress.stop();
 
@@ -255,12 +290,17 @@ export async function deployCommand(
       command: "deploy",
       title: "Deployment is live",
       details: [
-        ["Project", `${config.app.name} · ${project.projectId}`],
+        ["Project", `${projectName} · ${project.projectId}`],
         ["Version", `v${deployment.version}`],
         ["Tools", config.tools.length],
         ["Integration", `${frameworkName(framework)} · ${files.length} files`],
         ["Dashboard", url],
       ],
+      tools: config.tools.map((tool) => ({
+        name: tool.name,
+        risk: tool.risk,
+        routes: tool.on.join(", "),
+      })),
       note: opened
         ? "Dashboard opened in your browser."
         : shouldOpen
@@ -276,22 +316,34 @@ export async function deployCommand(
 
 const AGENTS: Record<
   Exclude<AgentChoice, "other" | "none">,
-  { command: string; label: string; description: string }
+  {
+    command: string;
+    label: string;
+    description: string;
+    color: string;
+    args: string[];
+  }
 > = {
   codex: {
     command: "codex",
     label: "Codex",
-    description: "Open Codex here and let it inspect the application.",
+    description: "New terminal · full access",
+    color: "#10A37F",
+    args: ["--dangerously-bypass-approvals-and-sandbox"],
   },
   claude: {
     command: "claude",
     label: "Claude Code",
-    description: "Open Claude Code here with safe edit approvals.",
+    description: "New terminal · full access",
+    color: "#D97757",
+    args: ["--dangerously-skip-permissions"],
   },
   gemini: {
     command: "gemini",
     label: "Gemini CLI",
-    description: "Open Gemini here with automatic edit approval.",
+    description: "New terminal · full access",
+    color: "#4285F4",
+    args: ["--yolo", "--prompt-interactive"],
   },
 };
 
@@ -311,16 +363,19 @@ async function installedAgentChoices(
         value,
         label: `${AGENTS[value].label} · detected`,
         description: AGENTS[value].description,
+        color: AGENTS[value].color,
       })),
     {
       value: "other" as const,
       label: "Another coding agent",
       description: "Copy a complete prompt for Cursor, Windsurf, or any agent.",
+      color: "#d946ef",
     },
     {
       value: "none" as const,
       label: "Not now",
       description: "Finish init and create sodium.json later.",
+      color: "#737373",
     },
   ];
 }
@@ -328,38 +383,44 @@ async function installedAgentChoices(
 async function runAgent(
   context: CommandContext,
   agent: Exclude<AgentChoice, "other" | "none">,
-): Promise<void> {
+  prompt: string,
+): Promise<boolean> {
   const available = await context.hasCommand(AGENTS[agent].command);
   if (!available) {
     throw new Error(
       `${AGENTS[agent].label} was not found on this machine. Use --agent other to copy the prompt instead.`,
     );
   }
-  context.info(`Opening ${AGENTS[agent].label} in ${context.cwd}`);
-  const args = context.interactive
-    ? agent === "codex"
-      ? [AGENT_PROMPT]
-      : agent === "claude"
-        ? ["--permission-mode", "acceptEdits", AGENT_PROMPT]
-        : ["--approval-mode", "auto_edit", "--prompt-interactive", AGENT_PROMPT]
-    : agent === "codex"
-      ? [
-          "exec",
-          "--sandbox",
-          "workspace-write",
-          "--approve-for-me",
-          AGENT_PROMPT,
-        ]
-      : agent === "claude"
-        ? ["--print", "--permission-mode", "acceptEdits", AGENT_PROMPT]
-        : ["--approval-mode", "auto_edit", "--prompt", AGENT_PROMPT];
-  await context.run(AGENTS[agent].command, args, { interactive: true });
+  context.info(
+    `Opening ${AGENTS[agent].label} in a new terminal · full access`,
+  );
+  return context.launchTerminal(AGENTS[agent].command, [
+    ...AGENTS[agent].args,
+    prompt,
+  ]);
 }
 
 export async function initCommand(
   context: CommandContext,
-  options: { skipInstall?: boolean; agent?: AgentChoice } = {},
+  options: { skipInstall?: boolean; agent?: AgentChoice; name?: string } = {},
 ): Promise<void> {
+  const [savedInit, suggestedName] = await Promise.all([
+    readInit(context.cwd),
+    suggestedProjectName(context.cwd),
+  ]);
+  const requestedName = options.name?.trim();
+  let projectName = requestedName || savedInit?.projectName;
+  if (!projectName && context.interactive) {
+    projectName = (
+      await context.input(
+        "What do you want to name this project?",
+        suggestedName,
+      )
+    ).trim();
+  }
+  projectName ||= suggestedName;
+  await writeInit(context.cwd, { projectName });
+
   const progress = context.progress("Inspecting this application");
   let framework;
   let sdkAlreadyInstalled;
@@ -399,17 +460,23 @@ export async function initCommand(
 
   let config;
   let promptCopied = false;
+  let agentOpened = false;
+  const prompt = agentPrompt(projectName);
   if (!alreadyHasConfig && agent && !["other", "none"].includes(agent)) {
-    await runAgent(context, agent as Exclude<AgentChoice, "other" | "none">);
-    config = await readSodiumConfig(context.cwd);
+    agentOpened = await runAgent(
+      context,
+      agent as Exclude<AgentChoice, "other" | "none">,
+      prompt,
+    );
+    if (!agentOpened) promptCopied = await context.copy(prompt);
   } else if (!alreadyHasConfig && agent === "other") {
-    promptCopied = await context.copy(AGENT_PROMPT);
+    promptCopied = await context.copy(prompt);
   } else if (alreadyHasConfig) {
     config = await readSodiumConfig(context.cwd);
   }
 
   const details: Array<[string, string | number]> = [
-    ["Project", basename(context.cwd)],
+    ["Project", projectName],
     ["Framework", frameworkName(framework)],
     [
       "SDK",
@@ -422,6 +489,12 @@ export async function initCommand(
     ["Skill", skillDirectory],
   ];
   if (config) details.push(["Contract", `${config.tools.length} valid tools`]);
+  if (agentOpened && agent && agent in AGENTS) {
+    details.push([
+      "Agent",
+      `${AGENTS[agent as keyof typeof AGENTS].label} · new terminal`,
+    ]);
+  }
 
   context.result({
     command: "init",
@@ -431,13 +504,23 @@ export async function initCommand(
       agent === "other" && !promptCopied
         ? "Clipboard access was unavailable. Copy the prompt shown below."
         : undefined,
-    prompt: agent === "other" ? AGENT_PROMPT : undefined,
-    promptCopied: agent === "other" ? promptCopied : undefined,
+    prompt:
+      agent === "other" ||
+      (agent && !["other", "none"].includes(agent) && !agentOpened)
+        ? prompt
+        : undefined,
+    promptCopied:
+      agent === "other" ||
+      (agent && !["other", "none"].includes(agent) && !agentOpened)
+        ? promptCopied
+        : undefined,
     next: config
-      ? `${SODIUM_COMMAND} login`
-      : agent === "other"
-        ? "Paste the prompt into your coding agent."
-        : `Ask your coding agent to use $sodium-webmcp, or rerun with --agent codex|claude|gemini|other.`,
+      ? `${SODIUM_COMMAND} deploy`
+      : agentOpened
+        ? "Complete the agent chat. It will validate sodium.json and give you the deploy command."
+        : agent === "other" || promptCopied
+          ? "Paste the prompt into your coding agent."
+          : `Ask your coding agent to use $sodium-webmcp, or rerun with --agent codex|claude|gemini|other.`,
   });
 }
 
@@ -471,7 +554,12 @@ export async function doctorCommand(context: CommandContext): Promise<void> {
         ],
         ["Dashboard", dashboardUrl(project.endpoint, project.projectId)],
       ],
-      next: "Your app is ready for WebMCP agents.",
+      tools: config.tools.map((tool) => ({
+        name: tool.name,
+        risk: tool.risk,
+        routes: tool.on.join(", "),
+      })),
+      note: "Ready for WebMCP agents.",
     });
   } catch (error) {
     progress.stop();

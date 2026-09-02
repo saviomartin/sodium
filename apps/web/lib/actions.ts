@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createClient } from "./supabase/server";
 import { createServiceClient } from "./supabase/service";
 import { siteUrl } from "./env";
@@ -70,4 +71,52 @@ export async function deleteAccountAction(formData: FormData): Promise<void> {
   const { error } = await createServiceClient().auth.admin.deleteUser(user.id);
   if (error) redirect(`/settings?error=${encodeURIComponent(error.message)}`);
   redirect("/?deleted=1");
+}
+
+export interface DeleteProjectState {
+  error: string | null;
+}
+
+const DeleteProjectSchema = z.object({
+  projectId: z.string().regex(/^prj_[a-z0-9]{8,24}$/),
+  confirmation: z.string().trim().min(1).max(120),
+});
+
+export async function deleteProjectAction(
+  _state: DeleteProjectState,
+  formData: FormData,
+): Promise<DeleteProjectState> {
+  const input = DeleteProjectSchema.safeParse({
+    projectId: formData.get("projectId"),
+    confirmation: formData.get("confirmation"),
+  });
+  if (!input.success) return { error: "Enter the project name to confirm." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Your session expired. Sign in and try again." };
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("id, name")
+    .eq("id", input.data.projectId)
+    .maybeSingle();
+  if (projectError) return { error: "The project could not be checked." };
+  if (!project) return { error: "Project not found." };
+  if (input.data.confirmation !== project.name) {
+    return { error: `Type ${project.name} exactly to confirm.` };
+  }
+
+  const { data: deleted, error: deleteError } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", project.id)
+    .select("id")
+    .maybeSingle();
+  if (deleteError || !deleted) {
+    return { error: "The project could not be deleted. Try again." };
+  }
+  redirect("/dashboard?deleted=1");
 }

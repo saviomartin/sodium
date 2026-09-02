@@ -17,7 +17,9 @@ npx sodiumtools doctor
 npx sodiumtools deploy
 ```
 
-`init` detects Next.js or Vite React, installs `sodium-webmcp-sdk` and the project-local authoring skill, then offers to launch Codex, Claude Code, or Gemini to create `sodium.json`. The first `deploy` validates the contract, creates the Sodium project, adds the smallest framework integration, writes `.sodium/project.json`, and opens the project dashboard.
+`init` asks for the Sodium project name (defaulting to `package.json` or the repository folder), detects Next.js or Vite React, installs `sodium-webmcp-sdk` and the project-local authoring skill, then offers Codex, Claude Code, or Gemini. The selected agent opens in a fresh terminal with its unrestricted mode enabled, creates and validates `sodium.json`, then hands back the exact deploy command. Choose “Another coding agent” to copy the same grounded prompt instead.
+
+The first `deploy` validates the contract, creates the named Sodium project, adds the smallest framework integration, writes `.sodium/project.json`, and opens the project dashboard. Projects can be permanently deleted from their dashboard; the next local deploy creates a fresh project without deleting the application repository or Sodium account.
 
 Every successful command prints the relevant project details, dashboard URL when one exists, and one next action. Add `--plain` for deterministic text output or `--no-open` to deploy without opening a browser. A global installation is not required.
 

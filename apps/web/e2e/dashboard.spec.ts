@@ -108,6 +108,31 @@ test("project dashboard reports tool outcomes and deployment history", async ({
   await expect(
     page.getByRole("heading", { name: "Agent analytics" }),
   ).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete project" }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete Fixture shop?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("textbox").fill("Fixture shop");
+  await dialog.getByRole("button", { name: "Delete project" }).click();
+  await expect(page).toHaveURL(/\/dashboard\?deleted=1$/);
+
+  const [projectCount, deploymentCount, eventCount] = await Promise.all([
+    admin
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("id", projectId),
+    admin
+      .from("deployments")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId),
+    admin
+      .from("usage_events")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId),
+  ]);
+  expect(projectCount.count).toBe(0);
+  expect(deploymentCount.count).toBe(0);
+  expect(eventCount.count).toBe(0);
 });
 
 test("device authorization binds one valid CLI request to the signed-in user", async ({

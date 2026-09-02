@@ -37,4 +37,14 @@ describe("CLI success output", () => {
     expect(frameworkName("next")).toBe("Next.js");
     expect(frameworkName("vite-react")).toBe("React with Vite");
   });
+
+  it("prints tool rows in deterministic plain output", () => {
+    expect(
+      plainResult({
+        command: "validate",
+        title: "Contract is valid",
+        tools: [{ name: "search_docs", risk: "read_only", routes: "/docs/**" }],
+      }),
+    ).toContain("search_docs  read_only  /docs/**");
+  });
 });

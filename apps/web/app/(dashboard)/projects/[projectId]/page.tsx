@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SodiumConfigSchema } from "sodium-webmcp-spec";
 import { AgentAnalyticsDashboard } from "@/components/agent-analytics-dashboard";
+import { DeleteProjectDialog } from "@/components/delete-project-dialog";
 import { Card, frameClass } from "@/components/ui";
 import { getProjectDashboard } from "@/lib/queries";
 import { summarizeToolAnalytics } from "@/lib/tool-analytics";
@@ -206,6 +207,19 @@ export default async function ProjectPage({
             Analytics may take a few seconds to appear after a tool runs.
           </p>
         </div>
+      </section>
+
+      <section className="flex flex-col gap-4 border-t border-white/[0.07] pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-medium text-neutral-200">Danger zone</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Permanently remove this project and its telemetry.
+          </p>
+        </div>
+        <DeleteProjectDialog
+          projectId={project.id}
+          projectName={project.name}
+        />
       </section>
     </div>
   );

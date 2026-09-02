@@ -48,6 +48,7 @@ async function main() {
       await initCommand(context, {
         skipInstall: args.includes("--skip-install"),
         agent: agentChoice(),
+        name: valueFor("--name"),
       });
       break;
     case "validate":
