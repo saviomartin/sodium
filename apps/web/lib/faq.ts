@@ -40,7 +40,7 @@ export const FAQ = [
   {
     question: "What happens when I change a tool?",
     answer:
-      "Deploy again. Each deploy publishes a new immutable version of the contract, so you can see exactly which version was live when a call was made.",
+      "Deploy again. The SDK will not register an undeployed or changed contract. Each deploy publishes a new immutable version and signs the exact tool behavior and origins, so you can see exactly which version was live when a call was made.",
   },
   {
     question: "What does Sodium record about my users?",

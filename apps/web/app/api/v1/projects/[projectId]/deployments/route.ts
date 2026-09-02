@@ -1,6 +1,12 @@
 import { z } from "zod";
-import { validateSodiumConfig } from "sodium-webmcp-spec";
+import {
+  compileSodiumConfig,
+  DEPLOYMENT_RECEIPT_VERSION,
+  validateSodiumConfig,
+} from "sodium-webmcp-spec";
+import { signDeploymentReceipt } from "sodium-webmcp-spec/signing";
 import { authenticateApiToken } from "@/lib/api-auth";
+import { deploymentSigningKey } from "@/lib/env";
 import { createServiceClient } from "@/lib/supabase/service";
 import { randomLowercase, sha256 } from "@/lib/server-crypto";
 
@@ -32,9 +38,25 @@ export async function POST(
       { status: 422 },
     );
   }
-  const expectedHash = sha256(JSON.stringify(validation.config));
+  const expectedHash = sha256(
+    JSON.stringify(compileSodiumConfig(validation.config)),
+  );
   if (expectedHash !== body.data.configHash) {
     return Response.json({ error: "config hash mismatch" }, { status: 409 });
+  }
+
+  let signingKey: ReturnType<typeof deploymentSigningKey>;
+  try {
+    signingKey = deploymentSigningKey();
+  } catch (signingError) {
+    console.error("Deployment receipt signing is unavailable", {
+      message:
+        signingError instanceof Error ? signingError.message : "unknown error",
+    });
+    return Response.json(
+      { error: "deployment signing unavailable" },
+      { status: 503 },
+    );
   }
 
   const deploymentId = `dep_${randomLowercase(16)}`;
@@ -57,9 +79,32 @@ export async function POST(
       { status },
     );
   }
-  return Response.json({
-    id: deployment.deployment_id,
-    version: deployment.deployment_version,
-    configHash: deployment.deployment_hash,
-  });
+  try {
+    const receipt = signDeploymentReceipt(
+      {
+        receiptVersion: DEPLOYMENT_RECEIPT_VERSION,
+        projectId,
+        deploymentId: deployment.deployment_id,
+        version: deployment.deployment_version,
+        configHash: deployment.deployment_hash,
+        origins: validation.config.app.origins,
+      },
+      signingKey,
+    );
+    return Response.json({
+      id: deployment.deployment_id,
+      version: deployment.deployment_version,
+      configHash: deployment.deployment_hash,
+      receipt,
+    });
+  } catch (signingError) {
+    console.error("Deployment receipt signing failed", {
+      message:
+        signingError instanceof Error ? signingError.message : "unknown error",
+    });
+    return Response.json(
+      { error: "deployment signing unavailable" },
+      { status: 503 },
+    );
+  }
 }

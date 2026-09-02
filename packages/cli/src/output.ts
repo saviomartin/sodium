@@ -1,4 +1,4 @@
-export const CLI_VERSION = "0.2.4";
+export const CLI_VERSION = "0.3.0";
 export const SODIUM_COMMAND = "npx sodiumtools";
 
 export type ResultTone = "success" | "warning" | "info";

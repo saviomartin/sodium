@@ -1,4 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
+import { readFileSync } from "node:fs";
+
+const developmentSigningKey = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../packages/runtime/keys/dev-deployment-key.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as { keyId: string; privateKeyPem: string };
 
 const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
 const automationBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
@@ -28,6 +39,8 @@ export default defineConfig({
           NEXT_DIST_DIR: ".next-e2e",
           NEXT_PUBLIC_SODIUM_ENVIRONMENT: "development",
           SITE_URL: "http://localhost:3100",
+          MANIFEST_SIGNING_KEY_ID: developmentSigningKey.keyId,
+          MANIFEST_SIGNING_PRIVATE_KEY: developmentSigningKey.privateKeyPem,
         },
         port: 3100,
         reuseExistingServer: false,

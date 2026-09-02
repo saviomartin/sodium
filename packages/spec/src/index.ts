@@ -1,4 +1,5 @@
 export * from "./config";
+export * from "./deployment";
 export * from "./environment";
 export * from "./handler";
 export * from "./ids";

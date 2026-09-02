@@ -5,8 +5,9 @@
 `sodium.json` is the Git-owned source of truth. Tool code runs in the customer's page through the local SDK. Sodium's cloud receives only versioned config snapshots and narrow lifecycle events.
 
 ```text
-agent skill -> sodium.json + browser bootstrap -> CLI verification -> local SDK -> document.modelContext
-                                      \-> immutable deployment -> dashboard
+agent skill -> sodium.json + browser bootstrap -> CLI verification -> immutable deployment
+                                                                    -> signed receipt
+signed receipt + exact contract hash + exact origin -> local SDK -> document.modelContext
 local SDK outcome/referral events --------------------> dashboard
 ```
 
@@ -45,9 +46,9 @@ The CLI has no framework codemods. `validate`, `deploy`, and `doctor` statically
 
 ### SDK
 
-The SDK compiles the checked-in config and registers route-appropriate tools through the WebMCP adapter. It re-evaluates registration on history navigation and DOM mutation. Consequential tools require confirmation according to the risk floor.
+The SDK compiles the checked-in config, verifies its cloud-signed deployment receipt against pinned Sodium public keys, compares the semantic config hash, enforces the exact current origin, and only then registers route-appropriate tools through the WebMCP adapter. Missing, unsigned, tampered, stale, and wrong-origin deployments register nothing and emit no telemetry. It re-evaluates registration on history navigation and DOM mutation. Consequential tools require confirmation according to the risk floor.
 
-The SDK never downloads code or a manifest. Telemetry failure never affects tool execution. It records a recognized answer-engine referrer before WebMCP detection, so referral measurement still works in ordinary browsers.
+The SDK never downloads code or a manifest. Receipt verification is local, so a Sodium outage cannot disable an already deployed application. Telemetry failure never affects tool execution. After deployment verification, the SDK records a recognized answer-engine referrer before WebMCP detection, so referral measurement still works in ordinary browsers.
 
 ### Control plane
 
@@ -78,7 +79,8 @@ Events contain tool identity, invocation ID, outcome, latency, SDK/config versio
 
 - `schemaVersion` versions authored config semantics.
 - deployment `version` is monotonic per project.
-- `configHash` makes deployments idempotent and auditable.
+- `configHash` covers compiled runtime behavior, makes deployments idempotent, and invalidates tools after an undeployed config change.
+- the Ed25519 receipt binds project, deployment, version, behavior hash, and exact origins; production SDK builds pin only production public keys.
 - `sdkVersion` is sent with telemetry for compatibility analysis.
 
-Breaking schema changes require a new schema endpoint and an explicit CLI migration. Old deployments remain readable; the browser always executes the config committed with the application build.
+Breaking schema changes require a new schema endpoint and an explicit CLI migration. Old deployments remain readable, but deployments created before signed receipts must be deployed again before their tools can register.

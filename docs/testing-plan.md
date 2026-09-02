@@ -3,10 +3,10 @@
 ## Automated gates
 
 1. Spec tests: config parsing, friendly-to-compiled translation, duplicate IDs/names, bindings, and risk confirmation floors.
-2. SDK tests: WebMCP registration, route matching, every execution primitive, no remote manifest fetch, telemetry fallback, exact referral attribution, lookalike-host rejection, and argument redaction.
+2. SDK tests: signed deployment enforcement, stale/tampered/wrong-origin rejection, WebMCP registration, route matching, every execution primitive, no remote manifest fetch, telemetry fallback, exact referral attribution, lookalike-host rejection, and argument redaction.
 3. CLI tests: non-blocking app recognition, integration-receipt containment, SDK/mount verification, validation, device auth, idempotent deployment, and generated file permissions.
 4. Web tests: RPC normalization, referral payload privacy, API input limits, ownership, origin rejection, and one-time code consumption.
-5. Browser E2E: real referral ingestion and deduplication, persisted attribution, downstream tool correlation, rendered dashboard data, real cookie auth, device activation, and account deletion cascades.
+5. Browser E2E: signed receipt creation and persistence, real referral ingestion and deduplication, persisted attribution, downstream tool correlation, rendered dashboard data, real cookie auth, login-before-device-approval, and account deletion cascades.
 
 Run:
 
@@ -34,5 +34,7 @@ Record the evidence and release blockers in [`real-world-qa.md`](real-world-qa.m
 - Unknown bearer tokens and cross-owner project IDs return the same unauthorized/not-found boundary.
 - Missing or wrong `Origin`, publishable key, deployment, tool ID, or schema produces no event row.
 - Missing WebMCP support registers nothing and leaves the host application usable.
+- Missing, invalid, tampered, stale, or wrong-origin deployment receipts register no tools and send no telemetry.
+- Signed-out device activation offers login but never renders or performs approval.
 - A missing receipt, path outside the project, missing SDK import, or claimed-but-unmounted bootstrap blocks validation and deployment.
 - A missing custom handler fails that invocation with a bounded code; it does not run arbitrary code.

@@ -9,9 +9,11 @@
 
 ## Identity and secrets
 
+- [ ] Generate a production Ed25519 deployment-signing keypair. Store `MANIFEST_SIGNING_KEY_ID` and `MANIFEST_SIGNING_PRIVATE_KEY` only in the Sodium control plane's secret manager.
+- [ ] Commit the matching public JWK to `packages/runtime/keys/production-deployment-jwks.json`. The release build pins that file and rejects development keys; `SODIUM_MANIFEST_JWKS` is reserved for an intentional build-time override.
 - [ ] GitHub OAuth is branded Sodium, has exact Supabase callback URLs, and requests no `repo` scope.
 - [ ] `SUPABASE_SECRET_KEY` is server-only; publishable values are the only `NEXT_PUBLIC_*` credentials.
-- [ ] Remove legacy Stripe, worker, AI, webhook, manifest-signing, and loader variables from every Vercel target.
+- [ ] Remove legacy Stripe, worker, AI, webhook, and loader variables from every Vercel target.
 - [ ] `corepack pnpm env:verify` passes for Development, Preview, and Production.
 
 ## Data and API
@@ -20,6 +22,7 @@
 - [ ] Public/anon/authenticated grants are absent from service-only tables and RPCs.
 - [ ] CLI tokens and publishable keys are hashed at rest; device codes expire and are one-time.
 - [ ] Project creation, key rotation, and deployments remain atomic and idempotent under concurrency.
+- [ ] Missing, stale, tampered, and wrong-origin deployment receipts register zero browser tools and send zero telemetry.
 - [ ] Retention and rate limits are configured for telemetry before public launch.
 
 ## Release proof

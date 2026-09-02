@@ -1,4 +1,5 @@
 import "server-only";
+import { createPrivateKey } from "node:crypto";
 import { z } from "zod";
 import { publicEnv } from "./public-env";
 
@@ -7,12 +8,33 @@ import { publicEnv } from "./public-env";
  * refuses to boot misconfigured. Secrets here never reach client bundles —
  * only NEXT_PUBLIC_* values do, and those are non-secret by definition.
  */
-const EnvSchema = z.object({
-  SUPABASE_SECRET_KEY: z.string().min(20),
-  SITE_URL: z.string().url().optional(),
-  VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
-  VERCEL_URL: z.string().optional(),
-});
+const EnvSchema = z
+  .object({
+    SUPABASE_SECRET_KEY: z.string().min(20),
+    SITE_URL: z.string().url().optional(),
+    VERCEL_ENV: z.enum(["development", "preview", "production"]).optional(),
+    VERCEL_URL: z.string().optional(),
+    MANIFEST_SIGNING_KEY_ID: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9._-]+$/)
+      .optional(),
+    MANIFEST_SIGNING_PRIVATE_KEY: z.string().optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      Boolean(value.MANIFEST_SIGNING_KEY_ID) !==
+      Boolean(value.MANIFEST_SIGNING_PRIVATE_KEY)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "MANIFEST_SIGNING_KEY_ID and MANIFEST_SIGNING_PRIVATE_KEY must be configured together",
+        path: ["MANIFEST_SIGNING_KEY_ID"],
+      });
+    }
+  });
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
@@ -61,4 +83,38 @@ export function siteUrl(): string {
     throw new Error("production SITE_URL must use https");
   }
   return url;
+}
+
+export interface DeploymentSigningKey {
+  keyId: string;
+  privateKeyPem: string;
+}
+
+let cachedSigningKey: DeploymentSigningKey | null = null;
+
+/** Server-only Ed25519 key used to authorize immutable deployments. */
+export function deploymentSigningKey(): DeploymentSigningKey {
+  if (cachedSigningKey) return cachedSigningKey;
+  const keyId = env.MANIFEST_SIGNING_KEY_ID;
+  const privateKey = env.MANIFEST_SIGNING_PRIVATE_KEY;
+  if (!keyId || !privateKey) {
+    throw new Error("deployment signing key is not configured");
+  }
+  if (
+    publicEnv.NEXT_PUBLIC_SODIUM_ENVIRONMENT === "production" &&
+    keyId.startsWith("dev-insecure")
+  ) {
+    throw new Error("refusing to sign production deployments with a dev key");
+  }
+  const parsedKey = createPrivateKey(privateKey.replace(/\\n/g, "\n"));
+  if (parsedKey.asymmetricKeyType !== "ed25519") {
+    throw new Error("deployment signing key must be an Ed25519 private key");
+  }
+  cachedSigningKey = {
+    keyId,
+    privateKeyPem: parsedKey
+      .export({ type: "pkcs8", format: "pem" })
+      .toString(),
+  };
+  return cachedSigningKey;
 }
