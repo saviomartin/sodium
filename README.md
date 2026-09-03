@@ -1,5 +1,7 @@
 # Sodium
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Sodium turns application behavior into observable WebMCP tools. The application owns the tool definitions and execution; Sodium owns validation, installation, deployments, and privacy-safe outcome analytics.
 
 ## Developer flow
@@ -67,3 +69,7 @@ corepack pnpm --dir apps/web test:e2e
 ```
 
 See [`docs/architecture.md`](docs/architecture.md), [`docs/testing-plan.md`](docs/testing-plan.md), [`docs/real-world-qa.md`](docs/real-world-qa.md), and [`docs/production-checklist.md`](docs/production-checklist.md).
+
+## License
+
+Sodium is open source under the [MIT License](LICENSE).
