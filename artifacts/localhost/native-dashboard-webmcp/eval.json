@@ -5,7 +5,25 @@
     {
       "id": "discovery",
       "call": "webmcp list",
-      "expect": "Exactly 11 unique sodium_* tools with JSON object schemas and correct read-only/untrusted annotations."
+      "expect": "Exactly 12 unique sodium_* tools immediately after navigation, without a hydration or network-idle wait, with JSON object schemas and correct read-only/untrusted annotations."
+    },
+    {
+      "id": "capability-description",
+      "tool": "sodium_describe_capabilities",
+      "input": {},
+      "expect": "A read-only result describing exactly the 12 live site tools."
+    },
+    {
+      "id": "late-browser-injection",
+      "expect": "A WebMCP API injected after the bootstrap executes is detected and all tools register."
+    },
+    {
+      "id": "legacy-api-location",
+      "expect": "A native browser exposing only navigator.modelContext receives the complete registry."
+    },
+    {
+      "id": "partial-registration-retry",
+      "expect": "A transient one-tool registration failure is retried without duplicating successful registrations."
     },
     {
       "id": "signed-out-state",

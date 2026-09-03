@@ -2,14 +2,15 @@
  * Test-only probe for agent-browser's --init-script option.
  *
  * Production tools are registered by the app itself in
- * apps/web/components/native-webmcp-tools.tsx. This probe intentionally does
- * not register, replace, or polyfill any tool.
+ * apps/web/app/layout.tsx and apps/web/components/native-webmcp-tools.tsx.
+ * This probe intentionally does not register, replace, or polyfill any tool.
  */
 (() => {
   const expected = [
     "sodium_authorize_cli",
     "sodium_delete_account",
     "sodium_delete_project",
+    "sodium_describe_capabilities",
     "sodium_get_app_state",
     "sodium_get_deployed_tool",
     "sodium_get_project",
@@ -25,7 +26,7 @@
     value: {
       expected,
       async check() {
-        const context = document.modelContext;
+        const context = document.modelContext || navigator.modelContext;
         if (!context || typeof context.getTools !== "function") {
           return { ok: false, error: "native_webmcp_unavailable" };
         }
