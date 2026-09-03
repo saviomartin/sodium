@@ -2,6 +2,7 @@
   "name": "sodium-webmcp-sdk",
   "version": "0.2.0",
   "description": "Local WebMCP runtime and telemetry SDK for Sodium",
+  "license": "MIT",
   "type": "module",
   "files": [
     "dist"
