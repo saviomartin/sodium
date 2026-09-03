@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { AsciiBackdrop } from "@/components/ascii-backdrop";
 import { Toaster } from "@/components/toaster";
 import { WebAnalytics } from "@/components/web-analytics";
+import { NativeWebMcpTools } from "@/components/native-webmcp-tools";
 import { siteUrl } from "@/lib/env";
 import {
   isIndexable,
@@ -86,6 +87,7 @@ export default function RootLayout({
       <body className="min-h-dvh font-sans">
         <AsciiBackdrop />
         <div className="relative z-10">{children}</div>
+        <NativeWebMcpTools />
         <Toaster />
         <WebAnalytics />
       </body>
