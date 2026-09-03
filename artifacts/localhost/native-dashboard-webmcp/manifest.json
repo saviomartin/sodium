@@ -1,0 +1,51 @@
+{
+  "goal": "Make every user-facing Sodium dashboard capability available through native browser WebMCP tools.",
+  "target": "http://localhost:3000",
+  "requiredState": {
+    "public": "The Sodium app is open in a browser with native WebMCP enabled.",
+    "authenticated": "Read and account tools use the current Sodium browser session.",
+    "cliAuthorization": "The exact code is visible in the user's own terminal.",
+    "destructiveActions": "The user explicitly confirms the exact project name or the word delete."
+  },
+  "implementation": {
+    "kind": "app-owned-imperative-webmcp",
+    "entrypoint": "apps/web/components/native-webmcp-tools.tsx",
+    "registrationApi": "document.modelContext.registerTool",
+    "lifecycle": "AbortSignal",
+    "sodiumRuntimeUsed": false
+  },
+  "tools": [
+    "sodium_get_app_state",
+    "sodium_list_projects",
+    "sodium_get_project",
+    "sodium_get_deployed_tool",
+    "sodium_navigate",
+    "sodium_open_project",
+    "sodium_sign_in",
+    "sodium_sign_out",
+    "sodium_authorize_cli",
+    "sodium_delete_project",
+    "sodium_delete_account"
+  ],
+  "expectedUiChanges": [
+    "Navigation tools update the current route.",
+    "OAuth tools leave Sodium for the selected identity provider.",
+    "Successful CLI authorization shows the completed activation state.",
+    "Successful project and account deletion return home with a confirmation query."
+  ],
+  "recoveryCases": [
+    "Signed-out data requests return authentication_required.",
+    "Invalid project IDs return invalid_input.",
+    "Unknown projects and tools return explicit not-found results.",
+    "Mismatched destructive confirmations return a structured error without mutation.",
+    "Expired, used, or unknown CLI codes return code_invalid_expired_or_used."
+  ],
+  "excludedSecrets": [
+    "OAuth authorization URLs",
+    "cookies",
+    "access and refresh tokens",
+    "CLI API tokens",
+    "Supabase service credentials",
+    "tool inputs and outputs from unrelated customer applications"
+  ]
+}

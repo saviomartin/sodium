@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "origin": "http://localhost:3000",
+  "cases": [
+    {
+      "id": "discovery",
+      "call": "webmcp list",
+      "expect": "Exactly 11 unique sodium_* tools with JSON object schemas and correct read-only/untrusted annotations."
+    },
+    {
+      "id": "signed-out-state",
+      "tool": "sodium_get_app_state",
+      "input": {},
+      "expect": { "ok": true, "authenticated": false }
+    },
+    {
+      "id": "signed-out-project-boundary",
+      "tool": "sodium_list_projects",
+      "input": {},
+      "expect": { "ok": false, "error": "authentication_required" }
+    },
+    {
+      "id": "authenticated-project-read",
+      "tool": "sodium_get_project",
+      "inputFixture": { "projectId": "$EPHEMERAL_PROJECT_ID", "days": 7 },
+      "expect": "The current deployment, one tool, deployment history, and a seven-day analytics window."
+    },
+    {
+      "id": "project-route-effect",
+      "tool": "sodium_open_project",
+      "inputFixture": { "projectId": "$EPHEMERAL_PROJECT_ID", "days": 90 },
+      "expect": "The visible URL ends with ?range=90d."
+    },
+    {
+      "id": "cli-authorization",
+      "tool": "sodium_authorize_cli",
+      "inputFixture": { "code": "$EPHEMERAL_CLI_CODE", "confirmed": true },
+      "expect": "The real development database request is bound once to the signed-in ephemeral user."
+    },
+    {
+      "id": "destructive-rejection",
+      "tool": "sodium_delete_account",
+      "input": { "confirmation": "no" },
+      "expect": { "ok": false, "error": "confirmation_required" }
+    },
+    {
+      "id": "destructive-success",
+      "tool": "sodium_delete_account",
+      "input": { "confirmation": "delete" },
+      "expect": "The ephemeral identity is absent from auth and the browser lands on /?deleted=account."
+    },
+    {
+      "id": "oauth-url-redaction",
+      "tool": "sodium_sign_in",
+      "input": { "provider": "github", "nextPath": "/" },
+      "expect": "The result says redirecting_to_identity_provider without returning the authorization URL."
+    },
+    {
+      "id": "contaminated-output",
+      "tool": "sodium_list_projects",
+      "input": {},
+      "fixture": "A project name containing a malicious instruction.",
+      "expect": "The tool is annotated as read-only and untrusted, returns the string only as data, and performs no mutation."
+    }
+  ]
+}
