@@ -76,8 +76,7 @@ async function projectDashboard(projectId: string, days: number) {
     .select("id, name, current_deployment_id, created_at, updated_at")
     .eq("id", parsed.data.projectId)
     .maybeSingle();
-  if (projectError)
-    return { ok: false as const, error: "project_load_failed" };
+  if (projectError) return { ok: false as const, error: "project_load_failed" };
   if (!project) return { ok: false as const, error: "project_not_found" };
 
   const [deploymentResult, analyticsResult] = await Promise.all([
@@ -141,11 +140,18 @@ async function projectDashboard(projectId: string, days: number) {
 
 export async function webMcpGetAppState(currentPath: string) {
   const user = await account();
-  const projects = user ? await projectsForUser() : [];
+  let projects: Awaited<ReturnType<typeof projectsForUser>> = [];
+  if (user) {
+    try {
+      projects = await projectsForUser();
+    } catch {
+      return { ok: false, error: "projects_load_failed" };
+    }
+  }
   return {
     ok: true,
     authenticated: Boolean(user),
-    account: user,
+    account: user ? { displayName: user.displayName || null } : null,
     currentPath: safeNextPath(currentPath),
     projectCount: projects.length,
     liveProjectCount: projects.filter((project) => project.liveDeployment)
@@ -160,7 +166,11 @@ export async function webMcpListProjects() {
   if (!(await account())) {
     return { ok: false, error: "authentication_required" };
   }
-  return { ok: true, projects: await projectsForUser() };
+  try {
+    return { ok: true, projects: await projectsForUser() };
+  } catch {
+    return { ok: false, error: "projects_load_failed" };
+  }
 }
 
 export async function webMcpGetProject(projectId: string, days = 30) {
@@ -186,10 +196,7 @@ export async function webMcpGetTool(
   };
 }
 
-export async function webMcpStartSignIn(
-  provider: string,
-  nextPath: string,
-) {
+export async function webMcpStartSignIn(provider: string, nextPath: string) {
   const parsedProvider = z.enum(["github", "google"]).safeParse(provider);
   if (!parsedProvider.success) return { ok: false, error: "invalid_provider" };
   const next = safeNextPath(nextPath);
@@ -207,7 +214,7 @@ export async function webMcpStartSignIn(
 export async function webMcpSignOut(confirmed: boolean) {
   if (confirmed !== true) return { ok: false, error: "confirmation_required" };
   const supabase = await createClient();
-  const { error } = await supabase.auth.signOut({ scope: "global" });
+  const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) return { ok: false, error: "sign_out_failed" };
   return { ok: true };
 }
@@ -294,6 +301,6 @@ export async function webMcpDeleteAccount(confirmation: string) {
   const { error: deleteError } =
     await createServiceClient().auth.admin.deleteUser(user.id);
   if (deleteError) return { ok: false, error: "account_delete_failed" };
-  await supabase.auth.signOut({ scope: "global" });
+  await supabase.auth.signOut({ scope: "local" });
   return { ok: true };
 }

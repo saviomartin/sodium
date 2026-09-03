@@ -3,7 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
+  createNativeWebMcpDispatcher,
   createNativeWebMcpTools,
+  describeNativeWebMcpCapabilities,
+  getNativeModelContext,
   registerNativeWebMcpTools,
   type NativeWebMcpHandlers,
 } from "@/lib/native-webmcp";
@@ -23,8 +26,16 @@ function stringInput(input: Record<string, unknown>, key: string): string {
   return typeof input[key] === "string" ? input[key] : "";
 }
 
-function daysInput(input: Record<string, unknown>): 7 | 30 | 90 {
-  return input.days === 7 || input.days === 90 ? input.days : 30;
+function daysInput(
+  input: Record<string, unknown>,
+): { ok: true; value: 7 | 30 | 90 } | { ok: false } {
+  if (input.days === undefined || input.days === 30) {
+    return { ok: true, value: 30 };
+  }
+  if (input.days === 7 || input.days === 90) {
+    return { ok: true, value: input.days };
+  }
+  return { ok: false };
 }
 
 /** Registers the Sodium dashboard itself with the browser's native WebMCP API. */
@@ -32,10 +43,6 @@ export function NativeWebMcpTools() {
   const router = useRouter();
 
   useEffect(() => {
-    const modelContext = document.modelContext;
-    if (!modelContext) return;
-    const registration = new AbortController();
-
     const navigate = (path: string, replace = false) => {
       if (replace) router.replace(path);
       else router.push(path);
@@ -49,19 +56,28 @@ export function NativeWebMcpTools() {
     };
 
     const handlers: NativeWebMcpHandlers = {
+      describeCapabilities: async () => describeNativeWebMcpCapabilities(),
       getAppState: () =>
         webMcpGetAppState(
           `${window.location.pathname}${window.location.search}`,
         ),
       listProjects: () => webMcpListProjects(),
-      getProject: (input) =>
-        webMcpGetProject(stringInput(input, "projectId"), daysInput(input)),
-      getTool: (input) =>
-        webMcpGetTool(
+      getProject: (input) => {
+        const days = daysInput(input);
+        if (!days.ok)
+          return Promise.resolve({ ok: false, error: "invalid_input" });
+        return webMcpGetProject(stringInput(input, "projectId"), days.value);
+      },
+      getTool: (input) => {
+        const days = daysInput(input);
+        if (!days.ok)
+          return Promise.resolve({ ok: false, error: "invalid_input" });
+        return webMcpGetTool(
           stringInput(input, "projectId"),
           stringInput(input, "toolName"),
-          daysInput(input),
-        ),
+          days.value,
+        );
+      },
       navigate: (input) => {
         const destination = stringInput(input, "destination");
         if (destination === "home") return navigate("/");
@@ -79,7 +95,10 @@ export function NativeWebMcpTools() {
           return Promise.resolve({ ok: false, error: "invalid_project_id" });
         }
         const days = daysInput(input);
-        return navigate(`/projects/${projectId}?range=${days}d`);
+        if (!days.ok) {
+          return Promise.resolve({ ok: false, error: "invalid_input" });
+        }
+        return navigate(`/projects/${projectId}?range=${days.value}d`);
       },
       signIn: async (input) => {
         const provider = stringInput(input, "provider");
@@ -134,6 +153,21 @@ export function NativeWebMcpTools() {
       },
     };
 
+    const dispatcher = createNativeWebMcpDispatcher(handlers);
+    const bridge = window.__sodiumWebMcp;
+    if (bridge) {
+      bridge.setHandler(dispatcher);
+      void bridge.register().catch((error: unknown) => {
+        console.error("Native WebMCP bridge registration failed", error);
+      });
+      return () => bridge.clearHandler(dispatcher);
+    }
+
+    // The pre-hydration script is the primary path. This fallback preserves
+    // functionality if an application CSP or an older Next.js host blocks it.
+    const modelContext = getNativeModelContext();
+    if (!modelContext) return;
+    const registration = new AbortController();
     void registerNativeWebMcpTools(
       modelContext,
       createNativeWebMcpTools(handlers),

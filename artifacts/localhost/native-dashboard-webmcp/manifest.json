@@ -9,12 +9,19 @@
   },
   "implementation": {
     "kind": "app-owned-imperative-webmcp",
-    "entrypoint": "apps/web/components/native-webmcp-tools.tsx",
-    "registrationApi": "document.modelContext.registerTool",
-    "lifecycle": "AbortSignal",
+    "entrypoints": [
+      "apps/web/app/layout.tsx",
+      "apps/web/components/native-webmcp-tools.tsx"
+    ],
+    "registrationApi": [
+      "document.modelContext.registerTool",
+      "navigator.modelContext.registerTool (deprecated native compatibility fallback)"
+    ],
+    "lifecycle": "Stable pre-hydration registration with AbortSignal and live React handlers",
     "sodiumRuntimeUsed": false
   },
   "tools": [
+    "sodium_describe_capabilities",
     "sodium_get_app_state",
     "sodium_list_projects",
     "sodium_get_project",
@@ -34,8 +41,12 @@
     "Successful project and account deletion return home with a confirmation query."
   ],
   "recoveryCases": [
+    "The browser injects WebMCP after the initial script runs.",
+    "One native registration fails transiently while the remaining tools register.",
+    "The browser exposes the deprecated navigator.modelContext location only.",
+    "A tool is invoked before React handlers are ready.",
     "Signed-out data requests return authentication_required.",
-    "Invalid project IDs return invalid_input.",
+    "Malformed transport input, invalid project IDs, and invalid analytics ranges return invalid_input.",
     "Unknown projects and tools return explicit not-found results.",
     "Mismatched destructive confirmations return a structured error without mutation.",
     "Expired, used, or unknown CLI codes return code_invalid_expired_or_used."

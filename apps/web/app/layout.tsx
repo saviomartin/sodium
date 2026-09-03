@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { AsciiBackdrop } from "@/components/ascii-backdrop";
+import { NativeWebMcpTools } from "@/components/native-webmcp-tools";
 import { Toaster } from "@/components/toaster";
 import { WebAnalytics } from "@/components/web-analytics";
-import { NativeWebMcpTools } from "@/components/native-webmcp-tools";
 import { siteUrl } from "@/lib/env";
+import { nativeWebMcpBootstrapScript } from "@/lib/native-webmcp";
 import {
   isIndexable,
   OPEN_GRAPH,
@@ -85,6 +87,12 @@ export default function RootLayout({
       className={`${GeistSans.variable} ${GeistMono.variable}`}
     >
       <body className="min-h-dvh font-sans">
+        <Script
+          id="sodium-native-webmcp-bootstrap"
+          strategy="beforeInteractive"
+        >
+          {nativeWebMcpBootstrapScript()}
+        </Script>
         <AsciiBackdrop />
         <div className="relative z-10">{children}</div>
         <NativeWebMcpTools />
